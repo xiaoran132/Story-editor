@@ -1,0 +1,125 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@font-face {
+  font-family: "Barlow-Regular_2";
+  src: url("/fonts/Barlow-Regular_2.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@theme inline {
+  --font-sans: var(--fontSans);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --shadow-x: var(--shadow-x);
+  --shadow-y: var(--shadow-y);
+  --shadow-blur: var(--shadow-blur);
+  --shadow-spread: var(--shadow-spread);
+  --shadow-color: var(--shadow-color);
+}
+
+:root {
+  --fontSans: "Barlow-Regular_2";
+  --radius: 1rem;
+  
+  /* Cyberpunk deep blue/purple theme */
+  --background: rgba(10, 5, 24, 1);
+  --foreground: rgba(248, 250, 252, 1);
+  
+  /* Glassmorphism cards */
+  --card: rgba(255, 255, 255, 0.03);
+  --card-foreground: rgba(248, 250, 252, 1);
+  
+  --popover: rgba(20, 10, 35, 0.95);
+  --popover-foreground: rgba(248, 250, 252, 1);
+  
+  /* Neon Purple Primary */
+  --primary: rgba(168, 85, 247, 1);
+  --primary-foreground: rgba(255, 255, 255, 1);
+  
+  /* Neon Blue Secondary */
+  --secondary: rgba(56, 189, 248, 0.15);
+  --secondary-foreground: rgba(56, 189, 248, 1);
+  
+  --muted: rgba(255, 255, 255, 0.05);
+  --muted-foreground: rgba(148, 163, 184, 1);
+  
+  --accent: rgba(168, 85, 247, 0.15);
+  --accent-foreground: rgba(216, 180, 254, 1);
+  
+  --destructive: rgba(239, 68, 68, 1);
+  --destructive-foreground: rgba(255, 255, 255, 1);
+  
+  --border: rgba(255, 255, 255, 0.1);
+  --input: rgba(255, 255, 255, 0.05);
+  --ring: rgba(168, 85, 247, 0.5);
+
+  /* Cyberpunk Glow Shadow */
+  --shadow-y: 0px;
+  --shadow-spread: 0px;
+  --shadow-blur: 20px;
+  --shadow-color: rgba(168, 85, 247, 0.35);
+  --shadow-x: 0px;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground font-sans;
+    background-image: 
+      radial-gradient(circle at 15% 50%, rgba(56, 189, 248, 0.08), transparent 25%),
+      radial-gradient(circle at 85% 30%, rgba(168, 85, 247, 0.08), transparent 25%);
+    background-attachment: fixed;
+  }
+  
+  /* Custom scrollbar for cyberpunk feel */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.2);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(168, 85, 247, 0.3);
+    border-radius: 10px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(168, 85, 247, 0.6);
+  }
+}
+
+@layer utilities {
+  .shadow-custom {
+    box-shadow: var(--shadow-x) var(--shadow-y) var(--shadow-blur) var(--shadow-spread) var(--shadow-color);
+  }
+  .glass-panel {
+    @apply bg-card backdrop-blur-xl border border-white/10 rounded-2xl;
+  }
+}
