@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.title}}</title>
+    <style>
+        :root {
+            --bg: #12100e;
+            --panel: #1c1917;
+            --ink: #e7e2d9;
+            --muted: #9a938a;
+            --accent: #c9a15a;
+            --line: #35302a;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: "Georgia", "Songti SC", serif;
+            background: var(--bg);
+            color: var(--ink);
+            line-height: 1.8;
+        }
+        .wrap {
+            max-width: 820px;
+            margin: 0 auto;
+            padding: 32px 20px 80px;
+        }
+        h1 {
+            font-size: 22px;
+            letter-spacing: 2px;
+            color: var(--accent);
+            border-bottom: 1px solid var(--line);
+            padding-bottom: 14px;
+        }
+        .attrs {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin: 18px 0;
+        }
+        .attr {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 14px;
+            font-family: monospace;
+        }
+        .attr b { color: var(--accent); }
+        .story {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 22px 24px;
+            font-size: 17px;
+            white-space: pre-wrap;
+            min-height: 80px;
+        }
+        .options { margin-top: 20px; display: flex; flex-direction: column; gap: 10px; }
+        button.opt {
+            text-align: left;
+            background: #241f1a;
+            color: var(--ink);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 13px 16px;
+            font-size: 15px;
+            font-family: inherit;
+            cursor: pointer;
+            transition: border-color .15s, background .15s;
+        }
+        button.opt:hover { border-color: var(--accent); background: #2c2620; }
+        .opt .hint { color: var(--muted); font-size: 13px; margin-left: 6px; }
+        .free { margin-top: 18px; display: flex; gap: 8px; }
+        .free input {
+            flex: 1;
+            background: #241f1a;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            color: var(--ink);
+            padding: 12px 14px;
+            font-size: 15px;
+            font-family: inherit;
+        }
+        .free button {
+            background: var(--accent);
+            color: #1a1712;
+            border: none;
+            border-radius: 8px;
+            padding: 0 22px;
+            font-size: 15px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .free button:disabled { opacity: .5; cursor: default; }
+        .status { color: var(--muted); font-size: 14px; margin-top: 14px; min-height: 20px; }
+        .ending {
+            margin-top: 18px;
+            padding: 14px;
+            border: 1px dashed var(--accent);
+            border-radius: 8px;
+            color: var(--accent);
+            text-align: center;
+        }
+        .timeline { margin-top: 34px; border-top: 1px solid var(--line); padding-top: 18px; }
+        .timeline h2 { font-size: 15px; color: var(--muted); letter-spacing: 1px; }
+        .step {
+            font-size: 13px;
+            color: var(--muted);
+            padding: 7px 10px;
+            border-left: 2px solid var(--line);
+            margin: 4px 0;
+            cursor: pointer;
+        }
+        .step:hover { color: var(--ink); border-left-color: var(--accent); }
+        .step.cur { color: var(--accent); border-left-color: var(--accent); }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <h1 id="story-title">载入中…</h1>
+    <div class="attrs" id="attrs"></div>
+    <div class="story" id="story">正在开启一段旅程…</div>
+    <div class="ending" id="ending" style="display:none"></div>
+    <div class="options" id="options"></div>
+    <div class="free">
+        <input id="free-input" type="text" placeholder="或输入你的自由行动…" autocomplete="off">
+        <button id="free-btn">行动</button>
+    </div>
+    <div class="status" id="status"></div>
+    <div class="timeline" id="timeline" style="display:none">
+        <h2>时间线（点击可回溯）</h2>
+        <div id="steps"></div>
+    </div>
+</div>
+
+<script>
+const API = "/api/v1";
+let sessionId = null;
+let path = []; // 当前路径上的节点（根→当前）
+
+function j(v) { try { return JSON.parse(v); } catch (e) { return null; } }
+function setStatus(t) { document.getElementById("status").textContent = t || ""; }
+function busy(on) {
+    document.getElementById("free-btn").disabled = on;
+    document.querySelectorAll("button.opt").forEach(b => b.disabled = on);
+    setStatus(on ? "AI 正在生成剧情…" : "");
+}
+
+async function api(method, url, body) {
+    const opt = { method: method, headers: { "Content-Type": "application/json" } };
+    if (body) opt.body = JSON.stringify(body);
+    const res = await fetch(API + url, opt);
+    const data = await res.json();
+    if (!data.success) {
+        const msg = (data.error && data.error.message) ? data.error.message : "请求失败";
+        throw new Error(msg);
+    }
+    return data.data;
+}
+
+function renderAttrs(session) {
+    const state = j(session.current_state) || {};
+    const box = document.getElementById("attrs");
+    box.innerHTML = "";
+    Object.keys(state).forEach(function (k) {
+        const el = document.createElement("div");
+        el.className = "attr";
+        el.innerHTML = "<b>" + k + "</b> " + state[k];
+        box.appendChild(el);
+    });
+}
+
+function renderOptions(node) {
+    const opts = j(node.suggested_options) || [];
+    const box = document.getElementById("options");
+    box.innerHTML = "";
+    if (node.is_ending) return;
+    opts.forEach(function (o) {
+        const b = document.createElement("button");
+        b.className = "opt";
+        b.innerHTML = o.text + (o.hint ? "<span class='hint'>（" + o.hint + "）</span>" : "");
+        b.onclick = function () { choose(o.text); };
+        box.appendChild(b);
+    });
+}
+
+function renderTimeline() {
+    const tl = document.getElementById("timeline");
+    const steps = document.getElementById("steps");
+    if (path.length <= 1) { tl.style.display = "none"; return; }
+    tl.style.display = "block";
+    steps.innerHTML = "";
+    path.forEach(function (n, i) {
+        const el = document.createElement("div");
+        el.className = "step" + (i === path.length - 1 ? " cur" : "");
+        const label = n.choice_text ? ("→ " + n.choice_text) : "【开局】";
+        el.textContent = "第 " + i + " 步 " + label;
+        el.onclick = function () { backtrack(n.id, i); };
+        steps.appendChild(el);
+    });
+}
+
+function renderNode(node) {
+    document.getElementById("story").textContent = node.content;
+    const ending = document.getElementById("ending");
+    const free = document.getElementById("free-input");
+    const freeBtn = document.getElementById("free-btn");
+    if (node.is_ending) {
+        ending.style.display = "block";
+        ending.textContent = "— 结局（" + (node.ending_type || "end") + "）— 可点击时间线回溯重玩";
+        free.disabled = true; freeBtn.disabled = true;
+    } else {
+        ending.style.display = "none";
+        free.disabled = false; freeBtn.disabled = false;
+    }
+    renderOptions(node);
+}
+
+function apply(result) {
+    renderAttrs(result.session);
+    renderNode(result.current_node);
+    renderTimeline();
+}
+
+async function start() {
+    try {
+        const stories = await api("GET", "/stories/");
+        if (!stories || !stories.length) { setStatus("没有可玩的作品"); return; }
+        const story = stories[0];
+        document.getElementById("story-title").textContent = story.title;
+        busy(true);
+        const result = await api("POST", "/play/sessions", { story_id: story.id });
+        sessionId = result.session.id;
+        path = [result.current_node];
+        apply(result);
+    } catch (e) {
+        setStatus("出错：" + e.message);
+    } finally {
+        busy(false);
+    }
+}
+
+async function choose(text) {
+    if (!text || !sessionId) return;
+    busy(true);
+    try {
+        const result = await api("POST", "/play/sessions/" + sessionId + "/choice", { choice: text });
+        path.push(result.current_node);
+        apply(result);
+        document.getElementById("free-input").value = "";
+    } catch (e) {
+        setStatus("出错：" + e.message);
+    } finally {
+        busy(false);
+    }
+}
+
+async function backtrack(nodeId, index) {
+    if (!sessionId) return;
+    busy(true);
+    try {
+        const result = await api("POST", "/play/sessions/" + sessionId + "/backtrack", { node_id: nodeId });
+        path = path.slice(0, index + 1);
+        apply(result);
+    } catch (e) {
+        setStatus("出错：" + e.message);
+    } finally {
+        busy(false);
+    }
+}
+
+document.getElementById("free-btn").onclick = function () {
+    choose(document.getElementById("free-input").value.trim());
+};
+document.getElementById("free-input").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") choose(document.getElementById("free-input").value.trim());
+});
+
+start();
+</script>
+</body>
+</html>

@@ -1,0 +1,178 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## 项目概述
+
+"AI驱动的互动剧情共创社区" — 用户既是玩家也是创作者，通过 AI Agent 协作完成剧情生成、体验、分享与再创作。
+
+技术栈：Go-Gin + PostgreSQL/GORM（后端）、Next.js + React + Zustand（前端，尚未搭建）、Python FastAPI + LangGraph（AI 服务，尚未搭建）。
+
+## 构建与运行
+
+```bash
+# 构建
+cd backend && go build .
+
+# 运行（需要 PostgreSQL 运行中）
+cd backend && go run .
+
+# 测试
+cd backend && go test ./...
+
+# 添加依赖
+cd backend && go get <pkg> && go mod tidy
+```
+
+## 配置
+
+`backend/config/config.go` 通过 viper 读取配置，优先级：**环境变量 > config.yaml > 默认值**。环境变量模板见 `backend/.env.example`。
+
+默认值在 `config.setDefaults()`（私有）中定义：DB localhost/5432/postgres/story_editor、`SERVER_PORT=":8080"`、`AI_SERVICE_URL="http://localhost:8001"`。
+
+> `main.go` 用 `LoadHTMLGlob("../templates/*")` 加载模板，且 viper 从 `./config` 与 `.` 查找 config.yaml——因此**必须在 `backend/` 目录下运行**（`cd backend && go run .`），否则模板路径失效。
+
+## 架构模式
+
+### 分层架构（扁平分层）
+
+严格遵循 `handler → service → repository` 单向依赖。`model` 和 `pkg` 为无状态通用层，禁止包含业务逻辑。
+
+```
+backend/
+├── main.go                     # 启动入口：config → db → DI → 路由 → 启动
+├── config/config.go            # viper 配置管理
+├── internal/
+│   ├── model/                  # 纯 GORM 数据模型 + ToResponse() DTO
+│   │   ├── user.go
+│   │   ├── story.go
+│   │   └── node.go
+│   ├── handler/                # HTTP handler：参数绑定 → 调用 service → response
+│   │   ├── user.go
+│   │   ├── story.go
+│   │   ├── node.go
+│   │   └── community.go
+│   ├── service/                # 业务逻辑层（纯 Go，不强绑 HTTP）
+│   │   ├── user.go
+│   │   ├── story.go
+│   │   ├── node.go
+│   │   └── ai_client.go        # HTTP 调用 Python AI 服务
+│   ├── repository/             # 数据访问层（GORM 操作）
+│   │   ├── user.go
+│   │   ├── story.go
+│   │   └── node.go
+│   └── middleware/
+│       ├── auth.go             # JWT Bearer 解析
+│       └── cors.go             # 跨域
+└── pkg/                        # 无业务依赖的工具包
+    ├── jwt.go                  # JWT 生成/验证
+    ├── response.go             # 统一响应格式
+    └── errors.go               # AppError + 业务错误码
+```
+
+### 分层规则
+
+1. `handler` 只能调用 `service`，负责请求绑定校验和响应
+2. `service` 只能调用 `repository` 或 `ai_client`，负责业务逻辑
+3. `repository` 只做数据库操作，接收/返回 `model` 结构体
+4. `model` 只定义数据结构，禁止写业务逻辑
+5. `pkg` 无任何业务依赖，可被任意层引用
+
+### 依赖注入
+
+在 `main.go` 中手动组装：config → database → repository → service → handler → 路由注册。
+
+启动时 `main.go` 先执行 `CREATE EXTENSION IF NOT EXISTS pgcrypto`（`gen_random_uuid()` 依赖），再 `AutoMigrate` 当前四个模型：`User`、`UserCredential`、`Story`、`StoryNode`。`aiClient` 已实例化但暂以 `_ = aiClient` 丢弃，尚未接入任何路由。
+
+### 路由注册
+
+直接在 `main.go` 中注册路由组：
+- `/api/v1/auth/*` — 注册/登录/个人资料
+- `/api/v1/stories/*` — 剧情 CRUD + 节点创建
+- `/api/v1/nodes/*` — 节点查询/更新/删除
+- `/api/v1/community/*` — 社区浏览/详情/点赞/评论
+
+### 统一错误处理
+
+`pkg/errors.go` — `AppError` 有两个关键字段：
+- `StatusCode` — HTTP 状态码（不序列化到 JSON）
+- `BizCode` — 业务错误码（序列化到 JSON 的 `error.code`）
+
+预定义 HTTP 错误：`BadRequest(msg)`, `Unauthorized(msg)`, `NotFound(msg)`, `Forbidden(msg)`, `Conflict(msg)`, `Internal(msg)`。
+业务错误码 10001-10011 使用 `NewBusinessError(code)` 或 `NewBusinessErrorWithMessage(code, msg)`。
+
+Handler 直接返回 service 层的 error，由 `pkg.Error(c, err)` 统一处理——通过类型断言提取 `AppError` 并正确设置 HTTP 状态码。
+
+### 统一响应格式
+
+所有 JSON 响应用 `pkg/` 辅助函数，不要直接调用 `c.JSON()`：
+```
+{ "success": true, "data": {...}, "error": null, "meta": {...} }
+```
+辅助函数：`pkg.Success`, `pkg.Created`, `pkg.SuccessWithMeta`, `pkg.Error`, `pkg.NoContent`。
+
+### 鉴权
+
+`middleware.AuthRequired(secret)` — 解析 Bearer JWT，设置 `c.Set("user_id", ...)`。
+Handler 中用 `middleware.GetUserID(c)` 取值。
+
+## 关键设计约定
+
+### DTO 模式
+
+每个 model 有 `ToResponse()` 方法返回对外 DTO（如 `UserResponse`），隐藏敏感字段（`PasswordHash` 等）。handler 只返回 DTO，不直接暴露 model。
+
+### Service 输入类型
+
+Service 层定义自己的输入结构体（如 `service.StoryCreateInput`、`service.NodeCreateInput`），不依赖 handler 的请求结构体。这保持了 service 与 HTTP 层的解耦。
+
+### 剧情节点树 — JSONB 增量属性设计
+
+核心设计思想（详见 `设计思路.md`）：剧情属性（HP、金币、好感度等）完全由创作者自定义，后端不硬编码字段。
+
+- **`StoryNode`** 使用邻接表（`parent_id`）形成树，`depth` 记录层级，`is_ending` 标记结局
+- 属性变化存增量（`state_delta JSONB`），当前完整状态 = 路径上所有 delta 累加 + 初始值
+- Postgres 递归 CTE 做树查询（回溯路径、子树展开），不需要应用层递归
+- 属性字段名对后端透明，直接用 JSONB 合并操作
+
+### AIClient
+
+`service/ai_client.go` 是独立的 HTTP 客户端，超时 60s，调用 Python AI 服务的 `/generate` 和 `/continue` 端点。不依赖 repository 层。
+
+## PostgreSQL / GORM
+
+- 驱动：`gorm.io/driver/postgres` + `gorm.io/gorm`
+- 模块名：`backend`，Go 1.25
+- 数据库名：`story_editor`（通过环境变量 DB_NAME 配置）
+- 表由 GORM AutoMigrate 自动创建
+- 模型定义在 `internal/model/`，使用 GORM 标签
+
+## 当前实现状态
+
+| 模块 | 状态 |
+|------|------|
+| 项目骨架（config, pkg, middleware, DI, 路由） | 完成 |
+| User（注册/登录/JWT/个人资料） | 完成（bcrypt 密码 + user_credentials 凭证分离） |
+| Story（CRUD + 列表） | 完成 |
+| Node（节点创建/子节点/更新/删除） | 完成 |
+| Community（浏览/详情/点赞/评论） | handler 桩，全部 TODO |
+| AIClient | HTTP 客户端已实现，待 Python AI 服务对接 |
+
+## 数据库设计蓝本（infa/sql/）
+
+`infa/sql/` 下的 SQL 文件是**完整数据模型的设计蓝本，领先于 Go 实现**——GORM 目前只 AutoMigrate 了其中一部分表。新增模块前应先对照对应 SQL：
+- `users.sql`（001）— 用户 + 凭证分离
+- `stories.sql`（002）— 作品 + world_config/initial_state
+- `play.sql`（003）— `play_sessions`（存**完整状态快照** `current_state JSONB`，与节点树的增量 delta 设计互补）+ 节点树
+- `community.sql`（004）— 点赞/收藏/评论/路线分享，含 `stories.like_count` 等冗余计数字段
+
+## 待实现模块（按顺序）
+
+1. **save** — 玩家存档/读档（play_sessions 表）
+2. **ai** — ai_client 对接 Python AI 服务
+3. **realtime** — WebSocket hub/client，AI 流式输出推送
+4. **community** — 作品发布/搜索/排行榜/点赞/收藏/评论
+5. **payment** — 付费解锁/打赏/分成（MVP 可 stub）
+6. **achievement** — 成就系统
+
+`templates/index.html` 为 Gin 模板占位，前端正式搭建后替换。
