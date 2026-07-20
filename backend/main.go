@@ -50,7 +50,7 @@ func main() {
 	userSvc := service.NewUserService(userRepo, cfg.JWTSecret)
 	storySvc := service.NewStoryService(storyRepo)
 	nodeSvc := service.NewNodeService(nodeRepo)
-	aiClient := service.NewAIClient(cfg.DeepSeekAPIKey, cfg.DeepSeekBaseURL, cfg.DeepSeekModel)
+	aiClient := service.NewAIClient(cfg.AIServiceURL)
 	playSvc := service.NewPlayService(sessionRepo, nodeRepo, storyRepo, aiClient)
 
 	// Handlers

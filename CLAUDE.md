@@ -131,9 +131,17 @@ Service 层定义自己的输入结构体（如 `service.StoryCreateInput`、`se
 核心设计思想（详见 `设计思路.md`）：剧情属性（HP、金币、好感度等）完全由创作者自定义，后端不硬编码字段。
 
 - **`StoryNode`** 使用邻接表（`parent_id`）形成树，`depth` 记录层级，`is_ending` 标记结局
-- 属性变化存增量（`state_delta JSONB`），当前完整状态 = 路径上所有 delta 累加 + 初始值
+- 属性变化存增量（`state_delta JSONB`），当前完整状态 = 路径上所有 delta 按类型合并 + 初始值
 - Postgres 递归 CTE 做树查询（回溯路径、子树展开），不需要应用层递归
 - 属性字段名对后端透明，直接用 JSONB 合并操作
+
+**属性类型系统（number / scalar / set）**：创作者在 `world_config.attributes` 里声明每个属性键的类型，AI 与后端据此决定 `state_delta` 的格式与合并策略——
+- `number`（数值累加，如 hp/gold）：delta 给增减量 `{"hp": -10}`，合并时相加；
+- `scalar`（覆盖式，如 location/布尔 flag）：delta 给新值，后值覆盖前值；
+- `set`（集合增删，如背包 items）：delta 给 `{"add": [...], "remove": [...]}`，按元素增删去重；
+- **未声明类型的键**：向后兼容——两侧皆数值则累加，否则覆盖。
+
+合并逻辑落在 `service.mergeState`（`play.go`），类型来自 `WorldConfig.AttrTypes()`；Python 侧 `graph/story_graph.py` 的 `normalize` 按同一套类型规整 LLM 输出（丢弃非法键、校验格式）。两端语义严格对齐，见 `play_merge_test.go`。
 
 ### AIClient
 
@@ -166,10 +174,26 @@ Service 层定义自己的输入结构体（如 `service.StoryCreateInput`、`se
 - `play.sql`（003）— `play_sessions`（存**完整状态快照** `current_state JSONB`，与节点树的增量 delta 设计互补）+ 节点树
 - `community.sql`（004）— 点赞/收藏/评论/路线分享，含 `stories.like_count` 等冗余计数字段
 
+## AI 服务（ai-service/，Python FastAPI + LangGraph）
+
+独立进程，Go 后端通过 `AI_SERVICE_URL`（默认 `http://localhost:8001`）调用，**不碰数据库**。DeepSeek 凭证下沉到 `ai-service/.env`，Go 侧不再直连大模型。
+
+- `app/graph/story_graph.py` — LangGraph 工作流 `prepare → generate → normalize`（构建上下文/注入属性类型 → 调 LLM → 按类型规整 delta、过滤非法键、规整结局）
+- `app/routers/generate.py` — `POST /generate`（开场）、`/continue`（续写），Go 的 `service/ai_client.go` 调这两个
+- `app/routers/assist.py` — 创作辅助 `POST /assist/world|opening|polish|branches`（`/world` 会一并产出 `attributes` 类型声明）
+- `app/schemas.py` — 请求/响应模型，`WorldConfig.attributes` 承载属性类型声明，与 Go 契约对齐
+- `app/llm.py` — DeepSeek（OpenAI 兼容）客户端，强制 `response_format=json_object`
+
+> 属性类型（number/scalar/set）的完整语义见上文「JSONB 增量属性设计」。`normalize` 对未在 `attributes` 里声明类型的键**透传**，由 Go 的 `mergeState` 兜底推断，保证无 `attributes` 的老作品照常工作。
+
+启动：`cd ai-service && pip install -r requirements.txt && uvicorn app.main:app --port 8001`（详见 `ai-service/README.md`）。
+
+> Go 的 `NewAIClient(cfg.AIServiceURL)` 只做 HTTP 编排；`StartStory`/`Continue` 签名不变，`play` 链路无感。
+
 ## 待实现模块（按顺序）
 
 1. **save** — 玩家存档/读档（play_sessions 表）
-2. **ai** — ai_client 对接 Python AI 服务
+2. ~~**ai** — ai_client 对接 Python AI 服务~~ ✅ 已完成（ai-service/ + Go 对接）
 3. **realtime** — WebSocket hub/client，AI 流式输出推送
 4. **community** — 作品发布/搜索/排行榜/点赞/收藏/评论
 5. **payment** — 付费解锁/打赏/分成（MVP 可 stub）

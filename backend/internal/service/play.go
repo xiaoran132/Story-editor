@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"backend/internal/model"
@@ -150,7 +151,7 @@ func (s *PlayService) MakeChoice(sessionID uuid.UUID, choice string) (*SessionRe
 		return nil, pkg.Internal("ai continue: " + err.Error())
 	}
 
-	newState := mergeState(currentState, result.StateDelta)
+	newState := mergeState(currentState, result.StateDelta, world.AttrTypes())
 
 	parentID := *session.CurrentNodeID
 	choiceText := choice
@@ -300,24 +301,90 @@ func dumpAny(v any) string {
 	return string(raw)
 }
 
-// mergeState 应用属性增量：数值累加，非数值覆盖（集合式延后）。
-func mergeState(current, delta map[string]any) map[string]any {
+// mergeState 按属性类型应用增量：
+//   - number：数值累加
+//   - scalar：新值覆盖
+//   - set：对当前列表按 {add, remove} 增删（去重）
+//   - 未声明类型：沿用推断——两侧皆数值则累加，否则覆盖（向后兼容无 attributes 的老作品）
+//
+// types 由 WorldConfig.AttrTypes() 提供；仅显式声明的键有类型。
+func mergeState(current, delta map[string]any, types map[string]string) map[string]any {
 	out := make(map[string]any, len(current))
 	for k, v := range current {
 		out[k] = v
 	}
 	for k, dv := range delta {
-		if cur, ok := out[k]; ok {
-			if cf, okc := toFloat(cur); okc {
+		switch types[k] {
+		case "number":
+			out[k] = addNumeric(out[k], dv)
+		case "scalar":
+			out[k] = dv
+		case "set":
+			out[k] = applySet(out[k], dv)
+		default:
+			// 未声明：数值累加，否则覆盖
+			if cf, okc := toFloat(out[k]); okc {
 				if df, okd := toFloat(dv); okd {
-					out[k] = cf + df // 数值累加
+					out[k] = cf + df
 					continue
 				}
 			}
+			out[k] = dv
 		}
-		out[k] = dv // 标量覆盖 / 新键
 	}
 	return out
+}
+
+// addNumeric 累加数值增量；原值缺失或非数值时取增量本身作为初值。
+func addNumeric(cur, dv any) any {
+	df, okd := toFloat(dv)
+	if !okd {
+		return dv // 非数值兜底覆盖（正常已被 Python normalize 过滤）
+	}
+	if cf, okc := toFloat(cur); okc {
+		return cf + df
+	}
+	return df
+}
+
+// applySet 对集合属性应用 {add, remove}：先按 remove 剔除，再并入 add，保持去重与顺序。
+func applySet(cur, dv any) any {
+	m, ok := dv.(map[string]any)
+	if !ok {
+		return cur // 非预期格式（Python 已规整为 {add,remove}），保持不变
+	}
+	remove := map[string]bool{}
+	for _, x := range toAnyList(m["remove"]) {
+		remove[fmt.Sprint(x)] = true
+	}
+
+	result := make([]any, 0)
+	seen := map[string]bool{}
+	push := func(x any) {
+		key := fmt.Sprint(x)
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		result = append(result, x)
+	}
+	for _, x := range toAnyList(cur) {
+		if remove[fmt.Sprint(x)] {
+			continue
+		}
+		push(x)
+	}
+	for _, x := range toAnyList(m["add"]) {
+		push(x) // add 优先：与 remove 同时出现时以“加入”为最终态
+	}
+	return result
+}
+
+func toAnyList(v any) []any {
+	if l, ok := v.([]any); ok {
+		return l
+	}
+	return nil
 }
 
 func toFloat(v any) (float64, bool) {

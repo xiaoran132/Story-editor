@@ -16,11 +16,6 @@ type Config struct {
 	JWTSecret    string `mapstructure:"JWT_SECRET"`
 	ServerPort   string `mapstructure:"SERVER_PORT"`
 	AIServiceURL string `mapstructure:"AI_SERVICE_URL"`
-
-	// DeepSeek（OpenAI 兼容）——MVP 阶段 Go 直连，后期可切回 Python AI 服务
-	DeepSeekAPIKey  string `mapstructure:"DEEPSEEK_API_KEY"`
-	DeepSeekBaseURL string `mapstructure:"DEEPSEEK_BASE_URL"`
-	DeepSeekModel   string `mapstructure:"DEEPSEEK_MODEL"`
 }
 
 func (c *Config) DSN() string {
@@ -53,9 +48,6 @@ func Load(configPath string) (*Config, error) {
 	_ = v.BindEnv("JWT_SECRET")
 	_ = v.BindEnv("SERVER_PORT")
 	_ = v.BindEnv("AI_SERVICE_URL")
-	_ = v.BindEnv("DEEPSEEK_API_KEY")
-	_ = v.BindEnv("DEEPSEEK_BASE_URL")
-	_ = v.BindEnv("DEEPSEEK_MODEL")
 
 	setDefaults(v)
 
@@ -82,6 +74,4 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("JWT_SECRET", "change-me-in-production")
 	v.SetDefault("SERVER_PORT", ":8080")
 	v.SetDefault("AI_SERVICE_URL", "http://localhost:8001")
-	v.SetDefault("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-	v.SetDefault("DEEPSEEK_MODEL", "deepseek-chat")
 }
