@@ -61,3 +61,18 @@ uvicorn app.main:app --host 0.0.0.0 --port 8001
   "ending_type": ""
 }
 ```
+
+
+------
+
+## 属性类型（state_delta 的合并语义）
+
+创作者在 `world_config.attributes` 声明每个属性键的类型，AI 与后端据此决定 `state_delta` 的格式与合并策略：
+
+| 类型 | delta 形态 | 示例 |
+|------|-----------|------|
+| `number` | 增减量 | `{"hp": -10}` |
+| `scalar` | 新值覆盖 | `{"location": "王城"}` |
+| `set` | 增删 | `{"items": {"add": ["钥匙"], "remove": ["火把"]}}` |
+
+`prepare` 把类型说明注入提示，`normalize` 按类型规整、丢弃非法值；**未声明类型的键透传**，由 Go 侧 `service.mergeState` 兜底推断（兼容无 `attributes` 的老作品）。

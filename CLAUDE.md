@@ -6,15 +6,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 "AI驱动的互动剧情共创社区" — 用户既是玩家也是创作者，通过 AI Agent 协作完成剧情生成、体验、分享与再创作。
 
-技术栈：Go-Gin + PostgreSQL/GORM（后端）、Next.js + React + Zustand（前端，尚未搭建）、Python FastAPI + LangGraph（AI 服务，尚未搭建）。
+技术栈：Go-Gin + PostgreSQL/GORM（后端）、Next.js + React + Zustand（前端，尚未搭建）、Python FastAPI + LangGraph（AI 服务，独立进程，已实现并对接）。
 
 ## 构建与运行
+
+```powershell
+# 一键（Windows）：前置检查 + 独立窗口启动 AI 服务(:8001) 与后端(:8080)
+.\scripts\dev.ps1        # 全部；.\scripts\dev.ps1 -Only ai | -Only backend 单起
+```
 
 ```bash
 # 构建
 cd backend && go build .
 
-# 运行（需要 PostgreSQL 运行中）
+# 运行（需要 PostgreSQL 运行中；须在 backend/ 下）
 cd backend && go run .
 
 # 测试
@@ -22,6 +27,9 @@ cd backend && go test ./...
 
 # 添加依赖
 cd backend && go get <pkg> && go mod tidy
+
+# AI 服务（独立进程）
+cd ai-service && uvicorn app.main:app --port 8001   # 详见 ai-service/README.md
 ```
 
 ## 配置
@@ -82,7 +90,7 @@ backend/
 
 在 `main.go` 中手动组装：config → database → repository → service → handler → 路由注册。
 
-启动时 `main.go` 先执行 `CREATE EXTENSION IF NOT EXISTS pgcrypto`（`gen_random_uuid()` 依赖），再 `AutoMigrate` 当前四个模型：`User`、`UserCredential`、`Story`、`StoryNode`。`aiClient` 已实例化但暂以 `_ = aiClient` 丢弃，尚未接入任何路由。
+启动时 `main.go` 先执行 `CREATE EXTENSION IF NOT EXISTS pgcrypto`（`gen_random_uuid()` 依赖），再 `AutoMigrate` 当前五个模型：`User`、`UserCredential`、`Story`、`StoryNode`、`PlaySession`，随后 `seed()` 幂等预置 guest 用户 + demo 作品。`aiClient` 已注入 `PlayService`（`NewPlayService(sessionRepo, nodeRepo, storyRepo, aiClient)`），挂载在 `/api/v1/play/*`。
 
 ### 路由注册
 
@@ -90,7 +98,8 @@ backend/
 - `/api/v1/auth/*` — 注册/登录/个人资料
 - `/api/v1/stories/*` — 剧情 CRUD + 节点创建
 - `/api/v1/nodes/*` — 节点查询/更新/删除
-- `/api/v1/community/*` — 社区浏览/详情/点赞/评论
+- `/api/v1/play/*` — 游玩会话：开局 `POST /sessions`、查询 `GET /sessions/:id`、选择 `POST /sessions/:id/choice`、回溯 `POST /sessions/:id/backtrack`（匿名可玩）
+- `/api/v1/community/*` — 社区浏览/详情/点赞/评论（handler 桩）
 
 ### 统一错误处理
 
@@ -128,7 +137,7 @@ Service 层定义自己的输入结构体（如 `service.StoryCreateInput`、`se
 
 ### 剧情节点树 — JSONB 增量属性设计
 
-核心设计思想（详见 `设计思路.md`）：剧情属性（HP、金币、好感度等）完全由创作者自定义，后端不硬编码字段。
+核心设计思想（详见 `docs/设计思路.md`）：剧情属性（HP、金币、好感度等）完全由创作者自定义，后端不硬编码字段。
 
 - **`StoryNode`** 使用邻接表（`parent_id`）形成树，`depth` 记录层级，`is_ending` 标记结局
 - 属性变化存增量（`state_delta JSONB`），当前完整状态 = 路径上所有 delta 按类型合并 + 初始值
@@ -163,8 +172,9 @@ Service 层定义自己的输入结构体（如 `service.StoryCreateInput`、`se
 | User（注册/登录/JWT/个人资料） | 完成（bcrypt 密码 + user_credentials 凭证分离） |
 | Story（CRUD + 列表） | 完成 |
 | Node（节点创建/子节点/更新/删除） | 完成 |
+| Play / 游玩会话（开局/选择/回溯 + 属性合并） | 完成（`PlayService` + `/play` 路由，最小页面已验证） |
+| AIClient + AI 服务对接 | 完成（`ai-service/` + Go HTTP 编排，属性类型系统 number/scalar/set） |
 | Community（浏览/详情/点赞/评论） | handler 桩，全部 TODO |
-| AIClient | HTTP 客户端已实现，待 Python AI 服务对接 |
 
 ## 数据库设计蓝本（infa/sql/）
 
@@ -192,8 +202,9 @@ Service 层定义自己的输入结构体（如 `service.StoryCreateInput`、`se
 
 ## 待实现模块（按顺序）
 
-1. **save** — 玩家存档/读档（play_sessions 表）
+1. **save** — 会话续玩/读档（`play_sessions` 表已建、开局与推进已通；缺「列出我的会话 + 断点续玩」入口）
 2. ~~**ai** — ai_client 对接 Python AI 服务~~ ✅ 已完成（ai-service/ + Go 对接）
+2.5. ~~**play** — 游玩会话链路~~ ✅ 已完成（`PlayService` + `/play` 路由，含回溯）
 3. **realtime** — WebSocket hub/client，AI 流式输出推送
 4. **community** — 作品发布/搜索/排行榜/点赞/收藏/评论
 5. **payment** — 付费解锁/打赏/分成（MVP 可 stub）
