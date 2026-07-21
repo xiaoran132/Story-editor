@@ -36,11 +36,12 @@ type WorldConfig struct {
 	Background   string         `json:"background"`
 	Style        string         `json:"style"`
 	Rules        string         `json:"rules"`
-	Characters   []any          `json:"characters"`
-	InitialState map[string]any `json:"initial_state"`
+	Characters   []any          `json:"characters,omitempty"`
+	InitialState map[string]any `json:"initial_state,omitempty"`
 	// Attributes 声明每个属性键的类型：{"hp": {"type": "number"}, "items": {"type": "set"}, ...}
 	// 透传给 Python AI 服务指导 state_delta 生成，并驱动 mergeState 的按类型合并。
-	Attributes map[string]any `json:"attributes"`
+	// omitempty：nil 时不序列化为 null（pydantic 对非 Optional 字段的 null 会返回 422）。
+	Attributes map[string]any `json:"attributes,omitempty"`
 }
 
 // AttrTypes 从 Attributes 提取「键 -> 合并类型（number|scalar|set）」，只收录显式声明的合法类型。
@@ -84,13 +85,13 @@ type AIResult struct {
 
 type generateRequest struct {
 	World        WorldConfig    `json:"world"`
-	InitialState map[string]any `json:"initial_state"`
+	InitialState map[string]any `json:"initial_state,omitempty"`
 }
 
 type continueRequest struct {
 	World        WorldConfig    `json:"world"`
-	History      []PathStep     `json:"history"`
-	CurrentState map[string]any `json:"current_state"`
+	History      []PathStep     `json:"history,omitempty"`
+	CurrentState map[string]any `json:"current_state,omitempty"`
 	Choice       string         `json:"choice"`
 }
 
