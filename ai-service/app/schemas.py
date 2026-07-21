@@ -3,7 +3,22 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+
+class NoneTolerantModel(BaseModel):
+    """把显式传入的 null 视为「字段缺失」，回落到默认值。
+
+    Go 侧 nil 的 map/slice 会被 json.Marshal 成 null，而 pydantic 默认拒绝非 Optional
+    字段收到 null（返回 422）。此基类在校验前剔除值为 None 的键，交给字段默认值兜底。
+    """
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_none_values(cls, data):
+        if isinstance(data, dict):
+            return {k: v for k, v in data.items() if v is not None}
+        return data
 
 
 # ----- 通用剧情结构 -----
@@ -14,7 +29,7 @@ class Option(BaseModel):
     hint: str = ""
 
 
-class WorldConfig(BaseModel):
+class WorldConfig(NoneTolerantModel):
     """作品世界观配置（对应 stories.world_config）。"""
     background: str = ""
     style: str = ""
@@ -43,13 +58,13 @@ class AIResult(BaseModel):
 
 # ----- /generate 与 /continue 请求 -----
 
-class GenerateRequest(BaseModel):
+class GenerateRequest(NoneTolerantModel):
     """开场生成：给定世界观与初始属性。"""
     world: WorldConfig = Field(default_factory=WorldConfig)
     initial_state: dict[str, Any] = Field(default_factory=dict)
 
 
-class ContinueRequest(BaseModel):
+class ContinueRequest(NoneTolerantModel):
     """续写：给定世界观、历史路径、当前属性与本次玩家选择。"""
     world: WorldConfig = Field(default_factory=WorldConfig)
     history: list[PathStep] = Field(default_factory=list)
