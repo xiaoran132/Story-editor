@@ -120,3 +120,24 @@ class SuggestBranchesRequest(BaseModel):
 
 class BranchesResponse(BaseModel):
     branches: list[BranchSuggestion] = Field(default_factory=list)
+
+
+# ----- 节点语义合并去重 -----
+
+class MergeCandidate(NoneTolerantModel):
+    """已有的同层子节点，作为新选择的合并候选。"""
+    choice_text: str = ""
+    content: str = ""
+
+
+class MergeCheckRequest(NoneTolerantModel):
+    """判定新选择是否与某个已有候选语义等价（候选已由 Go 侧按 state_delta 相等预筛）。"""
+    new_choice: str = ""
+    new_content: str = ""
+    candidates: list[MergeCandidate] = Field(default_factory=list)
+
+
+class MergeCheckResponse(BaseModel):
+    """matched_index 为命中的候选下标；-1 表示都不等价、应新建节点。"""
+    matched_index: int = -1
+    reason: str = ""

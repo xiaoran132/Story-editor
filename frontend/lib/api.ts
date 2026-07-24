@@ -28,6 +28,12 @@ async function request<T>(
     throw new Error("无法连接后端服务，请确认后端已启动");
   }
 
+  // 204 No Content（如 DELETE）无响应体，直接视为成功。
+  if (res.status === 204) {
+    if (res.ok) return undefined as T;
+    throw new Error(`请求失败（HTTP ${res.status}）`);
+  }
+
   let env: Envelope<T>;
   try {
     env = (await res.json()) as Envelope<T>;
@@ -44,6 +50,7 @@ async function request<T>(
 export const api = {
   get: <T>(path: string) => request<T>("GET", path),
   post: <T>(path: string, body?: unknown) => request<T>("POST", path, body),
+  del: <T>(path: string) => request<T>("DELETE", path),
 };
 
 export { API_BASE };

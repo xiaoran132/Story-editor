@@ -105,7 +105,7 @@ backend/
 - `/api/v1/auth/*` — 注册/登录/个人资料
 - `/api/v1/stories/*` — 剧情 CRUD + 节点创建
 - `/api/v1/nodes/*` — 节点查询/更新/删除
-- `/api/v1/play/*` — 游玩会话：开局 `POST /sessions`、列表 `GET /sessions`（当前玩家/guest 的历史会话，含 `story_title`，供读档）、查询 `GET /sessions/:id`、选择 `POST /sessions/:id/choice`、回溯 `POST /sessions/:id/backtrack`（匿名可玩）
+- `/api/v1/play/*` — 游玩会话：开局 `POST /sessions`、列表 `GET /sessions`（当前玩家/guest 的历史会话，含 `story_title`，供读档）、查询 `GET /sessions/:id`、删除 `DELETE /sessions/:id`（删档，校验归属后事务级联删该局全部节点）、选择 `POST /sessions/:id/choice`、回溯 `POST /sessions/:id/backtrack`（匿名可玩）
 - `/api/v1/community/*` — 社区浏览/详情/点赞/评论（handler 桩）
 
 ### 统一错误处理
@@ -161,7 +161,9 @@ Service 层定义自己的输入结构体（如 `service.StoryCreateInput`、`se
 
 ### AgentClient
 
-`service/agent_client.go` 是独立的 HTTP 客户端，调用 Python agent 服务的 `/generate` 和 `/continue` 端点。不依赖 repository 层。
+`service/agent_client.go` 是独立的 HTTP 客户端，调用 Python agent 服务的 `/generate`、`/continue`、`/merge-check` 端点。不依赖 repository 层。`CheckMerge` 用通用的 `postInto`（`post` 是其 `AIResult` 特化包装）。
+
+**节点语义合并去重**（`play.go` 的 `tryMerge`）：`MakeChoice` 调 `Continue` 生成后、新建节点前，取当前节点的同层子节点（`FindChildren`），先按 `state_delta` 规范 JSON 相等**硬过滤**（`deltaEqual`，省掉 AI 调用），再对候选调 `CheckMerge` 判语义等价；命中则复用该子节点（改 session 指针、`NodeCount` 不变），否则新建。保守策略：agent 不确定即不合并。
 
 ## PostgreSQL / GORM
 
@@ -181,7 +183,8 @@ Service 层定义自己的输入结构体（如 `service.StoryCreateInput`、`se
 | Node（节点创建/子节点/更新/删除）                  | 完成 |
 | Play / 游玩会话（开局/选择/回溯 + 属性合并 + 会话列表）   | 完成（`PlayService` + `/play` 路由，含 `GET /sessions` 读档列表） |
 | AgentClient + Agent 服务对接              | 完成（`agent/` + Go HTTP 编排，属性类型系统 number/scalar/set） |
-| 游玩前端（Next.js）                         | 完成（`frontend/`：作品选择、游玩、历史会话读档续玩；登录/注册未接入，沿用匿名 guest） |
+| 游玩前端（Next.js）                         | 完成（`frontend/`：星图主题；作品选择、游玩、历史会话读档续玩+删档；已探索剧情线以发光星图展示、点击节点回溯；登录/注册未接入，沿用匿名 guest） |
+| 节点语义合并去重                            | 完成（`MakeChoice` 生成后：同层子节点按 `state_delta` 相等硬过滤 + agent `/merge-check` 判语义等价 → 命中复用不新建，避免近义分支污染剧情树） |
 | Community（浏览/详情/点赞/评论）                | handler 桩，全部 TODO |
 
 ## 数据库设计蓝本（infa/sql/）
@@ -197,7 +200,7 @@ Service 层定义自己的输入结构体（如 `service.StoryCreateInput`、`se
 独立进程，Go 后端通过 `AGENT_URL`（默认 `http://localhost:8001`）调用，**不碰数据库**。DeepSeek 凭证下沉到 `agent/.env`，Go 侧不再直连大模型。
 
 - `app/graph/story_graph.py` — LangGraph 工作流 `prepare → generate → normalize`（构建上下文/注入属性类型 → 调 LLM → 按类型规整 delta、过滤非法键、规整结局）
-- `app/routers/generate.py` — `POST /generate`（开场）、`/continue`（续写），Go 的 `service/agent_client.go` 调这两个
+- `app/routers/generate.py` — `POST /generate`（开场）、`/continue`（续写）、`/merge-check`（节点语义合并判定），Go 的 `service/agent_client.go` 调这三个
 - `app/routers/assist.py` — 创作辅助 `POST /assist/world|opening|polish|branches`（`/world` 会一并产出 `attributes` 类型声明）
 - `app/schemas.py` — 请求/响应模型，`WorldConfig.attributes` 承载属性类型声明，与 Go 契约对齐
 - `app/llm.py` — DeepSeek（OpenAI 兼容）客户端，强制 `response_format=json_object`

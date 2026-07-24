@@ -153,6 +153,21 @@ func (s *PlayService) MakeChoice(sessionID uuid.UUID, choice string) (*SessionRe
 
 	newState := mergeState(currentState, result.StateDelta, world.AttrTypes())
 
+	// 生成后去重：若新选择与当前节点的某个已有直接子节点「状态变化相同 + 语义等价」，
+	// 复用该子节点而不新建，避免近义选择（如“冲进衣帽间”/“冲到衣帽间内”）污染剧情树。
+	if merged, err := s.tryMerge(ctx, *session.CurrentNodeID, choice, result); err == nil && merged != nil {
+		session.CurrentNodeID = &merged.ID
+		session.CurrentState = merged.StateSnapshot // delta 与父状态一致，快照等价
+		session.LastPlayedAt = time.Now()
+		if merged.IsEnding {
+			session.Status = "ended"
+		}
+		if err := s.sessions.Update(ctx, session); err != nil {
+			return nil, err
+		}
+		return &SessionResult{Session: session.ToResponse(), CurrentNode: merged.ToResponse()}, nil
+	}
+
 	parentID := *session.CurrentNodeID
 	choiceText := choice
 	node := &model.StoryNode{
@@ -192,6 +207,54 @@ func (s *PlayService) MakeChoice(sessionID uuid.UUID, choice string) (*SessionRe
 	return &SessionResult{Session: session.ToResponse(), CurrentNode: node.ToResponse()}, nil
 }
 
+// tryMerge 在当前节点的已有直接子节点中，寻找与本次生成「state_delta 相同 + 语义等价」的一个复用。
+// 先按 delta 相等硬过滤（省掉 AI 调用），再对候选调 agent 判语义；命中返回该子节点，否则 (nil, nil)。
+func (s *PlayService) tryMerge(ctx context.Context, parentID uuid.UUID, choice string, result *AIResult) (*model.StoryNode, error) {
+	children, err := s.nodes.FindChildren(ctx, parentID)
+	if err != nil {
+		return nil, err
+	}
+	if len(children) == 0 {
+		return nil, nil
+	}
+
+	newDelta := dumpState(result.StateDelta) // 与子节点 StateDelta 同出 dumpState，键有序可比
+	var candidates []MergeCandidate
+	var candIdx []int // candidates[i] 对应 children 的下标
+	for i := range children {
+		if deltaEqual(children[i].StateDelta, newDelta) {
+			ct := ""
+			if children[i].ChoiceText != nil {
+				ct = *children[i].ChoiceText
+			}
+			candidates = append(candidates, MergeCandidate{ChoiceText: ct, Content: children[i].Content})
+			candIdx = append(candIdx, i)
+		}
+	}
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+
+	matched, err := s.ai.CheckMerge(ctx, choice, result.Content, candidates)
+	if err != nil {
+		return nil, err // 判定失败：不合并，交由调用方走新建
+	}
+	if matched < 0 {
+		return nil, nil
+	}
+	return &children[candIdx[matched]], nil
+}
+
+// deltaEqual 比较两个 state_delta 的规范 JSON 是否相等。
+// 两侧都出自 dumpState（map[string]any → 键有序的 JSON），值相等则字符串相等；
+// 为兜底格式差异（如 {} 与空串），再做一次解析后的 JSON 规范化比较。
+func deltaEqual(stored, fresh string) bool {
+	if stored == fresh {
+		return true
+	}
+	return dumpState(parseState(stored)) == dumpState(parseState(fresh))
+}
+
 // Backtrack 回溯到某历史节点：不删数据，恢复该节点的状态快照，从该点继续分叉。
 func (s *PlayService) Backtrack(sessionID, nodeID uuid.UUID) (*SessionResult, error) {
 	ctx := context.Background()
@@ -221,6 +284,31 @@ func (s *PlayService) Backtrack(sessionID, nodeID uuid.UUID) (*SessionResult, er
 	}
 
 	return &SessionResult{Session: session.ToResponse(), CurrentNode: node.ToResponse()}, nil
+}
+
+// DeleteSession 删除一局游玩会话及其全部节点（读档列表删档）。
+// 归属校验与列表口径一致：仅允许删除自己（当前匿名回退 guest）名下的会话。
+func (s *PlayService) DeleteSession(playerID, sessionID uuid.UUID) error {
+	ctx := context.Background()
+
+	session, err := s.sessions.FindByID(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	if session == nil {
+		return pkg.NotFound("session not found")
+	}
+	if session.PlayerID != playerID {
+		return pkg.Forbidden("cannot delete another player's session")
+	}
+
+	// 事务：先删该局全部节点，再删会话行（模型无外键，级联手动处理）。
+	return s.sessions.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("session_id = ?", sessionID).Delete(&model.StoryNode{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&model.PlaySession{}, "id = ?", sessionID).Error
+	})
 }
 
 // GetSession 返回会话 + 当前节点 + 该局全部节点（供时间线渲染）。

@@ -1,26 +1,25 @@
 import { create } from "zustand";
 import { api } from "@/lib/api";
-import { buildPath } from "@/lib/state";
 import type { Session, SessionResult, StoryNode } from "@/lib/types";
 
 interface PlayState {
   session: Session | null;
   currentNode: StoryNode | null;
-  path: StoryNode[]; // 根 → 当前，供时间线渲染
+  allNodes: StoryNode[]; // 该会话已探索的全部节点，供树状视图建树
   busy: boolean; // AI 生成中，禁用交互
   loading: boolean; // 首次加载会话中
   error: string | null;
 
   load: (sessionId: string) => Promise<void>;
   choose: (choice: string) => Promise<void>;
-  backtrack: (nodeId: string, index: number) => Promise<void>;
+  backtrack: (nodeId: string) => Promise<void>;
   reset: () => void;
 }
 
 export const usePlayStore = create<PlayState>((set, get) => ({
   session: null,
   currentNode: null,
-  path: [],
+  allNodes: [],
   busy: false,
   loading: false,
   error: null,
@@ -29,7 +28,7 @@ export const usePlayStore = create<PlayState>((set, get) => ({
     set({
       session: null,
       currentNode: null,
-      path: [],
+      allNodes: [],
       busy: false,
       loading: false,
       error: null,
@@ -39,11 +38,10 @@ export const usePlayStore = create<PlayState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const r = await api.get<SessionResult>(`/play/sessions/${sessionId}`);
-      const nodes = r.nodes ?? [];
       set({
         session: r.session,
         currentNode: r.current_node,
-        path: buildPath(nodes, r.session.current_node_id),
+        allNodes: r.nodes ?? [],
         loading: false,
       });
     } catch (e) {
@@ -63,7 +61,10 @@ export const usePlayStore = create<PlayState>((set, get) => ({
       set((s) => ({
         session: r.session,
         currentNode: r.current_node,
-        path: r.current_node ? [...s.path, r.current_node] : s.path,
+        // choice 响应不含 nodes，新生成的子节点增量并入
+        allNodes: r.current_node
+          ? [...s.allNodes, r.current_node]
+          : s.allNodes,
         busy: false,
       }));
     } catch (e) {
@@ -71,7 +72,7 @@ export const usePlayStore = create<PlayState>((set, get) => ({
     }
   },
 
-  backtrack: async (nodeId, index) => {
+  backtrack: async (nodeId) => {
     const { session, busy } = get();
     if (!session || busy) return;
     set({ busy: true, error: null });
@@ -80,12 +81,12 @@ export const usePlayStore = create<PlayState>((set, get) => ({
         `/play/sessions/${session.id}/backtrack`,
         { node_id: nodeId }
       );
-      set((s) => ({
+      // 回溯只移动当前指针，不产生新节点，allNodes 保持不变
+      set({
         session: r.session,
         currentNode: r.current_node,
-        path: s.path.slice(0, index + 1),
         busy: false,
-      }));
+      });
     } catch (e) {
       set({ busy: false, error: (e as Error).message });
     }

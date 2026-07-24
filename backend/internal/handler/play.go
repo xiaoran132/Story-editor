@@ -105,6 +105,21 @@ func (h *PlayHandler) List(c *gin.Context) {
 	pkg.Success(c, items)
 }
 
+// Delete 删除当前玩家名下的一局会话（含全部节点）。
+func (h *PlayHandler) Delete(c *gin.Context) {
+	sessionID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		pkg.Error(c, pkg.BadRequest("invalid session id"))
+		return
+	}
+
+	if err := h.svc.DeleteSession(h.player(c), sessionID); err != nil {
+		pkg.Error(c, err)
+		return
+	}
+	pkg.NoContent(c)
+}
+
 func (h *PlayHandler) Get(c *gin.Context) {
 	sessionID, err := uuid.Parse(c.Param("id"))
 	if err != nil {

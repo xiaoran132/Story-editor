@@ -14,7 +14,7 @@ export default function StoryPane({
       </div>
       {node?.is_ending && (
         <div className="ending">
-          — 结局（{node.ending_type || "end"}）— 可点击时间线回溯重玩
+          ✦ 结局（{node.ending_type || "end"}）· 可在下方星图回溯重玩
         </div>
       )}
     </>

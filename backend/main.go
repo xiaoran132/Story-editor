@@ -101,6 +101,7 @@ func main() {
 		play.POST("/sessions", playH.Start)
 		play.GET("/sessions", playH.List)
 		play.GET("/sessions/:id", playH.Get)
+		play.DELETE("/sessions/:id", playH.Delete)
 		play.POST("/sessions/:id/choice", playH.Choice)
 		play.POST("/sessions/:id/backtrack", playH.Backtrack)
 	}

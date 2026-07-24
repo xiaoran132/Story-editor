@@ -6,7 +6,7 @@ import { usePlayStore } from "@/store/playStore";
 import AttrBar from "@/components/AttrBar";
 import StoryPane from "@/components/StoryPane";
 import OptionList from "@/components/OptionList";
-import Timeline from "@/components/Timeline";
+import StoryTree from "@/components/StoryTree";
 
 export default function PlayPage() {
   const router = useRouter();
@@ -16,7 +16,7 @@ export default function PlayPage() {
   const {
     session,
     currentNode,
-    path,
+    allNodes,
     busy,
     loading,
     error,
@@ -56,7 +56,12 @@ export default function PlayPage() {
               : ""}
           </div>
 
-          <Timeline path={path} busy={busy} onBacktrack={backtrack} />
+          <StoryTree
+            nodes={allNodes}
+            currentNodeId={session?.current_node_id ?? null}
+            busy={busy}
+            onBacktrack={backtrack}
+          />
         </>
       )}
     </div>

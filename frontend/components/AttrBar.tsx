@@ -8,7 +8,8 @@ export default function AttrBar({ stateJSON }: { stateJSON: string | null }) {
     <div className="attrs">
       {keys.map((k) => (
         <div className="attr" key={k}>
-          <b>{k}</b> {formatAttrValue(state[k])}
+          <b>{k}</b>
+          <span className="val">{formatAttrValue(state[k])}</span>
         </div>
       ))}
     </div>

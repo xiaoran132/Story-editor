@@ -95,6 +95,23 @@ type continueRequest struct {
 	Choice       string         `json:"choice"`
 }
 
+// MergeCandidate 是新选择的一个合并候选（已有同层子节点），由 Go 侧按 state_delta 相等预筛。
+type MergeCandidate struct {
+	ChoiceText string `json:"choice_text"`
+	Content    string `json:"content"`
+}
+
+type mergeCheckRequest struct {
+	NewChoice  string           `json:"new_choice"`
+	NewContent string           `json:"new_content"`
+	Candidates []MergeCandidate `json:"candidates"`
+}
+
+type mergeCheckResponse struct {
+	MatchedIndex int    `json:"matched_index"`
+	Reason       string `json:"reason"`
+}
+
 // StartStory 生成开场剧情。
 func (c *AgentClient) StartStory(ctx context.Context, world WorldConfig, initialState map[string]any) (*AIResult, error) {
 	return c.post(ctx, "/generate", generateRequest{World: world, InitialState: initialState})
@@ -110,33 +127,32 @@ func (c *AgentClient) Continue(ctx context.Context, world WorldConfig, history [
 	})
 }
 
+// CheckMerge 判定新选择是否与某个已有同层候选语义等价（候选已按 state_delta 相等预筛）。
+// 返回命中的候选下标；-1 表示不合并、应新建节点。候选为空时不调用 AI，直接返回 -1。
+func (c *AgentClient) CheckMerge(ctx context.Context, newChoice, newContent string, candidates []MergeCandidate) (int, error) {
+	if len(candidates) == 0 {
+		return -1, nil
+	}
+	var out mergeCheckResponse
+	err := c.postInto(ctx, "/merge-check", mergeCheckRequest{
+		NewChoice:  newChoice,
+		NewContent: newContent,
+		Candidates: candidates,
+	}, &out)
+	if err != nil {
+		return -1, err
+	}
+	if out.MatchedIndex < 0 || out.MatchedIndex >= len(candidates) {
+		return -1, nil
+	}
+	return out.MatchedIndex, nil
+}
+
 // post 向 AI 服务发送 JSON 请求并解析 AIResult。
 func (c *AgentClient) post(ctx context.Context, path string, payload any) (*AIResult, error) {
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("marshal request: %w", err)
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(raw))
-	if err != nil {
-		return nil, fmt.Errorf("build request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("call ai service: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("ai service status %d: %s", resp.StatusCode, string(body))
-	}
-
 	var result AIResult
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("decode ai result: %w (raw: %s)", err, string(body))
+	if err := c.postInto(ctx, path, payload, &result); err != nil {
+		return nil, err
 	}
 	if result.Options == nil {
 		result.Options = []Option{}
@@ -145,4 +161,34 @@ func (c *AgentClient) post(ctx context.Context, path string, payload any) (*AIRe
 		result.StateDelta = map[string]any{}
 	}
 	return &result, nil
+}
+
+// postInto 向 AI 服务发送 JSON 请求，并把响应体解码进 out（通用于不同响应结构）。
+func (c *AgentClient) postInto(ctx context.Context, path string, payload, out any) error {
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(raw))
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("call ai service: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("ai service status %d: %s", resp.StatusCode, string(body))
+	}
+
+	if err := json.Unmarshal(body, out); err != nil {
+		return fmt.Errorf("decode ai result: %w (raw: %s)", err, string(body))
+	}
+	return nil
 }

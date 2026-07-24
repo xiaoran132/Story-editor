@@ -1,8 +1,8 @@
 # 前端（游玩）
 
-AI 互动剧情的**游玩前端**：作品选择、游玩体验（选项/自由行动/回溯）、历史会话读档续玩。
+AI 互动剧情的**游玩前端**：作品选择、游玩体验（选项/自由行动/回溯）、历史会话读档续玩+删档。
 
-技术栈：Next.js 14（App Router）+ React 18 + TypeScript + Zustand。样式为单份全局 CSS（`app/globals.css`），沿用后端占位页的暗色古典 + 金色点缀 + 衬线主题。
+技术栈：Next.js 14（App Router）+ React 18 + TypeScript + Zustand。样式为单份全局 CSS（`app/globals.css`），采用**「星图」主题**——深空藏蓝底 + 星光双主色（冷蓝 `--glow` 表结构/连线，暖金 `--star` 表"你所在/主线"）；显示字体 Space Grotesk（`next/font`），正文用衬线（Songti/Noto Serif）。签名件是发光的剧情星图树。
 
 > 本前端只做「游玩」链路，登录/注册尚未接入——游玩沿用后端的匿名 guest 用户。
 
@@ -29,8 +29,8 @@ Windows 下也可用仓库根的 `.\scripts\dev.ps1`（默认一并拉起 AI/后
 
 | 路由 | 说明 |
 |------|------|
-| `/` | 首页：`GET /stories/` 作品列表 + `GET /play/sessions` 我的历史会话（读档）。点作品 → `POST /play/sessions` 建会话并跳转游玩；点会话 → 直接续玩。 |
-| `/play/[sessionId]` | 游玩页（新开局与续玩共用）：挂载时 `GET /play/sessions/:id` 拉会话+当前节点+全部节点。选项/自由行动 → `POST …/choice`；点时间线节点 → `POST …/backtrack`。 |
+| `/` | 首页：星图 hero + `GET /stories/` 作品列表 + `GET /play/sessions` 我的历史会话（读档）。点作品 → `POST /play/sessions` 建会话并跳转游玩；点会话 → 直接续玩；会话卡右上角 → 二次确认后 `DELETE /play/sessions/:id` 删档（乐观移除）。 |
+| `/play/[sessionId]` | 游玩页（新开局与续玩共用）：挂载时 `GET /play/sessions/:id` 拉会话+当前节点+全部节点。选项/自由行动 → `POST …/choice`；点剧情线树上的历史节点 → `POST …/backtrack`。 |
 
 ## 目录结构
 
@@ -44,14 +44,15 @@ frontend/
 ├── lib/
 │   ├── api.ts                     # fetch 封装（解 {success,data,error} 信封）
 │   ├── types.ts                   # 与后端 DTO 对齐的类型
-│   └── state.ts                   # JSON 字符串字段解析 + 时间线 path 重建
-├── store/playStore.ts             # Zustand 游玩状态机（load/choose/backtrack）
-└── components/                    # StoryCard / SessionCard / AttrBar / StoryPane / OptionList / Timeline
+│   ├── state.ts                   # JSON 字符串字段解析 + 当前路径 buildPath 重建
+│   └── tree.ts                    # 剧情线树布局（buildChildrenMap / layoutTree）
+├── store/playStore.ts             # Zustand 游玩状态机（load/choose/backtrack，常驻 allNodes）
+└── components/                    # StoryCard / SessionCard / AttrBar / StoryPane / OptionList / StoryTree
 ```
 
 ## 与后端契约的要点
 
 - 响应信封统一为 `{ success, data, error, meta }`，`lib/api.ts` 只返回 `data`，失败抛 `error.message`。
 - `current_state`、`suggested_options`、`state_snapshot` 后端以 **JSON 字符串** 返回，需经 `lib/state.ts` 解析后使用。
-- 续玩时后端只返回全部节点与 `current_node_id`；时间线的当前路径由 `buildPath()` 沿 `parent_id` 向根回溯得到。
+- 续玩时后端只返回全部节点与 `current_node_id`；`store` 常驻这份 `allNodes`，`lib/tree.ts` 的 `layoutTree()` 用 `parent_id`/`depth` 建成**剧情线树**（SVG 节点连线图），完整展示已探索的全部分支——回溯不删数据，故被放弃的分支也在树上（变暗）。当前路径由 `buildPath()` 沿 `parent_id` 回溯并高亮。
 ```

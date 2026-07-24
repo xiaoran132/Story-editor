@@ -15,7 +15,7 @@ app/
 │   ├── state.py       # LangGraph 状态
 │   └── story_graph.py # prepare → generate → normalize 工作流
 └── routers/
-    ├── generate.py    # POST /generate  /continue
+    ├── generate.py    # POST /generate  /continue  /merge-check
     └── assist.py      # POST /assist/world|opening|polish|branches
 ```
 
@@ -45,6 +45,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8001
 |------|------|------|
 | POST | `/generate` | 生成开场剧情 |
 | POST | `/continue` | 根据历史与选择续写 |
+| POST | `/merge-check` | 判定新选择是否与某个已有同层候选语义等价（返回 `matched_index`，-1 表示不合并）；候选由 Go 侧按 `state_delta` 相等预筛 |
 | POST | `/assist/world` | 一句话灵感 → 世界观草稿 |
 | POST | `/assist/opening` | 世界观 → 开场草稿 |
 | POST | `/assist/polish` | 文本润色 |
