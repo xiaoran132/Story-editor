@@ -50,8 +50,8 @@ func main() {
 	userSvc := service.NewUserService(userRepo, cfg.JWTSecret)
 	storySvc := service.NewStoryService(storyRepo)
 	nodeSvc := service.NewNodeService(nodeRepo)
-	aiClient := service.NewAIClient(cfg.AIServiceURL)
-	playSvc := service.NewPlayService(sessionRepo, nodeRepo, storyRepo, aiClient)
+	agentClient := service.NewAgentClient(cfg.AgentURL)
+	playSvc := service.NewPlayService(sessionRepo, nodeRepo, storyRepo, agentClient)
 
 	// Handlers
 	userH := handler.NewUserHandler(userSvc)
@@ -99,6 +99,7 @@ func main() {
 	play := api.Group("/play")
 	{
 		play.POST("/sessions", playH.Start)
+		play.GET("/sessions", playH.List)
 		play.GET("/sessions/:id", playH.Get)
 		play.POST("/sessions/:id/choice", playH.Choice)
 		play.POST("/sessions/:id/backtrack", playH.Backtrack)

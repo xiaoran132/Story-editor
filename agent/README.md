@@ -1,6 +1,6 @@
-# Story Editor · AI 服务
+# Story Editor · agent 服务
 
-独立的 Python AI 服务（FastAPI + LangGraph），负责「给定世界观 + 历史路径 + 玩家输入 → 返回结构化剧情」，**不碰数据库**。Go 后端通过 `AI_SERVICE_URL`（默认 `http://localhost:8001`）调用本服务。
+独立的 Python agent 服务（FastAPI + LangGraph），负责「给定世界观 + 历史路径 + 玩家输入 → 返回结构化剧情」，**不碰数据库**。Go 后端通过 `AGENT_URL`（默认 `http://localhost:8001`）调用本服务。
 
 ## 架构
 
@@ -30,7 +30,7 @@ app/
 ## 运行
 
 ```bash
-cd ai-service
+cd agent
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 cp .env.example .env    # 填入 DEEPSEEK_API_KEY

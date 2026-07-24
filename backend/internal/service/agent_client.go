@@ -11,17 +11,17 @@ import (
 	"time"
 )
 
-// AIClient 调用独立的 Python AI 服务（FastAPI + LangGraph）。
+// AgentClient 调用独立的 Python agent 服务（FastAPI + LangGraph）。
 // 后端只做「组装上下文 → HTTP 调用 → 落库」，剧情生成的提示词与工作流全在 Python 侧，
 // 便于后期扩展多模型路由、一致性检查等 Agent 节点而不改动 Go。
-type AIClient struct {
+type AgentClient struct {
 	baseURL    string
 	httpClient *http.Client
 }
 
-// NewAIClient 以 AI 服务地址（cfg.AIServiceURL，默认 http://localhost:8001）构造。
-func NewAIClient(serviceURL string) *AIClient {
-	return &AIClient{
+// NewAgentClient 以 agent 服务地址（cfg.AgentURL，默认 http://localhost:8001）构造。
+func NewAgentClient(serviceURL string) *AgentClient {
+	return &AgentClient{
 		baseURL: strings.TrimRight(serviceURL, "/"),
 		httpClient: &http.Client{
 			Timeout: 90 * time.Second,
@@ -96,12 +96,12 @@ type continueRequest struct {
 }
 
 // StartStory 生成开场剧情。
-func (c *AIClient) StartStory(ctx context.Context, world WorldConfig, initialState map[string]any) (*AIResult, error) {
+func (c *AgentClient) StartStory(ctx context.Context, world WorldConfig, initialState map[string]any) (*AIResult, error) {
 	return c.post(ctx, "/generate", generateRequest{World: world, InitialState: initialState})
 }
 
 // Continue 根据历史路径、当前属性和玩家选择生成下一段剧情。
-func (c *AIClient) Continue(ctx context.Context, world WorldConfig, history []PathStep, currentState map[string]any, choice string) (*AIResult, error) {
+func (c *AgentClient) Continue(ctx context.Context, world WorldConfig, history []PathStep, currentState map[string]any, choice string) (*AIResult, error) {
 	return c.post(ctx, "/continue", continueRequest{
 		World:        world,
 		History:      history,
@@ -111,7 +111,7 @@ func (c *AIClient) Continue(ctx context.Context, world WorldConfig, history []Pa
 }
 
 // post 向 AI 服务发送 JSON 请求并解析 AIResult。
-func (c *AIClient) post(ctx context.Context, path string, payload any) (*AIResult, error) {
+func (c *AgentClient) post(ctx context.Context, path string, payload any) (*AIResult, error) {
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)

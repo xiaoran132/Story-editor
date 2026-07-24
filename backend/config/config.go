@@ -8,14 +8,14 @@ import (
 )
 
 type Config struct {
-	DBHost       string `mapstructure:"DB_HOST"`
-	DBPort       string `mapstructure:"DB_PORT"`
-	DBUser       string `mapstructure:"DB_USER"`
-	DBPassword   string `mapstructure:"DB_PASSWORD"`
-	DBName       string `mapstructure:"DB_NAME"`
-	JWTSecret    string `mapstructure:"JWT_SECRET"`
-	ServerPort   string `mapstructure:"SERVER_PORT"`
-	AIServiceURL string `mapstructure:"AI_SERVICE_URL"`
+	DBHost     string `mapstructure:"DB_HOST"`
+	DBPort     string `mapstructure:"DB_PORT"`
+	DBUser     string `mapstructure:"DB_USER"`
+	DBPassword string `mapstructure:"DB_PASSWORD"`
+	DBName     string `mapstructure:"DB_NAME"`
+	JWTSecret  string `mapstructure:"JWT_SECRET"`
+	ServerPort string `mapstructure:"SERVER_PORT"`
+	AgentURL   string `mapstructure:"AGENT_URL"`
 }
 
 func (c *Config) DSN() string {
@@ -47,7 +47,7 @@ func Load(configPath string) (*Config, error) {
 	_ = v.BindEnv("DB_NAME")
 	_ = v.BindEnv("JWT_SECRET")
 	_ = v.BindEnv("SERVER_PORT")
-	_ = v.BindEnv("AI_SERVICE_URL")
+	_ = v.BindEnv("AGENT_URL")
 
 	setDefaults(v)
 
@@ -73,5 +73,5 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("DB_NAME", "story_editor")
 	v.SetDefault("JWT_SECRET", "change-me-in-production")
 	v.SetDefault("SERVER_PORT", ":8080")
-	v.SetDefault("AI_SERVICE_URL", "http://localhost:8001")
+	v.SetDefault("AGENT_URL", "http://localhost:8001")
 }

@@ -95,6 +95,16 @@ func (h *PlayHandler) Backtrack(c *gin.Context) {
 	pkg.Success(c, result)
 }
 
+// List 列出当前玩家（匿名回退 guest）的历史会话，供读档/续玩。
+func (h *PlayHandler) List(c *gin.Context) {
+	items, err := h.svc.ListSessions(h.player(c))
+	if err != nil {
+		pkg.Error(c, err)
+		return
+	}
+	pkg.Success(c, items)
+}
+
 func (h *PlayHandler) Get(c *gin.Context) {
 	sessionID, err := uuid.Parse(c.Param("id"))
 	if err != nil {

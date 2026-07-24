@@ -3,25 +3,26 @@
     Story-editor 本地开发启动脚本（Windows / PowerShell）。
 
 .DESCRIPTION
-    一键拉起 AI 服务（Python FastAPI，:8001）与 Go 后端（Gin，:8080）。
+    一键拉起 Agent 服务（Python FastAPI，:8001）、Go 后端（Gin，:8080）与前端（Next.js，:3000）。
     - 每个服务在**独立窗口**运行，便于看日志、单独 Ctrl+C。
-    - 启动前做前置检查：Go 工具链、Python 虚拟环境、依赖、.env、PostgreSQL 可达性、DeepSeek 密钥。
+    - 启动前做前置检查：Go 工具链、Python 虚拟环境、依赖、.env、PostgreSQL 可达性、DeepSeek 密钥、Node 工具链与前端依赖。
     - 不负责启动 PostgreSQL（用户自备）；不可达时给出明确提示。
 
 .PARAMETER Only
-    只启动某个服务：all（默认）| ai | backend。
+    只启动某个服务：all（默认）| agent | backend | frontend。
 
 .PARAMETER SkipChecks
     跳过前置检查，直接启动（用于快速重启）。
 
 .EXAMPLE
-    .\dev.ps1                # 检查并启动全部
-    .\dev.ps1 -Only ai       # 只起 AI 服务
-    .\dev.ps1 -Only backend  # 只起 Go 后端
+    .\dev.ps1                 # 检查并启动全部
+    .\dev.ps1 -Only agent     # 只起 Agent 服务
+    .\dev.ps1 -Only backend   # 只起 Go 后端
+    .\dev.ps1 -Only frontend  # 只起前端
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('all', 'ai', 'backend')]
+    [ValidateSet('all', 'agent', 'backend', 'frontend')]
     [string]$Only = 'all',
     [switch]$SkipChecks
 )
@@ -30,11 +31,13 @@ $ErrorActionPreference = 'Stop'
 
 # ---------- 路径 ----------
 $root      = Split-Path -Parent $PSScriptRoot   # 脚本在 scripts/，仓库根在上一级
-$aiDir     = Join-Path $root 'ai-service'
+$agentDir     = Join-Path $root 'agent'
 $backDir   = Join-Path $root 'backend'
-$venvPy    = Join-Path $aiDir '.venv\Scripts\python.exe'
-$aiPort    = 8001
+$frontDir  = Join-Path $root 'frontend'
+$venvPy    = Join-Path $agentDir '.venv\Scripts\python.exe'
+$agentPort    = 8001
 $backPort  = 8080   # 仅用于提示，真实端口由 backend/.env 的 SERVER_PORT 决定
+$frontPort = 3000
 
 # ---------- 输出辅助 ----------
 function Info($m) { Write-Host "[dev] $m" -ForegroundColor Cyan }
@@ -99,25 +102,25 @@ if (-not $SkipChecks) {
         }
     }
 
-    # AI 服务：虚拟环境 + 依赖 + .env + DeepSeek 密钥
-    if ($Only -in @('all', 'ai')) {
-        Ensure-EnvFile (Join-Path $aiDir '.env.example') (Join-Path $aiDir '.env')
+    # agent 服务：虚拟环境 + 依赖 + .env + DeepSeek 密钥
+    if ($Only -in @('all', 'agent')) {
+        Ensure-EnvFile (Join-Path $agentDir '.env.example') (Join-Path $agentDir '.env')
 
         if (-not (Test-Path $venvPy)) {
-            Warn '未发现 ai-service\.venv，正在创建虚拟环境并安装依赖（首次较慢）…'
-            python -m venv (Join-Path $aiDir '.venv')
+            Warn '未发现 agent\.venv，正在创建虚拟环境并安装依赖（首次较慢）…'
+            python -m venv (Join-Path $agentDir '.venv')
             & $venvPy -m pip install --upgrade pip | Out-Null
-            & $venvPy -m pip install -r (Join-Path $aiDir 'requirements.txt')
+            & $venvPy -m pip install -r (Join-Path $agentDir 'requirements.txt')
             Ok '依赖安装完成。'
         }
 
         # DeepSeek 密钥检查（.env 与环境变量都没有才告警；服务仍可启动，但 /generate 会 502）
-        $aiEnv = Read-DotEnv (Join-Path $aiDir '.env')
-        $key = $aiEnv['DEEPSEEK_API_KEY']
+        $agentEnv = Read-DotEnv (Join-Path $agentDir '.env')
+        $key = $agentEnv['DEEPSEEK_API_KEY']
         $fromEnv = (-not [string]::IsNullOrWhiteSpace($key)) -and ($key -ne 'your-key-here')
         $fromOs = -not [string]::IsNullOrWhiteSpace($env:DEEPSEEK_API_KEY)
         if (-not ($fromEnv -or $fromOs)) {
-            Warn 'DEEPSEEK_API_KEY 未配置（.env 与环境变量均无）——AI 生成接口会返回 502，请在 ai-service\.env 填入真实密钥。'
+            Warn 'DEEPSEEK_API_KEY 未配置（.env 与环境变量均无）——AI 生成接口会返回 502，请在 agent\.env 填入真实密钥。'
         }
     }
 
@@ -140,14 +143,31 @@ if (-not $SkipChecks) {
             Warn "       createdb -U $($backEnv['DB_USER']) $dbName    # 或用 pgAdmin/psql 创建"
         }
     }
+
+    # 前端：Node 工具链 + 依赖 + .env.local
+    if ($Only -in @('all', 'frontend')) {
+        # 用 npm.cmd 显式调用 Windows 批处理垫片：直接 `npm` 可能被解析到 npm 随包附带的
+        # 无扩展名 Unix 脚本，触发「选择打开方式」对话框。
+        if (-not (Get-Command npm.cmd -ErrorAction SilentlyContinue)) {
+            Die 'npm 未安装或不在 PATH。请安装 Node.js 18+ 后重试。'
+        }
+        Ensure-EnvFile (Join-Path $frontDir '.env.local.example') (Join-Path $frontDir '.env.local')
+        if (-not (Test-Path (Join-Path $frontDir 'node_modules'))) {
+            Warn '未发现 frontend\node_modules，正在安装前端依赖（首次较慢）…'
+            Push-Location $frontDir
+            npm.cmd install
+            Pop-Location
+            Ok '前端依赖安装完成。'
+        }
+    }
 }
 
 # ================= 启动 =================
 Info "启动服务（Only=$Only）…"
 
-if ($Only -in @('all', 'ai')) {
-    $aiCmd = "& '$venvPy' -m uvicorn app.main:app --host 0.0.0.0 --port $aiPort --reload"
-    Start-InWindow 'story-ai (:8001)' $aiDir $aiCmd
+if ($Only -in @('all', 'agent')) {
+    $agentCmd = "& '$venvPy' -m uvicorn app.main:app --host 0.0.0.0 --port $agentPort --reload"
+    Start-InWindow 'story-agent (:8001)' $agentDir $agentCmd
 }
 
 if ($Only -in @('all', 'backend')) {
@@ -155,9 +175,15 @@ if ($Only -in @('all', 'backend')) {
     Start-InWindow 'story-backend (:8080)' $backDir 'go run .'
 }
 
+if ($Only -in @('all', 'frontend')) {
+    # 同上：用 npm.cmd 避免「选择打开方式」对话框。
+    Start-InWindow 'story-frontend (:3000)' $frontDir 'npm.cmd run dev'
+}
+
 Write-Host ''
 Ok '已拉起以下服务（各自独立窗口）：'
-if ($Only -in @('all', 'ai'))      { Write-Host "  · AI 服务   http://localhost:$aiPort/health" }
-if ($Only -in @('all', 'backend')) { Write-Host "  · Go 后端   http://localhost:$backPort  (API: /api/v1)" }
+if ($Only -in @('all', 'agent'))     { Write-Host "  · Agent 服务 http://localhost:$agentPort/health" }
+if ($Only -in @('all', 'backend'))  { Write-Host "  · Go 后端   http://localhost:$backPort  (API: /api/v1)" }
+if ($Only -in @('all', 'frontend')) { Write-Host "  · 前端      http://localhost:$frontPort" }
 Write-Host ''
 Info '关闭对应窗口即可停止服务。'

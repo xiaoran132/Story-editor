@@ -31,6 +31,16 @@ func (r *PlaySessionRepository) FindByID(ctx context.Context, id uuid.UUID) (*mo
 	return &s, err
 }
 
+// FindByPlayerID 列出某玩家的全部会话，按最近游玩时间倒序（供读档/续玩列表）。
+func (r *PlaySessionRepository) FindByPlayerID(ctx context.Context, playerID uuid.UUID) ([]model.PlaySession, error) {
+	var sessions []model.PlaySession
+	err := r.db.WithContext(ctx).
+		Where("player_id = ?", playerID).
+		Order("last_played_at DESC").
+		Find(&sessions).Error
+	return sessions, err
+}
+
 func (r *PlaySessionRepository) Update(ctx context.Context, s *model.PlaySession) error {
 	return r.db.WithContext(ctx).Save(s).Error
 }

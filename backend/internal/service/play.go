@@ -19,14 +19,14 @@ type PlayService struct {
 	sessions *repository.PlaySessionRepository
 	nodes    *repository.NodeRepository
 	stories  *repository.StoryRepository
-	ai       *AIClient
+	ai       *AgentClient
 }
 
 func NewPlayService(
 	sessions *repository.PlaySessionRepository,
 	nodes *repository.NodeRepository,
 	stories *repository.StoryRepository,
-	ai *AIClient,
+	ai *AgentClient,
 ) *PlayService {
 	return &PlayService{sessions: sessions, nodes: nodes, stories: stories, ai: ai}
 }
@@ -260,6 +260,41 @@ func (s *PlayService) GetSession(sessionID uuid.UUID) (*SessionResult, error) {
 		CurrentNode: current,
 		Nodes:       responses,
 	}, nil
+}
+
+// SessionListItem 是读档列表项：会话摘要 + 作品标题（便于前端直接展示）。
+type SessionListItem struct {
+	*model.SessionResponse
+	StoryTitle string `json:"story_title"`
+}
+
+// ListSessions 列出某玩家的全部会话（含作品标题），按最近游玩时间倒序。
+func (s *PlayService) ListSessions(playerID uuid.UUID) ([]SessionListItem, error) {
+	ctx := context.Background()
+
+	sessions, err := s.sessions.FindByPlayerID(ctx, playerID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 缓存作品标题，避免同一作品重复查询。
+	titles := map[uuid.UUID]string{}
+	items := make([]SessionListItem, 0, len(sessions))
+	for i := range sessions {
+		sess := &sessions[i]
+		title, ok := titles[sess.StoryID]
+		if !ok {
+			if story, err := s.stories.FindByID(ctx, sess.StoryID); err == nil && story != nil {
+				title = story.Title
+			}
+			titles[sess.StoryID] = title
+		}
+		items = append(items, SessionListItem{
+			SessionResponse: sess.ToResponse(),
+			StoryTitle:      title,
+		})
+	}
+	return items, nil
 }
 
 // ----- 状态解析/合并辅助 -----

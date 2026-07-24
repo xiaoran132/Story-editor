@@ -1,7 +1,7 @@
-"""AI 服务入口：FastAPI 应用装配。
+"""Agent 服务入口：FastAPI 应用装配。
 
 启动：
-    cd ai-service
+    cd agent
     uvicorn app.main:app --host 0.0.0.0 --port 8001
 或：
     python -m app.main
@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from .config import get_settings
 from .routers import assist, generate
 
-app = FastAPI(title="Story Editor AI Service", version="0.1.0")
+app = FastAPI(title="Story Editor Agent Service", version="0.1.0")
 
 app.include_router(generate.router)
 app.include_router(assist.router)

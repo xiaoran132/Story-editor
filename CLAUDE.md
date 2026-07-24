@@ -2,17 +2,21 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 规则
+1. 所有回复用中文
+2. 在完成一个任务后，要及时更改文档库
+
 ## 项目概述
 
 "AI驱动的互动剧情共创社区" — 用户既是玩家也是创作者，通过 AI Agent 协作完成剧情生成、体验、分享与再创作。
 
-技术栈：Go-Gin + PostgreSQL/GORM（后端）、Next.js + React + Zustand（前端，尚未搭建）、Python FastAPI + LangGraph（AI 服务，独立进程，已实现并对接）。
+技术栈：Go-Gin + PostgreSQL/GORM（后端）、Next.js + React + Zustand（游玩前端，已搭建，见 `frontend/`）、Python FastAPI + LangGraph（agent 服务，独立进程，已实现并对接）。
 
 ## 构建与运行
 
 ```powershell
-# 一键（Windows）：前置检查 + 独立窗口启动 AI 服务(:8001) 与后端(:8080)
-.\scripts\dev.ps1        # 全部；.\scripts\dev.ps1 -Only ai | -Only backend 单起
+# 一键（Windows）：前置检查 + 独立窗口启动 Agent 服务(:8001)、后端(:8080)、前端(:3000)
+.\scripts\dev.ps1        # 全部；.\scripts\dev.ps1 -Only ai | -Only backend | -Only frontend 单起
 ```
 
 ```bash
@@ -28,15 +32,18 @@ cd backend && go test ./...
 # 添加依赖
 cd backend && go get <pkg> && go mod tidy
 
-# AI 服务（独立进程）
-cd ai-service && uvicorn app.main:app --port 8001   # 详见 ai-service/README.md
+# Agent 服务（独立进程）
+cd agent && uvicorn app.main:app --port 8001   # 详见 agent/README.md
+
+# 前端（游玩，独立进程）
+cd frontend && npm install && npm run dev   # :3000，详见 frontend/README.md
 ```
 
 ## 配置
 
 `backend/config/config.go` 通过 viper 读取配置，优先级：**环境变量 > config.yaml > 默认值**。环境变量模板见 `backend/.env.example`。
 
-默认值在 `config.setDefaults()`（私有）中定义：DB localhost/5432/postgres/story_editor、`SERVER_PORT=":8080"`、`AI_SERVICE_URL="http://localhost:8001"`。
+默认值在 `config.setDefaults()`（私有）中定义：DB localhost/5432/postgres/story_editor、`SERVER_PORT=":8080"`、`AGENT_URL="http://localhost:8001"`。
 
 > `main.go` 用 `LoadHTMLGlob("../templates/*")` 加载模板，且 viper 从 `./config` 与 `.` 查找 config.yaml——因此**必须在 `backend/` 目录下运行**（`cd backend && go run .`），否则模板路径失效。
 
@@ -64,7 +71,7 @@ backend/
 │   │   ├── user.go
 │   │   ├── story.go
 │   │   ├── node.go
-│   │   └── ai_client.go        # HTTP 调用 Python AI 服务
+│   │   └── agent_client.go     # HTTP 调用 Python agent 服务
 │   ├── repository/             # 数据访问层（GORM 操作）
 │   │   ├── user.go
 │   │   ├── story.go
@@ -81,7 +88,7 @@ backend/
 ### 分层规则
 
 1. `handler` 只能调用 `service`，负责请求绑定校验和响应
-2. `service` 只能调用 `repository` 或 `ai_client`，负责业务逻辑
+2. `service` 只能调用 `repository` 或 `agent_client`，负责业务逻辑
 3. `repository` 只做数据库操作，接收/返回 `model` 结构体
 4. `model` 只定义数据结构，禁止写业务逻辑
 5. `pkg` 无任何业务依赖，可被任意层引用
@@ -98,7 +105,7 @@ backend/
 - `/api/v1/auth/*` — 注册/登录/个人资料
 - `/api/v1/stories/*` — 剧情 CRUD + 节点创建
 - `/api/v1/nodes/*` — 节点查询/更新/删除
-- `/api/v1/play/*` — 游玩会话：开局 `POST /sessions`、查询 `GET /sessions/:id`、选择 `POST /sessions/:id/choice`、回溯 `POST /sessions/:id/backtrack`（匿名可玩）
+- `/api/v1/play/*` — 游玩会话：开局 `POST /sessions`、列表 `GET /sessions`（当前玩家/guest 的历史会话，含 `story_title`，供读档）、查询 `GET /sessions/:id`、选择 `POST /sessions/:id/choice`、回溯 `POST /sessions/:id/backtrack`（匿名可玩）
 - `/api/v1/community/*` — 社区浏览/详情/点赞/评论（handler 桩）
 
 ### 统一错误处理
@@ -152,9 +159,9 @@ Service 层定义自己的输入结构体（如 `service.StoryCreateInput`、`se
 
 合并逻辑落在 `service.mergeState`（`play.go`），类型来自 `WorldConfig.AttrTypes()`；Python 侧 `graph/story_graph.py` 的 `normalize` 按同一套类型规整 LLM 输出（丢弃非法键、校验格式）。两端语义严格对齐，见 `play_merge_test.go`。
 
-### AIClient
+### AgentClient
 
-`service/ai_client.go` 是独立的 HTTP 客户端，超时 60s，调用 Python AI 服务的 `/generate` 和 `/continue` 端点。不依赖 repository 层。
+`service/agent_client.go` 是独立的 HTTP 客户端，调用 Python agent 服务的 `/generate` 和 `/continue` 端点。不依赖 repository 层。
 
 ## PostgreSQL / GORM
 
@@ -166,15 +173,16 @@ Service 层定义自己的输入结构体（如 `service.StoryCreateInput`、`se
 
 ## 当前实现状态
 
-| 模块 | 状态 |
-|------|------|
+| 模块                                    | 状态 |
+|---------------------------------------|------|
 | 项目骨架（config, pkg, middleware, DI, 路由） | 完成 |
-| User（注册/登录/JWT/个人资料） | 完成（bcrypt 密码 + user_credentials 凭证分离） |
-| Story（CRUD + 列表） | 完成 |
-| Node（节点创建/子节点/更新/删除） | 完成 |
-| Play / 游玩会话（开局/选择/回溯 + 属性合并） | 完成（`PlayService` + `/play` 路由，最小页面已验证） |
-| AIClient + AI 服务对接 | 完成（`ai-service/` + Go HTTP 编排，属性类型系统 number/scalar/set） |
-| Community（浏览/详情/点赞/评论） | handler 桩，全部 TODO |
+| User（注册/登录/JWT/个人资料）                  | 完成（bcrypt 密码 + user_credentials 凭证分离） |
+| Story（CRUD + 列表）                      | 完成 |
+| Node（节点创建/子节点/更新/删除）                  | 完成 |
+| Play / 游玩会话（开局/选择/回溯 + 属性合并 + 会话列表）   | 完成（`PlayService` + `/play` 路由，含 `GET /sessions` 读档列表） |
+| AgentClient + Agent 服务对接              | 完成（`agent/` + Go HTTP 编排，属性类型系统 number/scalar/set） |
+| 游玩前端（Next.js）                         | 完成（`frontend/`：作品选择、游玩、历史会话读档续玩；登录/注册未接入，沿用匿名 guest） |
+| Community（浏览/详情/点赞/评论）                | handler 桩，全部 TODO |
 
 ## 数据库设计蓝本（infa/sql/）
 
@@ -184,27 +192,28 @@ Service 层定义自己的输入结构体（如 `service.StoryCreateInput`、`se
 - `play.sql`（003）— `play_sessions`（存**完整状态快照** `current_state JSONB`，与节点树的增量 delta 设计互补）+ 节点树
 - `community.sql`（004）— 点赞/收藏/评论/路线分享，含 `stories.like_count` 等冗余计数字段
 
-## AI 服务（ai-service/，Python FastAPI + LangGraph）
+## Agent 服务（agent/，Python FastAPI + LangGraph）
 
-独立进程，Go 后端通过 `AI_SERVICE_URL`（默认 `http://localhost:8001`）调用，**不碰数据库**。DeepSeek 凭证下沉到 `ai-service/.env`，Go 侧不再直连大模型。
+独立进程，Go 后端通过 `AGENT_URL`（默认 `http://localhost:8001`）调用，**不碰数据库**。DeepSeek 凭证下沉到 `agent/.env`，Go 侧不再直连大模型。
 
 - `app/graph/story_graph.py` — LangGraph 工作流 `prepare → generate → normalize`（构建上下文/注入属性类型 → 调 LLM → 按类型规整 delta、过滤非法键、规整结局）
-- `app/routers/generate.py` — `POST /generate`（开场）、`/continue`（续写），Go 的 `service/ai_client.go` 调这两个
+- `app/routers/generate.py` — `POST /generate`（开场）、`/continue`（续写），Go 的 `service/agent_client.go` 调这两个
 - `app/routers/assist.py` — 创作辅助 `POST /assist/world|opening|polish|branches`（`/world` 会一并产出 `attributes` 类型声明）
 - `app/schemas.py` — 请求/响应模型，`WorldConfig.attributes` 承载属性类型声明，与 Go 契约对齐
 - `app/llm.py` — DeepSeek（OpenAI 兼容）客户端，强制 `response_format=json_object`
 
 > 属性类型（number/scalar/set）的完整语义见上文「JSONB 增量属性设计」。`normalize` 对未在 `attributes` 里声明类型的键**透传**，由 Go 的 `mergeState` 兜底推断，保证无 `attributes` 的老作品照常工作。
 
-启动：`cd ai-service && pip install -r requirements.txt && uvicorn app.main:app --port 8001`（详见 `ai-service/README.md`）。
+启动：`cd agent && pip install -r requirements.txt && uvicorn app.main:app --port 8001`（详见 `agent/README.md`）。
 
-> Go 的 `NewAIClient(cfg.AIServiceURL)` 只做 HTTP 编排；`StartStory`/`Continue` 签名不变，`play` 链路无感。
+> Go 的 `NewAgentClient(cfg.AgentURL)` 只做 HTTP 编排；`StartStory`/`Continue` 签名不变，`play` 链路无感。
 
 ## 待实现模块（按顺序）
 
-1. **save** — 会话续玩/读档（`play_sessions` 表已建、开局与推进已通；缺「列出我的会话 + 断点续玩」入口）
-2. ~~**ai** — ai_client 对接 Python AI 服务~~ ✅ 已完成（ai-service/ + Go 对接）
+1. ~~**save** — 会话续玩/读档~~ ✅ 已完成（`GET /play/sessions` 列表 + 前端首页读档续玩；登录接入后可按真实用户过滤）
+2. ~~**ai** — agent_client 对接 Python agent 服务~~ ✅ 已完成（agent/ + Go 对接）
 2.5. ~~**play** — 游玩会话链路~~ ✅ 已完成（`PlayService` + `/play` 路由，含回溯）
+2.8. ~~**游玩前端** — Next.js 作品选择/游玩/读档~~ ✅ 已完成（`frontend/`）
 3. **realtime** — WebSocket hub/client，AI 流式输出推送
 4. **community** — 作品发布/搜索/排行榜/点赞/收藏/评论
 5. **payment** — 付费解锁/打赏/分成（MVP 可 stub）
