@@ -3,8 +3,10 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## 规则
-1. 所有回复用中文
-2. 在完成一个任务后，要及时更改文档库
+1. 所有回复用中文。
+2. 在完成一个任务后，及时更改文档库。
+3. 在完成一个任务后，询问自己，还有没有更好的方案，是否能简化实现。
+4. 本项目目前还处在demo设计，你可以随时提出对项目的见解，不要一味的遵从用户的命令，而是不断提出合理化的质疑与建议，包括但不限于设计方案、技术规划，技术架构、数据库设计等，你可以随时提出对任何东西的推到重来，只要他能让项目变得更好。
 
 ## 项目概述
 
@@ -199,7 +201,7 @@ Service 层定义自己的输入结构体（如 `service.StoryCreateInput`、`se
 
 独立进程，Go 后端通过 `AGENT_URL`（默认 `http://localhost:8001`）调用，**不碰数据库**。DeepSeek 凭证下沉到 `agent/.env`，Go 侧不再直连大模型。
 
-- `app/graph/story_graph.py` — LangGraph 工作流 `prepare → generate → normalize`（构建上下文/注入属性类型 → 调 LLM → 按类型规整 delta、过滤非法键、规整结局）
+- `app/graph/story_graph.py` — LangGraph 工作流 `prepare → generate → normalize`（构建上下文/注入属性类型 → 调 LLM → 按类型规整 delta、过滤非法键、规整结局）。续写上下文用**滑动窗口**（`_write_history_window`）：只放「开局 + 最近 `history_window-1` 段」原文，更早的折叠（结果已沉淀在 `current_state` 快照里），避免深剧情撑爆上下文。窗口大小见 `config.Settings.history_window`（默认 8，环境变量 `HISTORY_WINDOW`）。演进方案（③RAG / ④节点树增量摘要）见 `docs/剧情上下文构建方案.md`
 - `app/routers/generate.py` — `POST /generate`（开场）、`/continue`（续写）、`/merge-check`（节点语义合并判定），Go 的 `service/agent_client.go` 调这三个
 - `app/routers/assist.py` — 创作辅助 `POST /assist/world|opening|polish|branches`（`/world` 会一并产出 `attributes` 类型声明）
 - `app/schemas.py` — 请求/响应模型，`WorldConfig.attributes` 承载属性类型声明，与 Go 契约对齐
@@ -221,5 +223,6 @@ Service 层定义自己的输入结构体（如 `service.StoryCreateInput`、`se
 4. **community** — 作品发布/搜索/排行榜/点赞/收藏/评论
 5. **payment** — 付费解锁/打赏/分成（MVP 可 stub）
 6. **achievement** — 成就系统
+7. **剧情上下文演进** — 当前用滑动窗口（①）；随作品变长演进为 ④节点树增量摘要（树上存 `summary`、折进 `/continue` 零额外调用），再叠加 ③RAG 检索补细节。详见 `docs/剧情上下文构建方案.md`
 
 `templates/index.html` 为 Gin 模板占位，前端正式搭建后替换。
