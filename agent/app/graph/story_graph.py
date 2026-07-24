@@ -65,6 +65,37 @@ def _write_attr_types(lines: list[str], attr_types: dict[str, str]) -> None:
     )
 
 
+def _write_history_step(lines: list[str], idx: int, step: dict[str, Any]) -> None:
+    if step.get("choice_text"):
+        lines.append(f"  [玩家选择] {step['choice_text']}")
+    lines.append(f"  [剧情{idx}] {step.get('content', '')}")
+
+
+def _write_history_window(lines: list[str], history: list[dict[str, Any]]) -> None:
+    """滑动窗口渲染历史：只放「开局 + 最近 (window-1) 段」原文，中间折叠。
+
+    更早的剧情结果已沉淀在“当前属性”快照里，故折叠不影响状态一致性，只损失远段叙事细节。
+    window<=0 或历史不长时全量渲染。方案与演进见 docs/剧情上下文构建方案.md。
+    """
+    from ..config import get_settings
+
+    window = get_settings().history_window
+    n = len(history)
+    if window <= 0 or n <= window:
+        for i, step in enumerate(history, start=1):
+            _write_history_step(lines, i, step)
+        return
+
+    # 开局锚定场景
+    _write_history_step(lines, 1, history[0])
+    tail_start = n - (window - 1)  # 最近 window-1 段的 0 基起始下标
+    omitted = tail_start - 1  # 中间被折叠的段数（第 2 段起）
+    if omitted > 0:
+        lines.append(f"  （……中间 {omitted} 段剧情从略，其结果已反映在下方“当前属性”中……）")
+    for offset, step in enumerate(history[tail_start:]):
+        _write_history_step(lines, tail_start + 1 + offset, step)
+
+
 def _clean_delta_value(attr_type: str, v: Any) -> Any | None:
     """按属性类型规整单个 delta 值；不合法返回 None（丢弃该键）。
 
@@ -112,10 +143,7 @@ def prepare(state: StoryState) -> dict[str, Any]:
         known = list(current.keys())
         attr_types = _attr_types(world, known)
         lines.append("\n已发生的剧情（从开局到当前，按顺序）：")
-        for i, step in enumerate(state.get("history") or [], start=1):
-            if step.get("choice_text"):
-                lines.append(f"  [玩家选择] {step['choice_text']}")
-            lines.append(f"  [剧情{i}] {step.get('content', '')}")
+        _write_history_window(lines, state.get("history") or [])
         lines.append(f"\n当前属性：{_to_json(current)}")
         _write_attr_types(lines, attr_types)
         lines.append(f"\n玩家现在的选择/行动：{state.get('choice', '')}")

@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     ai_temperature: float = 0.8
     ai_timeout: int = 60
 
+    # 续写上下文滑动窗口：只把「开局 + 最近 (history_window-1) 段」原文放进提示，
+    # 更早的剧情折叠（其结果已沉淀在“当前属性”快照中），避免深剧情撑爆上下文。
+    # <=0 表示不限制（全量重放）。详见 docs/剧情上下文构建方案.md。
+    history_window: int = 8
+
 
 @lru_cache
 def get_settings() -> Settings:
