@@ -7,6 +7,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import time
 from functools import lru_cache
 from typing import Any
 
@@ -16,6 +18,11 @@ from ..config import get_settings
 from ..llm import chat_json
 from ..prompts import REVIEW_SYSTEM, STORY_SYSTEM
 from .state import StoryState
+
+# 阶段一可观测性：每次生成打一行 logfmt 埋点，供离线 grep/jq 统计
+# 首稿审校通过率、每局平均重写次数、完整回复延迟 p95、超限报错率。
+# 详见 docs/开发交接手册.md §9.1；刻意不建大屏/新表，验证期用日志聚合即可。
+logger = logging.getLogger("story.metrics")
 
 
 def _to_json(v: Any) -> str:
@@ -302,11 +309,36 @@ def get_story_graph():
     return g.compile()
 
 
-def run_start(world: dict[str, Any], initial_state: dict[str, Any]) -> dict[str, Any]:
-    out = get_story_graph().invoke(
-        {"mode": "start", "world": world, "initial_state": initial_state}
+def _invoke_with_metrics(mode: str, initial: dict[str, Any]) -> dict[str, Any]:
+    """执行图并打点。成功打 outcome=ok，超限/异常打 outcome=error 后原样抛出。
+
+    review_failures = 本次交付前被审校拒绝的次数（0 即首稿通过）；
+    elapsed_ms = 完整回复耗时（无流式，暂无首字延迟）。
+    """
+    start = time.perf_counter()
+    try:
+        out = get_story_graph().invoke(initial)
+    except Exception as e:  # noqa: BLE001 —— 仅打点后原样抛给路由转 502
+        elapsed_ms = round((time.perf_counter() - start) * 1000)
+        logger.warning(
+            "gen mode=%s outcome=error elapsed_ms=%d detail=%s",
+            mode, elapsed_ms, e,
+        )
+        raise
+    elapsed_ms = round((time.perf_counter() - start) * 1000)
+    failures = int(out.get("review_failures", 0))
+    result = out["result"]
+    logger.info(
+        "gen mode=%s outcome=ok elapsed_ms=%d review_failures=%d first_draft_pass=%s is_ending=%s",
+        mode, elapsed_ms, failures, failures == 0, bool(result.get("is_ending")),
     )
-    return out["result"]
+    return result
+
+
+def run_start(world: dict[str, Any], initial_state: dict[str, Any]) -> dict[str, Any]:
+    return _invoke_with_metrics(
+        "start", {"mode": "start", "world": world, "initial_state": initial_state}
+    )
 
 
 def run_continue(
@@ -315,13 +347,13 @@ def run_continue(
     current_state: dict[str, Any],
     choice: str,
 ) -> dict[str, Any]:
-    out = get_story_graph().invoke(
+    return _invoke_with_metrics(
+        "continue",
         {
             "mode": "continue",
             "world": world,
             "history": history,
             "current_state": current_state,
             "choice": choice,
-        }
+        },
     )
-    return out["result"]

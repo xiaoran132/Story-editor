@@ -80,6 +80,10 @@ flowchart LR
 
 这是刻意的有限循环：无限“直到合格”会在模型持续自我否定时耗尽费用和请求时间。若要提升质量，应调整审校标准、提示词、上下文或模型，而不是取消上限。
 
+### 埋点（可观测性）
+
+`story_graph.py` 的 `_invoke_with_metrics` 每次生成打一行 `story.metrics` 日志（logfmt）：`mode`、`outcome`(ok/error)、`elapsed_ms`、`review_failures`(0=首稿通过)、`first_draft_pass`、`is_ending`。验证期用它算首稿通过率 / 平均重写次数 / 延迟 p95 / 超限率，无需管理端大屏或指标表。背景与聚合方式见交接手册 §9.1。
+
 ## 长程记忆与 `summary`
 
 每个成功生成的剧情节点都包含滚动 `summary`。Go 将它持久化到 `story_nodes.summary`，下一次续写会把历史中最近非空摘要写为 `【前情提要】`，再补最近 2 段原文。
