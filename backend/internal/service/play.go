@@ -79,6 +79,7 @@ func (s *PlayService) StartSession(playerID, storyID uuid.UUID) (*SessionResult,
 		ParentID:         nil,
 		Depth:            0,
 		Content:          opening.Content,
+		Summary:          opening.Summary,
 		SuggestedOptions: dumpAny(opening.Options),
 		StateDelta:       "{}",
 		StateSnapshot:    dumpState(initialState),
@@ -138,7 +139,7 @@ func (s *PlayService) MakeChoice(sessionID uuid.UUID, choice string) (*SessionRe
 	}
 	history := make([]PathStep, 0, len(pathNodes))
 	for _, n := range pathNodes {
-		step := PathStep{Content: n.Content}
+		step := PathStep{Content: n.Content, Summary: n.Summary}
 		if n.ChoiceText != nil {
 			step.ChoiceText = *n.ChoiceText
 		}
@@ -177,6 +178,7 @@ func (s *PlayService) MakeChoice(sessionID uuid.UUID, choice string) (*SessionRe
 		Depth:            len(pathNodes), // 根 depth=0，路径长度即新节点深度
 		ChoiceText:       &choiceText,
 		Content:          result.Content,
+		Summary:          result.Summary,
 		SuggestedOptions: dumpAny(result.Options),
 		StateDelta:       dumpState(result.StateDelta),
 		StateSnapshot:    dumpState(newState),

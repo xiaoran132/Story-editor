@@ -12,8 +12,9 @@ from typing import Any
 
 from langgraph.graph import END, StateGraph
 
+from ..config import get_settings
 from ..llm import chat_json
-from ..prompts import STORY_SYSTEM
+from ..prompts import REVIEW_SYSTEM, STORY_SYSTEM
 from .state import StoryState
 
 
@@ -71,16 +72,43 @@ def _write_history_step(lines: list[str], idx: int, step: dict[str, Any]) -> Non
     lines.append(f"  [剧情{idx}] {step.get('content', '')}")
 
 
+# ④节点树增量摘要：摘要命中时，除【前情提要】外再补渲染的最近原文段数
+_RECENT_RAW = 2
+
+
+def _latest_summary(history: list[dict[str, Any]]) -> str:
+    """取历史中最近一条非空 summary（截至当前节点的滚动前情提要）。"""
+    for step in reversed(history):
+        s = step.get("summary")
+        if s:
+            return str(s)
+    return ""
+
+
 def _write_history_window(lines: list[str], history: list[dict[str, Any]]) -> None:
-    """滑动窗口渲染历史：只放「开局 + 最近 (window-1) 段」原文，中间折叠。
+    """渲染续写上下文的“已发生剧情”，两条路径（见 docs/剧情上下文构建方案.md）：
 
-    更早的剧情结果已沉淀在“当前属性”快照里，故折叠不影响状态一致性，只损失远段叙事细节。
-    window<=0 或历史不长时全量渲染。方案与演进见 docs/剧情上下文构建方案.md。
+    - ④节点树增量摘要（优先）：历史带 summary 时 = 【前情提要】(最近节点滚动摘要) + 最近
+      _RECENT_RAW 段原文。上下文 O(1)、与深度无关，且保留关键实体/伏笔，避免深剧情前后矛盾。
+    - ①滑动窗口（兜底）：老数据无 summary 时，退回「开局 + 最近 (window-1) 段」原文、中间折叠。
     """
-    from ..config import get_settings
-
-    window = get_settings().history_window
     n = len(history)
+    if n == 0:
+        return
+
+    summary = _latest_summary(history)
+    if summary:
+        lines.append(f"【前情提要】{summary}")
+        recent = min(_RECENT_RAW, n)
+        tail_start = n - recent
+        if tail_start > 0:
+            lines.append("【最近剧情原文】")
+        for offset, step in enumerate(history[tail_start:]):
+            _write_history_step(lines, tail_start + 1 + offset, step)
+        return
+
+    # —— 兜底：① 滑动窗口 ——
+    window = get_settings().history_window
     if window <= 0 or n <= window:
         for i, step in enumerate(history, start=1):
             _write_history_step(lines, i, step)
@@ -153,9 +181,62 @@ def prepare(state: StoryState) -> dict[str, Any]:
 
 
 def generate(state: StoryState) -> dict[str, Any]:
-    """调用 LLM 生成结构化剧情。"""
-    raw = chat_json(STORY_SYSTEM, state["user_prompt"])
-    return {"raw": raw}
+    """调用 LLM 生成结构化剧情；被审校拒绝时带反馈完整重写。"""
+    prompt = state["user_prompt"]
+    feedback = state.get("review_feedback", "")
+    if feedback:
+        prompt += (
+            "\n【上一稿未通过质量审校】\n"
+            f"以下问题必须全部修正：{feedback}\n"
+            "请基于原始要求完整重写，并严格返回完整 JSON，不要解释修改过程。"
+        )
+    raw = chat_json(STORY_SYSTEM, prompt)
+    return {"raw": raw, "review_feedback": ""}
+
+
+def review(state: StoryState) -> dict[str, Any]:
+    """调用 AI 审校当前生成；拒绝时把可执行反馈交给下一次重写。"""
+    candidate = _to_json(state.get("raw") or {})
+    prompt = (
+        f"{state['user_prompt']}\n"
+        "\n【待审查的候选 JSON】\n"
+        f"{candidate}\n"
+        "\n请仅按系统要求返回审校 JSON。"
+    )
+    verdict = chat_json(REVIEW_SYSTEM, prompt, temperature=0.2)
+    passed = verdict.get("passed") is True
+    issues = verdict.get("issues") or []
+    if isinstance(issues, list):
+        feedback = "；".join(str(issue) for issue in issues if str(issue).strip())
+    else:
+        feedback = str(issues)
+    if not passed and not feedback:
+        feedback = "候选内容未通过质量审校；请重新核对剧情承接、选项后果、属性变化和前情提要。"
+
+    return {
+        "review_passed": passed,
+        "review_feedback": feedback,
+        "review_failures": state.get("review_failures", 0) + (0 if passed else 1),
+    }
+
+
+def route_after_review(state: StoryState) -> str:
+    """通过则归一化；被拒绝则有限重写，避免无限循环和不可控成本。"""
+    if state.get("review_passed"):
+        return "normalize"
+    max_retries = max(0, get_settings().ai_review_max_retries)
+    if state.get("review_failures", 0) <= max_retries:
+        return "generate"
+    return "review_failed"
+
+
+def review_failed(state: StoryState) -> dict[str, Any]:
+    """重写次数耗尽时拒绝交付未达标的内容。"""
+    raise ValueError(
+        "AI 生成内容在 "
+        f"{state.get('review_failures', 0)} 次质量审校后仍未通过："
+        f"{state.get('review_feedback', '未提供具体原因')}"
+    )
 
 
 def normalize(state: StoryState) -> dict[str, Any]:
@@ -192,6 +273,7 @@ def normalize(state: StoryState) -> dict[str, Any]:
         "content": str(raw.get("content", "")),
         "options": options,
         "state_delta": state_delta,
+        "summary": str(raw.get("summary", "")),  # ④节点树增量摘要，随节点落库供后续续写复用
         "is_ending": is_ending,
         "ending_type": ending_type,
     }
@@ -204,11 +286,18 @@ def get_story_graph():
     g = StateGraph(StoryState)
     g.add_node("prepare", prepare)
     g.add_node("generate", generate)
+    g.add_node("review", review)
+    g.add_node("review_failed", review_failed)
     g.add_node("normalize", normalize)
 
     g.set_entry_point("prepare")
     g.add_edge("prepare", "generate")
-    g.add_edge("generate", "normalize")
+    g.add_edge("generate", "review")
+    g.add_conditional_edges(
+        "review",
+        route_after_review,
+        {"generate": "generate", "normalize": "normalize", "review_failed": "review_failed"},
+    )
     g.add_edge("normalize", END)
     return g.compile()
 

@@ -5,8 +5,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 规则
 1. 所有回复用中文。
 2. 在完成一个任务后，及时更改文档库。
-3. 在完成一个任务后，询问自己，还有没有更好的方案，是否能简化实现。
-4. 本项目目前还处在demo设计，你可以随时提出对项目的见解，不要一味的遵从用户的命令，而是不断提出合理化的质疑与建议，包括但不限于设计方案、技术规划，技术架构、数据库设计等，你可以随时提出对任何东西的推到重来，只要他能让项目变得更好。
+3. 本项目目前还处在demo设计，你可以随时提出对项目的见解，不要一味的遵从用户的命令，而是不断提出合理化的质疑与建议，包括但不限于设计方案、技术规划、技术架构、数据库设计等；完成任务后也应自省实现能否简化。只要能让项目变得更好，你可以随时提出对任何东西的推倒重来。
+
+## 文档维护与阅读顺序
+
+- 项目入口与快速启动：`README.md`。
+- **当前事实 / 接手手册**：`docs/开发交接手册.md`。修改主链路、接口、配置、数据字段、测试或优先级后，必须同步更新。
+- 工程约束与精确实现约定：本文件。
+- 产品愿景：`docs/功能设计.md`（PRD，不等于已实现）。
+- 技术决策：`docs/设计思路.md`；上下文方案：`docs/剧情上下文构建方案.md`；长期数据模型：`infa/sql/`。
+- 模块级接口/配置/测试：`agent/README.md`、`frontend/README.md`。
+
+冲突时以运行代码与测试优先，其次是交接手册和本文件。完成任务时，不要只改 PRD：应更新受影响模块 README 与交接手册。
 
 ## 项目概述
 
@@ -187,6 +197,7 @@ Service 层定义自己的输入结构体（如 `service.StoryCreateInput`、`se
 | AgentClient + Agent 服务对接              | 完成（`agent/` + Go HTTP 编排，属性类型系统 number/scalar/set） |
 | 游玩前端（Next.js）                         | 完成（`frontend/`：星图主题；作品选择、游玩、历史会话读档续玩+删档；已探索剧情线以发光星图展示、点击节点回溯；登录/注册未接入，沿用匿名 guest） |
 | 节点语义合并去重                            | 完成（`MakeChoice` 生成后：同层子节点按 `state_delta` 相等硬过滤 + agent `/merge-check` 判语义等价 → 命中复用不新建，避免近义分支污染剧情树） |
+| Agent 链路阶段一（导演节拍 + 有后果选择 + 属性入戏 + ④增量摘要 + 质量复查） | 完成（`generate` 后低温 `review` 回调审查；不通过带反馈重写，最多 `AI_REVIEW_MAX_RETRIES` 次，超限报错不交付。`summary` 落库并在续写时回注入，老数据滑动窗口兜底。见 `docs/设计思路.md`「AI agent」三阶段） |
 | Community（浏览/详情/点赞/评论）                | handler 桩，全部 TODO |
 
 ## 数据库设计蓝本（infa/sql/）
@@ -201,7 +212,7 @@ Service 层定义自己的输入结构体（如 `service.StoryCreateInput`、`se
 
 独立进程，Go 后端通过 `AGENT_URL`（默认 `http://localhost:8001`）调用，**不碰数据库**。DeepSeek 凭证下沉到 `agent/.env`，Go 侧不再直连大模型。
 
-- `app/graph/story_graph.py` — LangGraph 工作流 `prepare → generate → normalize`（构建上下文/注入属性类型 → 调 LLM → 按类型规整 delta、过滤非法键、规整结局）。续写上下文用**滑动窗口**（`_write_history_window`）：只放「开局 + 最近 `history_window-1` 段」原文，更早的折叠（结果已沉淀在 `current_state` 快照里），避免深剧情撑爆上下文。窗口大小见 `config.Settings.history_window`（默认 8，环境变量 `HISTORY_WINDOW`）。演进方案（③RAG / ④节点树增量摘要）见 `docs/剧情上下文构建方案.md`
+- `app/graph/story_graph.py` — LangGraph 工作流 `prepare → generate → review（不通过则重写）→ normalize`（构建上下文/注入属性类型 → 调 LLM → 按类型规整 delta、过滤非法键、规整结局）。**agent 链路阶段一**：`generate` 的单次调用兼任「导演 + 书记员」——一次产出「节拍把控的正文（引用属性）+ 后果预期的选项 hint + 滚动前情提要 `summary`」；随后低温 `review` AI 回调审查剧情承接、属性反馈、选项后果、delta 与摘要一致性，不通过则把具体问题反馈给 `generate` 完整重写，最多额外重写 `AI_REVIEW_MAX_RETRIES` 次（默认 2），超限报错且不交付未通过内容（提示见 `prompts.py`）。续写上下文用 **④节点树增量摘要**（`_write_history_window`）：取历史最近非空 `summary` 渲染为 `【前情提要】` + 最近 `_RECENT_RAW`(=2) 段原文，O(1) 且保留关键实体/伏笔；老会话无 summary 时回退**滑动窗口**（`history_window`，默认 8，环境变量 `HISTORY_WINDOW`）兜底。目标多 agent 形态与三阶段演进见 `docs/设计思路.md`「AI agent」，上下文方案见 `docs/剧情上下文构建方案.md`
 - `app/routers/generate.py` — `POST /generate`（开场）、`/continue`（续写）、`/merge-check`（节点语义合并判定），Go 的 `service/agent_client.go` 调这三个
 - `app/routers/assist.py` — 创作辅助 `POST /assist/world|opening|polish|branches`（`/world` 会一并产出 `attributes` 类型声明）
 - `app/schemas.py` — 请求/响应模型，`WorldConfig.attributes` 承载属性类型声明，与 Go 契约对齐
@@ -219,10 +230,11 @@ Service 层定义自己的输入结构体（如 `service.StoryCreateInput`、`se
 2. ~~**ai** — agent_client 对接 Python agent 服务~~ ✅ 已完成（agent/ + Go 对接）
 2.5. ~~**play** — 游玩会话链路~~ ✅ 已完成（`PlayService` + `/play` 路由，含回溯）
 2.8. ~~**游玩前端** — Next.js 作品选择/游玩/读档~~ ✅ 已完成（`frontend/`）
-3. **realtime** — WebSocket hub/client，AI 流式输出推送
+3. **agent 链路演进（留存优先，前置于扩张）** — 阶段一（导演节拍 + 有后果选择 + 属性入戏 + ④增量摘要 + 生成后质量复查/有限重写）✅ 已完成。
+   - 阶段二：把 `generate` 拆成 director/recall/write/critic 独立节点 + realtime 流式输出（WebSocket/SSE）对冲多节点延迟；recall 从节点摘要升级到 ③RAG。
+   - 阶段三：多 NPC 同场时并行派发人物子 agent，主 agent 归纳（完整多 agent 形态）。详见 `docs/设计思路.md`「AI agent」、`docs/剧情上下文构建方案.md`。
 4. **community** — 作品发布/搜索/排行榜/点赞/收藏/评论
 5. **payment** — 付费解锁/打赏/分成（MVP 可 stub）
 6. **achievement** — 成就系统
-7. **剧情上下文演进** — 当前用滑动窗口（①）；随作品变长演进为 ④节点树增量摘要（树上存 `summary`、折进 `/continue` 零额外调用），再叠加 ③RAG 检索补细节。详见 `docs/剧情上下文构建方案.md`
 
 `templates/index.html` 为 Gin 模板占位，前端正式搭建后替换。

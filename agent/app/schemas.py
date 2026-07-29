@@ -42,9 +42,10 @@ class WorldConfig(NoneTolerantModel):
 
 
 class PathStep(BaseModel):
-    """回溯路径上的一步（玩家选择 + 该步剧情正文）。"""
+    """回溯路径上的一步（玩家选择 + 该步剧情正文 + 截至该步的前情提要）。"""
     choice_text: str = ""
     content: str = ""
+    summary: str = ""  # 截至该节点的滚动前情提要（④节点树增量摘要）；老数据为空时回退滑动窗口
 
 
 class AIResult(BaseModel):
@@ -52,6 +53,7 @@ class AIResult(BaseModel):
     content: str = ""
     options: list[Option] = Field(default_factory=list)
     state_delta: dict[str, Any] = Field(default_factory=dict)
+    summary: str = ""  # 截至本段的前情提要，随节点落库供后续续写复用
     is_ending: bool = False
     ending_type: str = ""
 

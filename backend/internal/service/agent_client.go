@@ -64,6 +64,7 @@ func (w WorldConfig) AttrTypes() map[string]string {
 type PathStep struct {
 	ChoiceText string `json:"choice_text"`
 	Content    string `json:"content"`
+	Summary    string `json:"summary,omitempty"` // 截至该节点的滚动前情提要（④），老数据为空时 Python 侧回退滑动窗口
 }
 
 // Option 是 AI 推荐的下一步选项。
@@ -77,6 +78,7 @@ type AIResult struct {
 	Content    string         `json:"content"`
 	Options    []Option       `json:"options"`
 	StateDelta map[string]any `json:"state_delta"`
+	Summary    string         `json:"summary"` // ④节点树增量摘要，落库到 StoryNode.Summary
 	IsEnding   bool           `json:"is_ending"`
 	EndingType string         `json:"ending_type"`
 }

@@ -15,6 +15,7 @@ type StoryNode struct {
 	Depth            int        `gorm:"not null;default:0" json:"depth"`
 	ChoiceText       *string    `gorm:"type:text" json:"choice_text"`
 	Content          string     `gorm:"type:text;not null" json:"content"`
+	Summary          string     `gorm:"type:text;not null;default:''" json:"summary"` // ④节点树增量摘要：截至该节点的滚动前情提要，续写时喂回
 	SuggestedOptions string     `gorm:"type:jsonb;not null;default:'[]'" json:"suggested_options"`
 	StateDelta       string     `gorm:"type:jsonb;not null;default:'{}'" json:"state_delta"`
 	StateSnapshot    string     `gorm:"type:jsonb;not null;default:'{}'" json:"state_snapshot"`
@@ -40,6 +41,7 @@ type NodeResponse struct {
 	Depth            int        `json:"depth"`
 	ChoiceText       *string    `json:"choice_text"`
 	Content          string     `json:"content"`
+	Summary          string     `json:"summary"`
 	SuggestedOptions string     `json:"suggested_options"`
 	StateDelta       string     `json:"state_delta"`
 	StateSnapshot    string     `json:"state_snapshot"`
@@ -59,6 +61,7 @@ func (n *StoryNode) ToResponse() *NodeResponse {
 		Depth:            n.Depth,
 		ChoiceText:       n.ChoiceText,
 		Content:          n.Content,
+		Summary:          n.Summary,
 		SuggestedOptions: n.SuggestedOptions,
 		StateDelta:       n.StateDelta,
 		StateSnapshot:    n.StateSnapshot,
