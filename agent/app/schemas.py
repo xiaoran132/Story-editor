@@ -34,6 +34,7 @@ class WorldConfig(NoneTolerantModel):
     background: str = ""
     style: str = ""
     rules: str = ""
+    outline: str = ""  # 故事大纲：核心悬念/走向锚点/可能结局，作为 AI 导演的脊柱（非线性脚本）
     characters: list[Any] = Field(default_factory=list)
     initial_state: dict[str, Any] = Field(default_factory=dict)
     # 属性键类型声明：{"hp": {"type": "number", ...}, "items": {"type": "set"}, ...}
@@ -88,6 +89,7 @@ class WorldDraft(BaseModel):
     background: str = ""
     style: str = ""
     rules: str = ""
+    outline: str = ""
     characters: list[dict[str, Any]] = Field(default_factory=list)
     initial_state: dict[str, Any] = Field(default_factory=dict)
     attributes: dict[str, Any] = Field(default_factory=dict)

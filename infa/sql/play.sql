@@ -94,6 +94,12 @@ CREATE TABLE story_nodes (
 
     -- AI 生成内容
     content         TEXT        NOT NULL,              -- 剧情正文
+
+    -- ④节点树增量摘要：截至本节点的滚动前情提要（非玩家状态）
+    -- 续写时取路径上最近一条非空 summary 渲染为【前情提要】+ 最近数段原文，
+    -- 使上下文长度与剧情深度近似无关；老数据为空时回退滑动窗口。
+    summary         TEXT        NOT NULL DEFAULT '',
+
     suggested_options JSONB     NOT NULL DEFAULT '[]', -- AI 推荐的下一步选项
     -- [
     --   {"text": "继续逃跑", "hint": "风险较高"},

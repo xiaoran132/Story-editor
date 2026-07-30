@@ -23,6 +23,7 @@ CREATE TABLE stories (
     --   "style":         "mystery",
     --   -- 风格枚举：mystery / romance / dark / comedy / neutral
     --   "rules":         "魔法消耗体力，普通人无法使用",
+    --   "outline":       "故事大纲：核心悬念 + 三幕走向 + 关键剧情锚点 + 可能结局；作为 AI 导演的走向锚点（非线性脚本），据此把控整体节奏、避免分支越走越散",
     --   "characters": [
     --     {
     --       "id":          "char_001",
@@ -37,6 +38,16 @@ CREATE TABLE stories (
     --     "gold":   50,
     --     "charm":  30
     --     -- 创作者可自定义任意属性键
+    --   },
+    --   "attributes": {
+    --     -- 声明每个属性键的合并类型，驱动 Go mergeState 与 Python normalize（两端语义必须一致）：
+    --     --   number（数值累加）：state_delta 给增减量，如 {"hp": -10}
+    --     --   scalar（覆盖式）  ：state_delta 给新值，  如 {"location": "王城"}
+    --     --   set（集合增删）   ：state_delta 给 {"add":[...],"remove":[...]}
+    --     -- 未声明类型的键由 Go 侧兜底推断（两侧皆数值则累加，否则覆盖），保证老作品兼容。
+    --     "hp":       {"type": "number", "initial": 100},
+    --     "location": {"type": "scalar", "initial": "村口"},
+    --     "items":    {"type": "set",    "initial": []}
     --   },
     --   "protagonist": {
     --     "default_name": "旅行者",

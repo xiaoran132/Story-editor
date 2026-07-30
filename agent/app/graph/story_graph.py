@@ -54,6 +54,10 @@ def _write_world(lines: list[str], world: dict[str, Any]) -> None:
         lines.append(f"规则：{world['rules']}")
     if world.get("characters"):
         lines.append(f"角色：{_to_json(world['characters'])}")
+    if world.get("outline"):
+        # 故事大纲：给导演的走向锚点。分支叙事里据此保持脊柱、避免越走越散，
+        # 但不是线性脚本——玩家选择仍决定具体路径，大纲只提供方向与关键节点。
+        lines.append(f"故事大纲（走向锚点，非线性脚本，据此把控整体节奏与关键剧情）：{world['outline']}")
 
 
 def _attr_types(world: dict[str, Any], known_keys: list[str]) -> dict[str, str]:

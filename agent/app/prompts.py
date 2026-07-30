@@ -86,11 +86,13 @@ WORLD_SYSTEM = """你是互动小说的世界观设计助手。根据用户给�
   "background": "世界观背景（时代、地点、核心设定，100-200字）",
   "style": "叙事风格",
   "rules": "世界运行规则或特殊约束",
+  "outline": "故事大纲（150-300字）：核心悬念/主线目标 + 大致三幕走向 + 2-4 个关键剧情锚点 + 若干可能结局",
   "characters": [{"name": "角色名", "personality": "性格", "role": "定位"}],
   "initial_state": {"属性键": 初始值},
   "attributes": {"属性键": {"type": "number|scalar|set", "initial": 初始值}}
 }
 要求：
+- outline 是给 AI 导演的**走向锚点**，不是线性脚本：给出主线脊柱与关键节点/结局方向即可，具体路径仍由玩家选择决定；要与 background/characters 自洽。
 - characters 给 2-4 个关键角色。
 - attributes 定义 2-4 个贴合题材的可玩属性键，并声明类型：
   - number：数值属性（如 hp、gold、好感度、理智），initial 给数值。

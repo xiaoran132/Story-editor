@@ -41,6 +41,7 @@ type WorldConfig struct {
 	Background   string         `json:"background"`
 	Style        string         `json:"style"`
 	Rules        string         `json:"rules"`
+	Outline      string         `json:"outline,omitempty"` // 故事大纲：作为 AI 导演的走向锚点（非线性脚本）
 	Characters   []any          `json:"characters,omitempty"`
 	InitialState map[string]any `json:"initial_state,omitempty"`
 	// Attributes 声明每个属性键的类型：{"hp": {"type": "number"}, "items": {"type": "set"}, ...}
