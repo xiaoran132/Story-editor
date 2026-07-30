@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -17,6 +18,9 @@ import (
 type AgentClient struct {
 	baseURL    string
 	httpClient *http.Client
+	// streamClient 无整请求超时：SSE 流生命周期由调用方 ctx 控制，
+	// 复用 httpClient 的 90s Timeout 会在流中途截断。
+	streamClient *http.Client
 }
 
 // NewAgentClient 以 agent 服务地址（cfg.AgentURL，默认 http://localhost:8001）构造。
@@ -26,6 +30,7 @@ func NewAgentClient(serviceURL string) *AgentClient {
 		httpClient: &http.Client{
 			Timeout: 90 * time.Second,
 		},
+		streamClient: &http.Client{}, // 无 Timeout，靠 ctx 控时
 	}
 }
 
@@ -97,6 +102,12 @@ type continueRequest struct {
 	Choice       string         `json:"choice"`
 }
 
+type openingCompleteRequest struct {
+	World        WorldConfig    `json:"world"`
+	InitialState map[string]any `json:"initial_state,omitempty"`
+	Content      string         `json:"content"`
+}
+
 // MergeCandidate 是新选择的一个合并候选（已有同层子节点），由 Go 侧按 state_delta 相等预筛。
 type MergeCandidate struct {
 	ChoiceText string `json:"choice_text"`
@@ -127,6 +138,138 @@ func (c *AgentClient) Continue(ctx context.Context, world WorldConfig, history [
 		CurrentState: currentState,
 		Choice:       choice,
 	})
+}
+
+// CompleteOpening 为已写定的开场正文补生成起始选项 + 前情提要（预设 opening_content 的作品）。
+func (c *AgentClient) CompleteOpening(ctx context.Context, world WorldConfig, initialState map[string]any, content string) (*AIResult, error) {
+	return c.post(ctx, "/opening/complete", openingCompleteRequest{
+		World:        world,
+		InitialState: initialState,
+		Content:      content,
+	})
+}
+
+// ContinueStream 流式续写：正文增量经 onDelta 实时回调，审校拒绝时回调 onRevise（前端清空重来），
+// 流结束返回完整的结构化结果（供 Go 侧做状态合并/去重/落库）。任一回调可为 nil。
+func (c *AgentClient) ContinueStream(
+	ctx context.Context,
+	world WorldConfig, history []PathStep, currentState map[string]any, choice string,
+	onDelta func(string), onRevise func(),
+) (*AIResult, error) {
+	return c.streamInto(ctx, "/continue/stream", continueRequest{
+		World: world, History: history, CurrentState: currentState, Choice: choice,
+	}, onDelta, onRevise)
+}
+
+// StartStoryStream 流式生成开场（无预设 opening_content 的作品）。语义同 ContinueStream。
+func (c *AgentClient) StartStoryStream(
+	ctx context.Context, world WorldConfig, initialState map[string]any,
+	onDelta func(string), onRevise func(),
+) (*AIResult, error) {
+	return c.streamInto(ctx, "/generate/stream", generateRequest{
+		World: world, InitialState: initialState,
+	}, onDelta, onRevise)
+}
+
+// streamInto 向 agent 的 SSE 端点发请求，逐帧解析：delta→onDelta、revise→onRevise、
+// done→返回完整 AIResult、error→返回错误。ContinueStream/StartStoryStream 共用。
+func (c *AgentClient) streamInto(
+	ctx context.Context, path string, payload any,
+	onDelta func(string), onRevise func(),
+) (*AIResult, error) {
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(raw))
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+
+	resp, err := c.streamClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("call ai stream: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("ai stream status %d: %s", resp.StatusCode, string(body))
+	}
+
+	reader := bufio.NewReader(resp.Body)
+	var event, data string
+	var final *AIResult
+	var streamErr error
+
+	dispatch := func() {
+		switch event {
+		case "delta":
+			var d struct {
+				Text string `json:"text"`
+			}
+			if json.Unmarshal([]byte(data), &d) == nil && onDelta != nil {
+				onDelta(d.Text)
+			}
+		case "revise":
+			if onRevise != nil {
+				onRevise()
+			}
+		case "done":
+			var r AIResult
+			if e := json.Unmarshal([]byte(data), &r); e != nil {
+				streamErr = fmt.Errorf("decode done frame: %w (raw: %s)", e, data)
+			} else {
+				final = &r
+			}
+		case "error":
+			var er struct {
+				Detail string `json:"detail"`
+			}
+			_ = json.Unmarshal([]byte(data), &er)
+			streamErr = fmt.Errorf("ai stream error: %s", er.Detail)
+		}
+		event, data = "", ""
+	}
+
+	for {
+		line, readErr := reader.ReadString('\n') // bufio.Reader 无 Scanner 的 64KB 行长限制
+		if len(line) > 0 {
+			line = strings.TrimRight(line, "\r\n")
+			switch {
+			case line == "":
+				dispatch()
+			case strings.HasPrefix(line, "event:"):
+				event = strings.TrimSpace(line[len("event:"):])
+			case strings.HasPrefix(line, "data:"):
+				data = strings.TrimSpace(line[len("data:"):])
+			}
+		}
+		if readErr != nil {
+			if readErr == io.EOF {
+				if event != "" || data != "" { // 末帧无结尾空行时兜底派发
+					dispatch()
+				}
+				break
+			}
+			return nil, fmt.Errorf("read stream: %w", readErr)
+		}
+	}
+
+	if streamErr != nil {
+		return nil, streamErr
+	}
+	if final == nil {
+		return nil, fmt.Errorf("ai stream ended without done frame")
+	}
+	if final.Options == nil {
+		final.Options = []Option{}
+	}
+	if final.StateDelta == nil {
+		final.StateDelta = map[string]any{}
+	}
+	return final, nil
 }
 
 // CheckMerge 判定新选择是否与某个已有同层候选语义等价（候选已按 state_delta 相等预筛）。

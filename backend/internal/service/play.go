@@ -38,7 +38,8 @@ type SessionResult struct {
 	Nodes       []model.NodeResponse   `json:"nodes,omitempty"`
 }
 
-// StartSession 开始一局：解析世界观 → 建会话 → AI 生成开场 → 建根节点。
+// StartSession 开始一局：只建**空会话**（无根节点），开场正文改由 StartOpeningStream 流式生成。
+// 这样开局正文也能像续写一样逐字流到浏览器（生成发生在游玩页而非首页建会话时）。
 func (s *PlayService) StartSession(playerID, storyID uuid.UUID) (*SessionResult, error) {
 	ctx := context.Background()
 
@@ -56,57 +57,45 @@ func (s *PlayService) StartSession(playerID, storyID uuid.UUID) (*SessionResult,
 		initialState = map[string]any{}
 	}
 
-	// 生成开场：优先用作品预设的 opening_content，否则调 AI。
-	var opening *AIResult
-	if story.OpeningContent != "" {
-		opening = &AIResult{Content: story.OpeningContent, Options: []Option{}, StateDelta: map[string]any{}}
-	} else {
-		opening, err = s.ai.StartStory(ctx, world, initialState)
-		if err != nil {
-			return nil, pkg.Internal("ai start story: " + err.Error())
-		}
-	}
-
 	session := &model.PlaySession{
 		StoryID:      storyID,
 		PlayerID:     playerID,
-		CurrentState: dumpState(initialState),
+		CurrentState: dumpState(initialState), // 开局前 current_state 即初始值
 		Status:       "active",
+		NodeCount:    0,
 		LastPlayedAt: time.Now(),
 	}
-	root := &model.StoryNode{
-		StoryID:          storyID,
-		ParentID:         nil,
-		Depth:            0,
-		Content:          opening.Content,
-		Summary:          opening.Summary,
-		SuggestedOptions: dumpAny(opening.Options),
-		StateDelta:       "{}",
-		StateSnapshot:    dumpState(initialState),
-	}
-
-	// 事务：建会话 + 建根节点 + 回填 current_node_id。
-	err = s.sessions.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(session).Error; err != nil {
-			return err
-		}
-		root.SessionID = session.ID
-		if err := tx.Create(root).Error; err != nil {
-			return err
-		}
-		session.CurrentNodeID = &root.ID
-		session.NodeCount = 1
-		return tx.Save(session).Error
-	})
-	if err != nil {
+	if err := s.sessions.Create(ctx, session); err != nil {
 		return nil, err
 	}
-
-	return &SessionResult{Session: session.ToResponse(), CurrentNode: root.ToResponse()}, nil
+	// CurrentNode 为 nil：前端游玩页据此触发 StartOpeningStream 流式生成开场。
+	return &SessionResult{Session: session.ToResponse(), CurrentNode: nil}, nil
 }
 
-// MakeChoice 提交一次选择：回溯历史 → AI 生成 → 合并属性 → 写子节点 + 更新会话。
-func (s *PlayService) MakeChoice(sessionID uuid.UUID, choice string) (*SessionResult, error) {
+// streamFixedText 把一段固定正文按小块 + 微延时逐块回调，模拟 LLM 逐字流式的观感。
+// 仅用于预设 opening_content（本无 token 流）；按 rune 切分避免截断多字节字符。
+func streamFixedText(text string, onDelta func(string)) {
+	if onDelta == nil || text == "" {
+		return
+	}
+	const chunk = 3                        // 每帧字符数
+	const pace = 30 * time.Millisecond     // 每帧间隔
+	runes := []rune(text)
+	for i := 0; i < len(runes); i += chunk {
+		end := i + chunk
+		if end > len(runes) {
+			end = len(runes)
+		}
+		onDelta(string(runes[i:end]))
+		time.Sleep(pace)
+	}
+}
+
+// StartOpeningStream 为空会话流式生成开场并落根节点：正文增量经 onDelta 外发，结束落库。
+// 幂等：若根节点已存在（刷新/重复触发），直接返回既有开场，不重复生成。
+func (s *PlayService) StartOpeningStream(
+	sessionID uuid.UUID, onDelta func(string), onRevise func(),
+) (*SessionResult, error) {
 	ctx := context.Background()
 
 	session, err := s.sessions.FindByID(ctx, sessionID)
@@ -116,11 +105,8 @@ func (s *PlayService) MakeChoice(sessionID uuid.UUID, choice string) (*SessionRe
 	if session == nil {
 		return nil, pkg.NotFound("session not found")
 	}
-	if session.Status != "active" {
-		return nil, pkg.BadRequest("session already ended")
-	}
-	if session.CurrentNodeID == nil {
-		return nil, pkg.BadRequest("session has no current node")
+	if session.CurrentNodeID != nil { // 幂等：开场已生成，直接返回
+		return s.GetSession(sessionID)
 	}
 
 	story, err := s.stories.FindByID(ctx, session.StoryID)
@@ -131,11 +117,86 @@ func (s *PlayService) MakeChoice(sessionID uuid.UUID, choice string) (*SessionRe
 		return nil, pkg.NotFound("story not found")
 	}
 	world := parseWorld(story.WorldConfig)
+	initialState := parseState(session.CurrentState)
 
-	// 回溯当前节点到根的完整路径，构建 AI 上下文。
-	pathNodes, err := s.nodes.FindPath(ctx, *session.CurrentNodeID)
+	// 生成开场：预设 opening_content 的作品正文固定（直接作为一帧 delta 外发，再补选项/摘要）；
+	// 否则走 agent 流式真生成。
+	var opening *AIResult
+	if story.OpeningContent != "" {
+		// 预设正文固定、无 LLM token 流：按小块 + 微延时模拟打字机，
+		// 给出与续写一致的逐字流式观感（否则整段瞬显，等于没流式）。
+		streamFixedText(story.OpeningContent, onDelta)
+		opening, err = s.ai.CompleteOpening(ctx, world, initialState, story.OpeningContent)
+		if err != nil {
+			opening = &AIResult{Content: story.OpeningContent, Options: []Option{}, StateDelta: map[string]any{}}
+		} else {
+			opening.Content = story.OpeningContent
+		}
+	} else {
+		opening, err = s.ai.StartStoryStream(ctx, world, initialState, onDelta, onRevise)
+		if err != nil {
+			return nil, pkg.Internal("ai start story stream: " + err.Error())
+		}
+	}
+
+	root := &model.StoryNode{
+		StoryID:          session.StoryID,
+		SessionID:        session.ID,
+		ParentID:         nil,
+		Depth:            0,
+		Content:          opening.Content,
+		Summary:          opening.Summary,
+		SuggestedOptions: dumpAny(opening.Options),
+		StateDelta:       "{}",
+		StateSnapshot:    dumpState(initialState),
+	}
+	err = s.sessions.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(root).Error; err != nil {
+			return err
+		}
+		session.CurrentNodeID = &root.ID
+		session.NodeCount = 1
+		session.LastPlayedAt = time.Now()
+		return tx.Save(session).Error
+	})
 	if err != nil {
 		return nil, err
+	}
+	return &SessionResult{Session: session.ToResponse(), CurrentNode: root.ToResponse()}, nil
+}
+
+// loadChoiceContext 校验会话并回溯出 AI 上下文（当前节点到根的路径 + history）。
+// MakeChoice 与 MakeChoiceStream 的前置阶段一致，抽出复用。
+func (s *PlayService) loadChoiceContext(ctx context.Context, sessionID uuid.UUID) (
+	*model.PlaySession, WorldConfig, []model.StoryNode, []PathStep, error,
+) {
+	var zero WorldConfig
+	session, err := s.sessions.FindByID(ctx, sessionID)
+	if err != nil {
+		return nil, zero, nil, nil, err
+	}
+	if session == nil {
+		return nil, zero, nil, nil, pkg.NotFound("session not found")
+	}
+	if session.Status != "active" {
+		return nil, zero, nil, nil, pkg.BadRequest("session already ended")
+	}
+	if session.CurrentNodeID == nil {
+		return nil, zero, nil, nil, pkg.BadRequest("session has no current node")
+	}
+
+	story, err := s.stories.FindByID(ctx, session.StoryID)
+	if err != nil {
+		return nil, zero, nil, nil, err
+	}
+	if story == nil {
+		return nil, zero, nil, nil, pkg.NotFound("story not found")
+	}
+	world := parseWorld(story.WorldConfig)
+
+	pathNodes, err := s.nodes.FindPath(ctx, *session.CurrentNodeID)
+	if err != nil {
+		return nil, zero, nil, nil, err
 	}
 	history := make([]PathStep, 0, len(pathNodes))
 	for _, n := range pathNodes {
@@ -145,13 +206,16 @@ func (s *PlayService) MakeChoice(sessionID uuid.UUID, choice string) (*SessionRe
 		}
 		history = append(history, step)
 	}
+	return session, world, pathNodes, history, nil
+}
 
+// applyContinueResult 消费一次续写生成结果：状态合并 → 同层语义去重 → 建节点/复用 + 更新会话。
+// 非流式与流式共用（区别仅在生成阶段；落库阶段依赖完整结果，两者一致）。
+func (s *PlayService) applyContinueResult(
+	ctx context.Context, session *model.PlaySession, pathNodes []model.StoryNode,
+	world WorldConfig, choice string, result *AIResult,
+) (*SessionResult, error) {
 	currentState := parseState(session.CurrentState)
-	result, err := s.ai.Continue(ctx, world, history, currentState, choice)
-	if err != nil {
-		return nil, pkg.Internal("ai continue: " + err.Error())
-	}
-
 	newState := mergeState(currentState, result.StateDelta, world.AttrTypes())
 
 	// 生成后去重：若新选择与当前节点的某个已有直接子节点「状态变化相同 + 语义等价」，
@@ -189,7 +253,7 @@ func (s *PlayService) MakeChoice(sessionID uuid.UUID, choice string) (*SessionRe
 	}
 
 	// 事务：写子节点 + 更新会话状态（唯一事实来源 current_state）。
-	err = s.sessions.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.sessions.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(node).Error; err != nil {
 			return err
 		}
@@ -205,8 +269,40 @@ func (s *PlayService) MakeChoice(sessionID uuid.UUID, choice string) (*SessionRe
 	if err != nil {
 		return nil, err
 	}
-
 	return &SessionResult{Session: session.ToResponse(), CurrentNode: node.ToResponse()}, nil
+}
+
+// MakeChoice 提交一次选择：回溯历史 → AI 生成 → 合并属性 → 写子节点 + 更新会话。
+func (s *PlayService) MakeChoice(sessionID uuid.UUID, choice string) (*SessionResult, error) {
+	ctx := context.Background()
+	session, world, pathNodes, history, err := s.loadChoiceContext(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	currentState := parseState(session.CurrentState)
+	result, err := s.ai.Continue(ctx, world, history, currentState, choice)
+	if err != nil {
+		return nil, pkg.Internal("ai continue: " + err.Error())
+	}
+	return s.applyContinueResult(ctx, session, pathNodes, world, choice, result)
+}
+
+// MakeChoiceStream 与 MakeChoice 相同，但续写走流式：正文增量经 onDelta 实时外发，
+// 审校拒绝经 onRevise 通知；流结束拿到完整结果后再合并/去重/落库（这些依赖完整结果）。
+func (s *PlayService) MakeChoiceStream(
+	sessionID uuid.UUID, choice string, onDelta func(string), onRevise func(),
+) (*SessionResult, error) {
+	ctx := context.Background()
+	session, world, pathNodes, history, err := s.loadChoiceContext(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	currentState := parseState(session.CurrentState)
+	result, err := s.ai.ContinueStream(ctx, world, history, currentState, choice, onDelta, onRevise)
+	if err != nil {
+		return nil, pkg.Internal("ai continue stream: " + err.Error())
+	}
+	return s.applyContinueResult(ctx, session, pathNodes, world, choice, result)
 }
 
 // tryMerge 在当前节点的已有直接子节点中，寻找与本次生成「state_delta 相同 + 语义等价」的一个复用。

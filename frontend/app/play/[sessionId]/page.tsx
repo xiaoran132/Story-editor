@@ -18,6 +18,7 @@ export default function PlayPage() {
     currentNode,
     allNodes,
     busy,
+    streamingText,
     loading,
     error,
     load,
@@ -44,13 +45,16 @@ export default function PlayPage() {
         <div className="story loading pulse">载入会话中…</div>
       ) : (
         <>
-          <AttrBar stateJSON={session?.current_state ?? null} />
-          <StoryPane node={currentNode} busy={busy} />
+          <AttrBar
+            stateJSON={session?.current_state ?? null}
+            deltaJSON={currentNode?.state_delta ?? null}
+          />
+          <StoryPane node={currentNode} busy={busy} streamingText={streamingText} />
           <OptionList node={currentNode} busy={busy} onChoose={choose} />
 
           <div className={`status${error ? " err" : busy ? " pulse" : ""}`}>
             {error
-              ? `出错：${error}`
+              ? `出错：${error} · 可再次选择或输入以重试`
               : busy
               ? "AI 正在生成剧情…"
               : ""}

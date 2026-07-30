@@ -53,4 +53,81 @@ export const api = {
   del: <T>(path: string) => request<T>("DELETE", path),
 };
 
+// postStream：消费后端的 SSE 流（text/event-stream）。
+// delta 帧 → onDelta(增量正文)；revise 帧 → onRevise(清空重来)；
+// done 帧 → resolve 最终 data；error 帧 → reject。与 request 分离（后者硬编码 res.json()）。
+export interface StreamHandlers {
+  onDelta?: (text: string) => void;
+  onRevise?: () => void;
+}
+
+export async function postStream<T>(
+  path: string,
+  body: unknown,
+  handlers: StreamHandlers = {}
+): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(API_BASE + path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new Error("无法连接后端服务，请确认后端已启动");
+  }
+  if (!res.ok || !res.body) {
+    throw new Error(`请求失败（HTTP ${res.status}）`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  let done: T | undefined;
+  let streamErr: string | null = null;
+
+  const handleFrame = (frame: string) => {
+    let event = "message";
+    let data = "";
+    for (const line of frame.split("\n")) {
+      if (line.startsWith("event:")) event = line.slice(6).trim();
+      else if (line.startsWith("data:")) data += line.slice(5).trim();
+    }
+    if (event === "delta") {
+      try {
+        handlers.onDelta?.(JSON.parse(data).text ?? "");
+      } catch {
+        /* 忽略坏帧 */
+      }
+    } else if (event === "revise") {
+      handlers.onRevise?.();
+    } else if (event === "done") {
+      done = JSON.parse(data) as T;
+    } else if (event === "error") {
+      try {
+        streamErr = JSON.parse(data).detail || "生成失败";
+      } catch {
+        streamErr = "生成失败";
+      }
+    }
+  };
+
+  // 逐块读取，按 SSE 帧分隔（空行 \n\n）切分。
+  for (;;) {
+    const { value, done: rdDone } = await reader.read();
+    if (value) buf += decoder.decode(value, { stream: true });
+    let sep: number;
+    while ((sep = buf.indexOf("\n\n")) !== -1) {
+      handleFrame(buf.slice(0, sep));
+      buf = buf.slice(sep + 2);
+    }
+    if (rdDone) break;
+  }
+  if (buf.trim()) handleFrame(buf); // 末帧无结尾空行时兜底
+
+  if (streamErr) throw new Error(streamErr);
+  if (done === undefined) throw new Error("生成中断：未收到完整结果");
+  return done;
+}
+
 export { API_BASE };

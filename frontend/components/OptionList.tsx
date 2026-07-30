@@ -26,7 +26,7 @@ export default function OptionList({
 
   return (
     <>
-      {!ending && (
+      {!ending && !busy && (
         <div className="options">
           {options.map((o, i) => (
             <button
@@ -45,7 +45,9 @@ export default function OptionList({
       <div className="free">
         <input
           type="text"
-          placeholder="或输入你的自由行动…"
+          placeholder={
+            options.length ? "或输入你的自由行动…" : "输入你的第一步行动…"
+          }
           autoComplete="off"
           value={free}
           disabled={busy || ending}

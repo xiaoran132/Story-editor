@@ -8,10 +8,22 @@
 """
 from __future__ import annotations
 
+import logging
+
 from fastapi import FastAPI
 
 from .config import get_settings
 from .routers import assist, generate
+
+# 让 story.metrics 的 INFO 埋点（首稿通过率/ttfb/延迟…）在服务日志可见。
+# uvicorn 默认不给 root 挂 handler，会吞掉自定义 logger 的 INFO；这里显式挂一个。
+_metrics_logger = logging.getLogger("story.metrics")
+if not _metrics_logger.handlers:
+    _h = logging.StreamHandler()
+    _h.setFormatter(logging.Formatter("%(asctime)s story.metrics %(message)s"))
+    _metrics_logger.addHandler(_h)
+    _metrics_logger.setLevel(logging.INFO)
+    _metrics_logger.propagate = False
 
 app = FastAPI(title="Story Editor Agent Service", version="0.1.0")
 

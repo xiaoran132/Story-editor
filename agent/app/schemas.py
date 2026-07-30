@@ -74,6 +74,13 @@ class ContinueRequest(NoneTolerantModel):
     choice: str = ""
 
 
+class OpeningCompleteRequest(NoneTolerantModel):
+    """为已写定的开场正文补生成起始选项 + 前情提要（预设 opening_content 的作品）。"""
+    world: WorldConfig = Field(default_factory=WorldConfig)
+    initial_state: dict[str, Any] = Field(default_factory=dict)
+    content: str = ""
+
+
 # ----- 创作辅助请求/响应 -----
 
 class WorldDraft(BaseModel):

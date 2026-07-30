@@ -139,8 +139,10 @@ copy .env.example .env  # Windows；填入 DEEPSEEK_API_KEY
 
 | 方法 | 路径 | 调用方 / 作用 |
 |---|---|---|
-| `POST` | `/generate` | Go `StartSession`：生成开场 |
-| `POST` | `/continue` | Go `MakeChoice`：根据路径和选择续写 |
+| `POST` | `/generate` | Go `StartSession`：生成开场（非流式） |
+| `POST` | `/continue` | Go `MakeChoice`：根据路径和选择续写（非流式，保留） |
+| `POST` | `/continue/stream` `/generate/stream` | 流式生成（SSE）：Go `ContinueStream` 消费 |
+| `POST` | `/opening/complete` | Go `StartSession` 预设开场：补起始选项 + summary |
 | `POST` | `/merge-check` | Go `tryMerge`：候选分支语义等价判断 |
 | `POST` | `/assist/world` | 创作辅助：灵感 → 世界观/属性声明 |
 | `POST` | `/assist/opening` | 创作辅助：世界观 → 开场草稿 |
@@ -163,7 +165,20 @@ copy .env.example .env  # Windows；填入 DEEPSEEK_API_KEY
 }
 ```
 
-失败时路由返回 HTTP 502；Go `AgentClient` 将其视为 Agent 调用失败。不要在 Python 侧吞掉审校耗尽等异常后返回半成品。
+失败时（非流式）路由返回 HTTP 502；Go `AgentClient` 将其视为 Agent 调用失败。不要在 Python 侧吞掉审校耗尽等异常后返回半成品。
+
+### 流式（SSE）
+
+`/continue/stream` `/generate/stream` 返回 `text/event-stream`，帧格式：
+
+```
+event: delta   data: {"text":"增量正文"}     # 正文逐字（哨兵 <<<META>>> 之前）
+event: revise  data: {}                       # 审校拒绝 → 下游清空已流出正文，准备重来
+event: done    data: {<完整 AIResult>}        # 结束，携带 content/options/state_delta/summary/...
+event: error   data: {"detail":"..."}         # 流已开始，异常只能以 error 帧告知
+```
+
+实现：`generate` 单次输出「正文 `<<<META>>>` JSON尾」，正文流式外发、结束后解析尾部；尾缺失/非法用 `STRUCTURE_SYSTEM` 兜底；再跑 review，拒绝则发 `revise` 带反馈重来（上限 `AI_REVIEW_MAX_RETRIES`）。见 `graph/story_graph.py` 的 `_stream_pipeline`。埋点在成功时多打 `stream=1 ttfb_ms=<首字延迟>`。
 
 ## 属性类型契约
 

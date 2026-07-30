@@ -29,6 +29,38 @@ JSON 结构如下：
 - 保持与世界观、风格、【前情提要】及最近剧情的一致性，不得与已确立的事实矛盾。"""
 
 
+# 游玩：流式生成引擎——与 STORY_SYSTEM 同职责，但输出格式改为「正文 + 哨兵 + JSON 尾」，
+# 以便正文逐字流式，结束后解析尾部结构化字段。哨兵前是纯正文，哨兵后是**不含 content** 的 JSON。
+_SENTINEL = "<<<META>>>"
+STORY_STREAM_SYSTEM = (
+    STORY_SYSTEM
+    + f"""
+
+【流式输出格式 · 必须严格遵守】
+你的输出分两部分，用一行独立的哨兵分隔：
+1) 先输出剧情正文（纯文本，就是上面 content 要求的 150-300 字，第二人称），不要包 JSON、不要键名。
+2) 另起一行，输出恰好一行哨兵：{_SENTINEL}
+3) 哨兵之后输出一个 JSON 对象，**只含** options/state_delta/summary/is_ending/ending_type 这几个键（**不要 content**），语义与规则同上。
+示例结构：
+你推开门，火把在穿堂风里剧烈摇曳……（正文若干）
+{_SENTINEL}
+{{"options":[{{"text":"...","hint":"..."}}],"state_delta":{{}},"summary":"...","is_ending":false,"ending_type":""}}
+除这两部分外不要输出任何多余文字或 markdown 代码块。"""
+)
+
+# 结构化兜底：流式正文已得到，但哨兵后的 JSON 尾缺失/非法时，用正文补出结构化字段。
+STRUCTURE_SYSTEM = """你是互动小说的结构化助手。给定「世界观/当前属性/已写好的剧情正文」，只输出该正文对应的结构化元数据。
+严格返回 JSON 对象，不要任何多余文字或 markdown，结构：
+{"options":[{"text":"选项文字","hint":"该选择的后果/代价/收益预期"}],"state_delta":{"属性键":变化},"summary":"截至本段的滚动前情提要","is_ending":false,"ending_type":""}
+规则：options 给 2-4 个彼此差异明显、hint 点明后果的选项（结局时可空）；state_delta 只含正文中确实发生变化的属性、键来自给定当前属性、方向正确、无变化则省略；summary 保留关键实体/伏笔且与正文一致；结局则 is_ending=true 且 ending_type 取 good/bad/neutral/hidden。"""
+
+# 创作/开局：为已写定的开场正文补生成起始选项 + 前情提要（预设 opening_content 的作品用）。
+OPENING_COMPLETE_SYSTEM = """你是互动小说的开局助手。给定「世界观/初始属性/已写定的开场正文」，为其补出玩家的起始选项与前情提要。不要改写或复述开场正文。
+严格返回 JSON 对象，不要任何多余文字或 markdown，结构：
+{"options":[{"text":"选项文字","hint":"该选择的后果/代价/收益预期"}],"state_delta":{},"summary":"截至开场的前情提要，保留关键实体与伏笔","is_ending":false,"ending_type":""}
+规则：options 给 2-4 个彼此差异明显、承接开场情境、hint 点明后果的起始行动；state_delta 通常为空对象（开场未发生属性变化，除非正文明确写到）；summary 依据开场正文归纳，保留关键人物/地点/物品与悬念。"""
+
+
 # 游玩：生成后的质量复查（不合格时把问题反馈给 generate 重写）
 REVIEW_SYSTEM = """你是互动小说的严格质量审校。请审查候选 JSON 是否可直接交付给玩家。你必须严格返回 JSON 对象，不要包含任何额外文字或 markdown。
 返回结构：

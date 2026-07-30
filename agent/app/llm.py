@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import AsyncIterator
 from functools import lru_cache
 from typing import Any
 
@@ -40,6 +41,31 @@ def get_llm() -> ChatOpenAI:
         # DeepSeek 兼容 OpenAI 的 response_format，强制返回 JSON 对象
         model_kwargs={"response_format": {"type": "json_object"}},
     )
+
+
+@lru_cache
+def get_stream_llm() -> ChatOpenAI:
+    """流式专用实例：与 get_llm 相同，但**不强制** JSON 输出——流式下正文以哨兵
+    分隔（正文 <<<META>>> JSON 尾），JSON 模式会破坏正文的自然流式。"""
+    s = get_settings()
+    return ChatOpenAI(
+        model=s.deepseek_model,
+        api_key=s.deepseek_api_key,
+        base_url=s.deepseek_base_url,
+        temperature=s.ai_temperature,
+        timeout=s.ai_timeout,
+    )
+
+
+async def chat_stream(system: str, user: str) -> AsyncIterator[str]:
+    """流式单轮对话，逐块产出增量文本（可能为空块，调用方需容忍）。"""
+    llm = get_stream_llm()
+    async for chunk in llm.astream(
+        [SystemMessage(content=system), HumanMessage(content=user)]
+    ):
+        text = chunk.content if isinstance(chunk.content, str) else str(chunk.content)
+        if text:
+            yield text
 
 
 def chat_json(system: str, user: str, *, temperature: float | None = None) -> dict[str, Any]:

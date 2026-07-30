@@ -1,9 +1,19 @@
 """游玩链路：/generate（开场）与 /continue（续写），供 Go 后端调用。"""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+import json
+from collections.abc import AsyncIterator
 
-from ..graph.story_graph import run_continue, run_start
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
+
+from ..graph.story_graph import (
+    complete_opening,
+    run_continue,
+    run_continue_stream,
+    run_start,
+    run_start_stream,
+)
 from ..llm import chat_json
 from ..prompts import MERGE_SYSTEM
 from ..schemas import (
@@ -12,9 +22,30 @@ from ..schemas import (
     GenerateRequest,
     MergeCheckRequest,
     MergeCheckResponse,
+    OpeningCompleteRequest,
 )
 
 router = APIRouter(tags=["play"])
+
+
+def _sse(event: str, data: dict) -> str:
+    """编码一帧 SSE。"""
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+async def _sse_stream(events: AsyncIterator[dict]) -> AsyncIterator[str]:
+    """把流水线事件（delta/revise/done）转成 SSE 帧；异常转 error 帧后正常结束流。"""
+    try:
+        async for ev in events:
+            t = ev.get("type")
+            if t == "delta":
+                yield _sse("delta", {"text": ev.get("text", "")})
+            elif t == "revise":
+                yield _sse("revise", {})
+            elif t == "done":
+                yield _sse("done", ev.get("result", {}))
+    except Exception as e:  # noqa: BLE001 —— 流已开始，只能以 error 帧告知下游
+        yield _sse("error", {"detail": f"{type(e).__name__}: {e}"})
 
 
 @router.post("/generate", response_model=AIResult)
@@ -40,6 +71,36 @@ def continue_story(req: ContinueRequest) -> AIResult:
         )
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"ai continue failed: {e}") from e
+    return AIResult(**result)
+
+
+@router.post("/generate/stream")
+def generate_stream(req: GenerateRequest) -> StreamingResponse:
+    """流式开场：正文逐字（delta），结束后 done 携带结构化结果。"""
+    initial = req.initial_state or req.world.initial_state or {}
+    events = run_start_stream(req.world.model_dump(), initial)
+    return StreamingResponse(_sse_stream(events), media_type="text/event-stream")
+
+
+@router.post("/continue/stream")
+def continue_stream(req: ContinueRequest) -> StreamingResponse:
+    """流式续写：正文逐字（delta），审校拒绝发 revise，结束后 done 携带结构化结果。"""
+    events = run_continue_stream(
+        req.world.model_dump(),
+        [h.model_dump() for h in req.history],
+        req.current_state,
+        req.choice,
+    )
+    return StreamingResponse(_sse_stream(events), media_type="text/event-stream")
+
+
+@router.post("/opening/complete", response_model=AIResult)
+def opening_complete(req: OpeningCompleteRequest) -> AIResult:
+    """为已写定的开场正文补生成起始选项 + 前情提要（非流式）。"""
+    try:
+        result = complete_opening(req.world.model_dump(), req.initial_state, req.content)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"ai opening complete failed: {e}") from e
     return AIResult(**result)
 
 

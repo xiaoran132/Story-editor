@@ -9,14 +9,22 @@ from __future__ import annotations
 import json
 import logging
 import time
+from collections.abc import AsyncIterator
 from functools import lru_cache
 from typing import Any
 
 from langgraph.graph import END, StateGraph
 
 from ..config import get_settings
-from ..llm import LLMParseError, chat_json
-from ..prompts import REVIEW_SYSTEM, STORY_SYSTEM
+from ..llm import LLMParseError, chat_json, chat_stream
+from ..prompts import (
+    _SENTINEL,
+    OPENING_COMPLETE_SYSTEM,
+    REVIEW_SYSTEM,
+    STORY_STREAM_SYSTEM,
+    STORY_SYSTEM,
+    STRUCTURE_SYSTEM,
+)
 from .state import StoryState
 
 # 阶段一可观测性：每次生成打一行 logfmt 埋点，供离线 grep/jq 统计
@@ -375,3 +383,154 @@ def run_continue(
             "choice": choice,
         },
     )
+
+
+# ===== 流式流水线（真流式·单次哨兵分隔） =====
+# 与 langgraph 的同步 invoke 分离：正文 chat_stream 逐字产出，结束后按 _SENTINEL 切出
+# JSON 尾；尾缺失/非法则用 STRUCTURE_SYSTEM 兜底；再 normalize + review，拒绝则 revise 重写。
+
+def _structure_fallback(state: dict[str, Any], prose: str) -> dict[str, Any]:
+    """哨兵后的 JSON 尾缺失/非法时，据已写好的正文补出结构化元数据（保住正文不重来）。"""
+    prompt = (
+        state["user_prompt"]
+        + "\n【已写好的剧情正文】\n"
+        + prose
+        + "\n请只为上面这段正文输出结构化元数据 JSON（不要重写正文）。"
+    )
+    return chat_json(STRUCTURE_SYSTEM, prompt)
+
+
+def _split_sentinel(buf: str) -> tuple[str, str]:
+    """按哨兵切分累积缓冲：返回 (正文, JSON尾字符串)。无哨兵时尾为空。"""
+    idx = buf.find(_SENTINEL)
+    if idx == -1:
+        return buf.strip(), ""
+    return buf[:idx].strip(), buf[idx + len(_SENTINEL):].strip()
+
+
+async def _stream_pipeline(mode: str, base_state: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
+    """公共流式流水线，产出事件：
+    {"type":"delta","text":..} 正文增量 / {"type":"revise"} 审校拒绝需重来 / {"type":"done","result":..}。
+    异常（LLMParseError/ReviewExhaustedError/其它）打点后原样抛出，由路由转 SSE error 帧。"""
+    prep = prepare(base_state)
+    state = {**base_state, **prep}
+    max_retries = max(0, get_settings().ai_review_max_retries)
+    start = time.perf_counter()
+    ttfb_ms: int | None = None
+    failures = 0
+    feedback = ""
+
+    try:
+        while True:
+            prompt = state["user_prompt"]
+            if feedback:
+                prompt += (
+                    "\n【上一稿未通过质量审校】\n"
+                    f"以下问题必须全部修正：{feedback}\n"
+                    "请基于原始要求完整重写，正文照旧用哨兵分隔，不要解释修改过程。"
+                )
+
+            # —— 流式写作：只把哨兵之前的正文作为 delta 外发，尾部留给 JSON ——
+            buf = ""
+            emitted = 0
+            hold = len(_SENTINEL) - 1  # 末尾暂留，避免把半个哨兵当正文发出
+            async for chunk in chat_stream(STORY_STREAM_SYSTEM, prompt):
+                if ttfb_ms is None:
+                    ttfb_ms = round((time.perf_counter() - start) * 1000)
+                buf += chunk
+                idx = buf.find(_SENTINEL)
+                if idx == -1:
+                    safe = max(emitted, len(buf) - hold)
+                    if safe > emitted:
+                        yield {"type": "delta", "text": buf[emitted:safe]}
+                        emitted = safe
+                elif idx > emitted:
+                    yield {"type": "delta", "text": buf[emitted:idx]}
+                    emitted = idx  # 哨兵已现，之后不再外发正文
+
+            prose, tail_str = _split_sentinel(buf)
+            tail: Any = None
+            if tail_str:
+                try:
+                    tail = json.loads(tail_str)
+                except json.JSONDecodeError:
+                    tail = None
+            if not isinstance(tail, dict):
+                tail = _structure_fallback(state, prose)  # 兜底：保住正文，补结构化尾
+
+            raw = {"content": prose, **tail}
+            result = normalize(
+                {"raw": raw, "known_keys": state["known_keys"], "attr_types": state["attr_types"]}
+            )["result"]
+
+            rv = review({"user_prompt": state["user_prompt"], "raw": raw, "review_failures": failures})
+            if rv["review_passed"]:
+                elapsed_ms = round((time.perf_counter() - start) * 1000)
+                logger.info(
+                    "gen mode=%s outcome=ok stream=1 elapsed_ms=%d ttfb_ms=%d "
+                    "review_failures=%d first_draft_pass=%s is_ending=%s",
+                    mode, elapsed_ms, ttfb_ms if ttfb_ms is not None else -1,
+                    failures, failures == 0, bool(result.get("is_ending")),
+                )
+                yield {"type": "done", "result": result}
+                return
+
+            failures = rv["review_failures"]
+            feedback = rv["review_feedback"]
+            if failures > max_retries:
+                raise ReviewExhaustedError(
+                    f"AI 生成内容在 {failures} 次质量审校后仍未通过：{feedback}"
+                )
+            yield {"type": "revise"}  # 通知前端清空已流出的正文，准备重来
+    except Exception as e:  # noqa: BLE001 —— 打点后原样抛给路由转 SSE error
+        elapsed_ms = round((time.perf_counter() - start) * 1000)
+        if isinstance(e, ReviewExhaustedError):
+            outcome = "review_exhausted"
+        elif isinstance(e, LLMParseError):
+            outcome = "parse_error"
+        else:
+            outcome = "error"
+        logger.warning(
+            "gen mode=%s outcome=%s stream=1 elapsed_ms=%d ttfb_ms=%d err_type=%s detail=%s",
+            mode, outcome, elapsed_ms, ttfb_ms if ttfb_ms is not None else -1,
+            type(e).__name__, e,
+        )
+        raise
+
+
+def run_continue_stream(
+    world: dict[str, Any],
+    history: list[dict[str, Any]],
+    current_state: dict[str, Any],
+    choice: str,
+) -> AsyncIterator[dict[str, Any]]:
+    return _stream_pipeline(
+        "continue",
+        {"mode": "continue", "world": world, "history": history,
+         "current_state": current_state, "choice": choice},
+    )
+
+
+def run_start_stream(
+    world: dict[str, Any], initial_state: dict[str, Any]
+) -> AsyncIterator[dict[str, Any]]:
+    return _stream_pipeline(
+        "start", {"mode": "start", "world": world, "initial_state": initial_state}
+    )
+
+
+def complete_opening(
+    world: dict[str, Any], initial_state: dict[str, Any], content: str
+) -> dict[str, Any]:
+    """为已写定的开场正文补生成起始选项 + 前情提要（预设 opening_content 的作品，非流式）。"""
+    known = list((initial_state or {}).keys())
+    attr_types = _attr_types(world, known)
+    lines: list[str] = []
+    _write_world(lines, world)
+    lines.append(f"\n初始属性：{_to_json(initial_state or {})}")
+    _write_attr_types(lines, attr_types)
+    lines.append("\n已写定的开场正文：\n" + content)
+    lines.append("\n请为这段开场补出玩家的起始选项与前情提要（不要改写正文）。")
+    raw = chat_json(OPENING_COMPLETE_SYSTEM, "\n".join(lines))
+    raw["content"] = content
+    return normalize({"raw": raw, "known_keys": known, "attr_types": attr_types})["result"]
