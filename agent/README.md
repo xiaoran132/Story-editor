@@ -82,7 +82,12 @@ flowchart LR
 
 ### 埋点（可观测性）
 
-`story_graph.py` 的 `_invoke_with_metrics` 每次生成打一行 `story.metrics` 日志（logfmt）：`mode`、`outcome`(ok/error)、`elapsed_ms`、`review_failures`(0=首稿通过)、`first_draft_pass`、`is_ending`。验证期用它算首稿通过率 / 平均重写次数 / 延迟 p95 / 超限率，无需管理端大屏或指标表。背景与聚合方式见交接手册 §9.1。
+`story_graph.py` 打两类 `story.metrics` 日志（logfmt）：
+
+- `gen` —— 每次生成流一行（`_invoke_with_metrics`）：`mode`、`outcome`、`elapsed_ms`、成功附 `review_failures`(0=首稿通过)/`first_draft_pass`/`is_ending`，失败附 `err_type`/`detail`。`outcome` 细分 `ok`/`parse_error`(LLM 非法 JSON)/`review_exhausted`(审校超限)/`error`。
+- `review` —— 每次审校判定一行：`verdict`(pass/reject)、`attempt`、拒绝附 `issues`。
+
+用 `tools/sample_metrics.py [每世界续写轮数]` 在进程内直驱采样并聚合（不经 HTTP、不碰 DB，避免 uvicorn 吞掉 INFO；会真实调用 DeepSeek）。背景与取舍见交接手册 §9.1。
 
 ## 长程记忆与 `summary`
 

@@ -1,7 +1,7 @@
 ﻿import unittest
 from unittest.mock import patch
 
-from app.graph.story_graph import get_story_graph, run_start
+from app.graph.story_graph import ReviewExhaustedError, get_story_graph, run_start
 from app.prompts import REVIEW_SYSTEM, STORY_SYSTEM
 
 
@@ -65,7 +65,7 @@ class StoryGraphReviewTest(unittest.TestCase):
             return next(reviews)
 
         with patch("app.graph.story_graph.chat_json", side_effect=fake_chat):
-            with self.assertRaisesRegex(ValueError, "3 次质量审校后仍未通过"):
+            with self.assertRaisesRegex(ReviewExhaustedError, "3 次质量审校后仍未通过"):
                 run_start({"background": "海港悬疑"}, {"hp": 10})
 
 

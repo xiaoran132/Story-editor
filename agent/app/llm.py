@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from functools import lru_cache
 from typing import Any
 
@@ -9,6 +10,21 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from .config import get_settings
+
+logger = logging.getLogger("story.metrics")
+
+# 解析失败时追加到 user 消息末尾的纠正指令，推动模型重发合法 JSON。
+_RETRY_HINT = (
+    "\n\n【上次输出不是合法的 JSON 对象。请只返回一个合法 JSON 对象，"
+    "不要任何解释、前后缀或 ``` 代码块围栏。】"
+)
+
+
+class LLMParseError(ValueError):
+    """LLM 未返回合法 JSON 对象。独立类型便于埋点区分「解析失败」与「审校超限」。
+
+    仍继承 ValueError，不改变调用方既有的异常兜底行为。
+    """
 
 
 @lru_cache
@@ -35,12 +51,23 @@ def chat_json(system: str, user: str, *, temperature: float | None = None) -> di
     if temperature is not None:
         llm = llm.bind(temperature=temperature)
 
-    resp = llm.invoke([SystemMessage(content=system), HumanMessage(content=user)])
-    content = resp.content if isinstance(resp.content, str) else str(resp.content)
-    try:
-        data = json.loads(content)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"LLM 未返回合法 JSON: {e}; 原文: {content[:500]}") from e
-    if not isinstance(data, dict):
-        raise ValueError(f"LLM 返回的不是 JSON 对象: {content[:500]}")
-    return data
+    # 仅对「非法 JSON」重试（网络/API 异常照常冒泡，不在此吞掉）。
+    attempts = max(1, get_settings().ai_parse_max_retries + 1)
+    last_err: LLMParseError | None = None
+    for i in range(attempts):
+        prompt = user if i == 0 else user + _RETRY_HINT
+        resp = llm.invoke([SystemMessage(content=system), HumanMessage(content=prompt)])
+        content = resp.content if isinstance(resp.content, str) else str(resp.content)
+        try:
+            data = json.loads(content)
+        except json.JSONDecodeError as e:
+            last_err = LLMParseError(f"LLM 未返回合法 JSON: {e}; 原文: {content[:500]}")
+        else:
+            if isinstance(data, dict):
+                return data
+            last_err = LLMParseError(f"LLM 返回的不是 JSON 对象: {content[:500]}")
+        if i + 1 < attempts:  # 还有重试机会
+            logger.warning("parse_retry attempt=%d detail=%s", i + 1, last_err)
+
+    assert last_err is not None
+    raise last_err

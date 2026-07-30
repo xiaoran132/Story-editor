@@ -15,14 +15,18 @@ from typing import Any
 from langgraph.graph import END, StateGraph
 
 from ..config import get_settings
-from ..llm import chat_json
+from ..llm import LLMParseError, chat_json
 from ..prompts import REVIEW_SYSTEM, STORY_SYSTEM
 from .state import StoryState
 
 # 阶段一可观测性：每次生成打一行 logfmt 埋点，供离线 grep/jq 统计
-# 首稿审校通过率、每局平均重写次数、完整回复延迟 p95、超限报错率。
+# 首稿审校通过率、每局平均重写次数、完整回复延迟 p95、报错率（按类型细分）。
 # 详见 docs/开发交接手册.md §9.1；刻意不建大屏/新表，验证期用日志聚合即可。
 logger = logging.getLogger("story.metrics")
+
+
+class ReviewExhaustedError(RuntimeError):
+    """重写次数耗尽仍未通过审校。独立类型，便于与 LLMParseError 在埋点里区分。"""
 
 
 def _to_json(v: Any) -> str:
@@ -220,6 +224,13 @@ def review(state: StoryState) -> dict[str, Any]:
     if not passed and not feedback:
         feedback = "候选内容未通过质量审校；请重新核对剧情承接、选项后果、属性变化和前情提要。"
 
+    # 逐次审校判定打点：用来回答「审校到底在拒什么、是不是形同橡皮图章」。
+    attempt = state.get("review_failures", 0) + 1
+    if passed:
+        logger.info("review verdict=pass attempt=%d", attempt)
+    else:
+        logger.info("review verdict=reject attempt=%d issues=%s", attempt, feedback)
+
     return {
         "review_passed": passed,
         "review_feedback": feedback,
@@ -239,7 +250,7 @@ def route_after_review(state: StoryState) -> str:
 
 def review_failed(state: StoryState) -> dict[str, Any]:
     """重写次数耗尽时拒绝交付未达标的内容。"""
-    raise ValueError(
+    raise ReviewExhaustedError(
         "AI 生成内容在 "
         f"{state.get('review_failures', 0)} 次质量审校后仍未通过："
         f"{state.get('review_feedback', '未提供具体原因')}"
@@ -320,9 +331,16 @@ def _invoke_with_metrics(mode: str, initial: dict[str, Any]) -> dict[str, Any]:
         out = get_story_graph().invoke(initial)
     except Exception as e:  # noqa: BLE001 —— 仅打点后原样抛给路由转 502
         elapsed_ms = round((time.perf_counter() - start) * 1000)
+        # 区分两类失败：审校超限（提示词/门槛问题）vs LLM 非法 JSON（解析/重试问题）。
+        if isinstance(e, ReviewExhaustedError):
+            outcome = "review_exhausted"
+        elif isinstance(e, LLMParseError):
+            outcome = "parse_error"
+        else:
+            outcome = "error"
         logger.warning(
-            "gen mode=%s outcome=error elapsed_ms=%d detail=%s",
-            mode, elapsed_ms, e,
+            "gen mode=%s outcome=%s elapsed_ms=%d err_type=%s detail=%s",
+            mode, outcome, elapsed_ms, type(e).__name__, e,
         )
         raise
     elapsed_ms = round((time.perf_counter() - start) * 1000)

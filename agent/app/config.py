@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     ai_timeout: int = 60
     # 质量审校拒绝后，允许额外重写的最大次数；超限后报错，不返回未经认可的内容。
     ai_review_max_retries: int = 2
+    # LLM 返回非法 JSON 时，允许额外重试的最大次数（附纠正指令重发）；超限抛 LLMParseError。
+    # 真实样本显示裸 parse_error 约占 7% 且直接冒泡成玩家 502，故加一次廉价重试兜底。
+    ai_parse_max_retries: int = 1
 
     # 续写上下文滑动窗口：只把「开局 + 最近 (history_window-1) 段」原文放进提示，
     # 更早的剧情折叠（其结果已沉淀在“当前属性”快照中），避免深剧情撑爆上下文。
