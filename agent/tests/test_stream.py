@@ -1,9 +1,9 @@
-"""覆盖流式流水线 _stream_pipeline：哨兵解析 / 结构化兜底 / review 拒绝重来 / 超限抛错。"""
+"""覆盖流式流水线 _stream_pipeline：哨兵解析 / 结构化兜底 / review 拒绝重来 / 超限降级交付。"""
 import unittest
 from unittest.mock import patch
 
 from app.graph import story_graph as sg
-from app.graph.story_graph import ReviewExhaustedError, run_continue_stream
+from app.graph.story_graph import run_continue_stream
 from app.prompts import REVIEW_SYSTEM, STRUCTURE_SYSTEM
 
 WORLD = {"background": "测试世界"}
@@ -92,14 +92,19 @@ class StreamPipelineTest(unittest.IsolatedAsyncioTestCase):
         done = [e for e in events if e["type"] == "done"][0]
         self.assertEqual(done["result"]["content"], "重写稿。")  # 交付重写稿
 
-    async def test_exhausted_raises(self) -> None:
+    async def test_exhausted_degrades_and_delivers(self) -> None:
+        # 重写耗尽不再抛错：降级交付最后一稿（done），绝不让玩家操作失败。
         tail = ('<<<META>>>{"options":[{"text":"A","hint":"h"}],"state_delta":{},'
                 '"summary":"s","is_ending":false,"ending_type":""}')
         chunks = [["稿。", tail]]  # 每次都同样，review 永远拒
         with patch.object(sg, "chat_stream", make_stream(chunks)), \
              patch.object(sg, "chat_json", lambda system, user, **kw: {"passed": False, "issues": ["x"]}):
-            with self.assertRaises(ReviewExhaustedError):
-                await collect(run_continue_stream(WORLD, [], STATE, "go"))
+            events = await collect(run_continue_stream(WORLD, [], STATE, "go"))
+
+        done = [e for e in events if e["type"] == "done"]
+        self.assertEqual(len(done), 1)  # 交付而非抛错
+        self.assertEqual(done[0]["result"]["content"], "稿。")
+        self.assertIn("revise", [e["type"] for e in events])  # 期间确实重试过
 
 
 if __name__ == "__main__":

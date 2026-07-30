@@ -251,22 +251,26 @@ def review(state: StoryState) -> dict[str, Any]:
 
 
 def route_after_review(state: StoryState) -> str:
-    """通过则归一化；被拒绝则有限重写，避免无限循环和不可控成本。"""
+    """通过则归一化；被拒绝则有限重写；重写耗尽则降级交付（不再硬失败）。"""
     if state.get("review_passed"):
         return "normalize"
     max_retries = max(0, get_settings().ai_review_max_retries)
     if state.get("review_failures", 0) <= max_retries:
         return "generate"
-    return "review_failed"
+    return "deliver_degraded"
 
 
-def review_failed(state: StoryState) -> dict[str, Any]:
-    """重写次数耗尽时拒绝交付未达标的内容。"""
-    raise ReviewExhaustedError(
-        "AI 生成内容在 "
-        f"{state.get('review_failures', 0)} 次质量审校后仍未通过："
-        f"{state.get('review_feedback', '未提供具体原因')}"
+def deliver_degraded(state: StoryState) -> dict[str, Any]:
+    """重写次数耗尽：交付最后一稿（已吸收最多反馈），不硬失败。
+
+    属性/state_delta 只是辅助 AI 分析与玩家参考的手段，轻微不精确可容忍；
+    宁可交付略有瑕疵的剧情，也绝不让玩家的操作失败。审校是质量推手而非硬门。
+    """
+    logger.warning(
+        "review degraded (delivered after %d rejections): %s",
+        state.get("review_failures", 0), state.get("review_feedback", ""),
     )
+    return {"review_degraded": True}
 
 
 def normalize(state: StoryState) -> dict[str, Any]:
@@ -317,7 +321,7 @@ def get_story_graph():
     g.add_node("prepare", prepare)
     g.add_node("generate", generate)
     g.add_node("review", review)
-    g.add_node("review_failed", review_failed)
+    g.add_node("deliver_degraded", deliver_degraded)
     g.add_node("normalize", normalize)
 
     g.set_entry_point("prepare")
@@ -326,8 +330,9 @@ def get_story_graph():
     g.add_conditional_edges(
         "review",
         route_after_review,
-        {"generate": "generate", "normalize": "normalize", "review_failed": "review_failed"},
+        {"generate": "generate", "normalize": "normalize", "deliver_degraded": "deliver_degraded"},
     )
+    g.add_edge("deliver_degraded", "normalize")  # 降级也走归一化，正常交付
     g.add_edge("normalize", END)
     return g.compile()
 
@@ -357,10 +362,11 @@ def _invoke_with_metrics(mode: str, initial: dict[str, Any]) -> dict[str, Any]:
         raise
     elapsed_ms = round((time.perf_counter() - start) * 1000)
     failures = int(out.get("review_failures", 0))
+    degraded = bool(out.get("review_degraded"))
     result = out["result"]
     logger.info(
-        "gen mode=%s outcome=ok elapsed_ms=%d review_failures=%d first_draft_pass=%s is_ending=%s",
-        mode, elapsed_ms, failures, failures == 0, bool(result.get("is_ending")),
+        "gen mode=%s outcome=ok elapsed_ms=%d review_failures=%d first_draft_pass=%s degraded=%s is_ending=%s",
+        mode, elapsed_ms, failures, failures == 0, degraded, bool(result.get("is_ending")),
     )
     return result
 
@@ -468,23 +474,24 @@ async def _stream_pipeline(mode: str, base_state: dict[str, Any]) -> AsyncIterat
             )["result"]
 
             rv = review({"user_prompt": state["user_prompt"], "raw": raw, "review_failures": failures})
-            if rv["review_passed"]:
+            failures = rv["review_failures"]
+            feedback = rv["review_feedback"]
+            # 通过 或 重写耗尽 → 都交付本稿（耗尽为降级交付，不硬失败）。
+            degraded = (not rv["review_passed"]) and failures > max_retries
+            if rv["review_passed"] or degraded:
                 elapsed_ms = round((time.perf_counter() - start) * 1000)
+                if degraded:
+                    logger.warning("review degraded (stream, delivered after %d rejections): %s",
+                                   failures, feedback)
                 logger.info(
                     "gen mode=%s outcome=ok stream=1 elapsed_ms=%d ttfb_ms=%d "
-                    "review_failures=%d first_draft_pass=%s is_ending=%s",
+                    "review_failures=%d first_draft_pass=%s degraded=%s is_ending=%s",
                     mode, elapsed_ms, ttfb_ms if ttfb_ms is not None else -1,
-                    failures, failures == 0, bool(result.get("is_ending")),
+                    failures, failures == 0, degraded, bool(result.get("is_ending")),
                 )
                 yield {"type": "done", "result": result}
                 return
 
-            failures = rv["review_failures"]
-            feedback = rv["review_feedback"]
-            if failures > max_retries:
-                raise ReviewExhaustedError(
-                    f"AI 生成内容在 {failures} 次质量审校后仍未通过：{feedback}"
-                )
             yield {"type": "revise"}  # 通知前端清空已流出的正文，准备重来
     except Exception as e:  # noqa: BLE001 —— 打点后原样抛给路由转 SSE error
         elapsed_ms = round((time.perf_counter() - start) * 1000)

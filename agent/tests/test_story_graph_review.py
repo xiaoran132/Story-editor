@@ -1,7 +1,7 @@
 ﻿import unittest
 from unittest.mock import patch
 
-from app.graph.story_graph import ReviewExhaustedError, get_story_graph, run_start
+from app.graph.story_graph import get_story_graph, run_start
 from app.prompts import REVIEW_SYSTEM, STORY_SYSTEM
 
 
@@ -50,7 +50,8 @@ class StoryGraphReviewTest(unittest.TestCase):
         self.assertIn("上一稿未通过质量审校", generation_prompts[1])
         self.assertIn("选项后果不够明确", generation_prompts[1])
 
-    def test_exhausted_retries_never_returns_unapproved_content(self) -> None:
+    def test_exhausted_retries_degrades_and_delivers_last_draft(self) -> None:
+        # 重写耗尽不再硬失败：交付最后一稿（降级交付），绝不让玩家操作失败。
         generated = iter([story("第一稿"), story("第二稿"), story("第三稿")])
         reviews = iter([
             {"passed": False, "issues": ["问题一"]},
@@ -65,8 +66,9 @@ class StoryGraphReviewTest(unittest.TestCase):
             return next(reviews)
 
         with patch("app.graph.story_graph.chat_json", side_effect=fake_chat):
-            with self.assertRaisesRegex(ReviewExhaustedError, "3 次质量审校后仍未通过"):
-                run_start({"background": "海港悬疑"}, {"hp": 10})
+            result = run_start({"background": "海港悬疑"}, {"hp": 10})
+
+        self.assertEqual(result["content"], "第三稿")  # 交付最后一稿，而非报错
 
 
 if __name__ == "__main__":
