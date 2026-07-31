@@ -9,14 +9,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 文档维护与阅读顺序
 
-- 项目入口与快速启动：`README.md`。
-- **当前事实 / 接手手册**：`docs/handoff.md`。修改主链路、接口、配置、数据字段、测试或优先级后，必须同步更新。
-- 工程约束与精确实现约定：本文件。
-- 产品愿景：`docs/prd.md`（PRD，不等于已实现）。
-- 技术决策：`docs/design.md`；上下文方案：`docs/context-strategy.md`；长期数据模型：`infa/sql/`。
-- 模块级接口/配置/测试：`agent/README.md`、`frontend/README.md`。
-
-冲突时以运行代码与测试优先，其次是交接手册和本文件。完成任务时，不要只改 PRD：应更新受影响模块 README 与交接手册。
+- **阅读顺序 / 各文档职责与权威性**：见 `README.md`「先读什么」。
+- **文档维护规则**（改了什么要同步更新哪些）：见 `docs/handoff.md` §10。
+- **冲突优先级**：运行代码 / 测试 > `docs/handoff.md`（当前事实）> 本文件（工程约束）> 模块 README > `docs/design.md`（技术设计）> `docs/prd.md`（愿景）。
+- 完成代码任务后必须同步受影响文档，尤其 `docs/handoff.md`；不要只改 PRD。
 
 ## 项目概述
 
