@@ -11,10 +11,13 @@ STATE = {"hp": 10}
 
 
 def make_stream(calls_chunks):
-    """返回一个假的 chat_stream：第 N 次调用逐块产出 calls_chunks[N]。"""
+    """返回一个假的 chat_stream：第 N 次调用逐块产出 calls_chunks[N]。
+
+    新签名收消息列表（有记忆写手）；测试忽略其内容，只按调用序号取该轮 chunks。
+    """
     counter = {"n": 0}
 
-    async def fake(system, user):
+    async def fake(messages):
         i = counter["n"]
         counter["n"] += 1
         for c in calls_chunks[min(i, len(calls_chunks) - 1)]:

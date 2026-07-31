@@ -96,7 +96,7 @@ WORLD_SYSTEM = """你是互动小说的世界观设计助手。根据用户给�
   "outline": "故事大纲（150-300字）：核心悬念/主线目标 + 大致三幕走向 + 2-4 个关键剧情锚点 + 若干可能结局",
   "characters": [{"name": "角色名", "personality": "性格", "role": "定位"}],
   "initial_state": {"属性键": 初始值},
-  "attributes": {"属性键": {"type": "number|scalar|set", "initial": 初始值}}
+  "attributes": {"属性键": {"type": "number|scalar|set", "initial": 初始值, "hidden": false}}
 }
 要求：
 - outline 是给 AI 导演的**走向锚点**，不是线性脚本：给出主线脊柱与关键节点/结局方向即可，具体路径仍由玩家选择决定；要与 background/characters 自洽。
@@ -105,7 +105,8 @@ WORLD_SYSTEM = """你是互动小说的世界观设计助手。根据用户给�
   - number：数值属性（如 hp、gold、好感度、理智），initial 给数值。
   - scalar：覆盖式属性（如 location、身份、布尔 flag），initial 给对应值。
   - set：集合属性（如背包 items），initial 给数组。
-- initial_state 与 attributes 的键必须一致，initial_state 每个键的值等于其在 attributes 里的 initial。
+- **hidden（可选，默认 false）**：把"针对玩家的暗数值/压力表"标为 `"hidden": true`——它只供 AI 把控走向、不展示给玩家（如 怀疑度、警戒度、命运值、暗好感、堕落度）。玩家该直接感知的属性（hp、金币、物品、体力等）保持可见（false 或省略）。可以主动设计 0-2 个隐藏属性来制造"看不见的紧张感"。
+- initial_state 与 attributes 的键必须一致，initial_state 每个键的值等于其在 attributes 里的 initial（hidden 属性也要有 initial_state 值）。
 - 内容自洽、可玩，避免空泛。"""
 
 # 创作辅助：文本润色

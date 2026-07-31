@@ -13,6 +13,7 @@ from collections.abc import AsyncIterator
 from functools import lru_cache
 from typing import Any
 
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.graph import END, StateGraph
 
 from ..config import get_settings
@@ -86,6 +87,29 @@ def _write_attr_types(lines: list[str], attr_types: dict[str, str]) -> None:
     lines.append("\n属性类型：" + "，".join(parts))
     lines.append(
         "number 给增减量，scalar 给新值，set 给 {\"add\": [...], \"remove\": [...]}。"
+    )
+
+
+def _hidden_attrs(world: dict[str, Any]) -> list[str]:
+    """从 world.attributes 提取标了 hidden:true 的属性键（仅供 AI 参考、玩家端不显示）。"""
+    declared = world.get("attributes") or {}
+    if not isinstance(declared, dict):
+        return []
+    return [
+        k for k, spec in declared.items()
+        if isinstance(spec, dict) and spec.get("hidden") is True
+    ]
+
+
+def _write_hidden(lines: list[str], world: dict[str, Any]) -> None:
+    """告知模型哪些属性对玩家隐藏，并约束其不得在玩家可见文本里泄漏。"""
+    hidden = _hidden_attrs(world)
+    if not hidden:
+        return
+    lines.append(
+        "\n隐藏属性（对玩家不可见，仅供你把控走向的幕后仪表）：" + "、".join(hidden)
+        + "。照常按剧情更新它们的 state_delta，但**绝不要在 content 或 options 里点出这些属性的名字或报出其数值**，"
+        "只用剧情间接体现（如'他眼神里的戒备更重了'而非'怀疑度+10'）。"
     )
 
 
@@ -186,6 +210,7 @@ def prepare(state: StoryState) -> dict[str, Any]:
         attr_types = _attr_types(world, known)
         lines.append(f"\n当前属性：{_to_json(initial)}")
         _write_attr_types(lines, attr_types)
+        _write_hidden(lines, world)
         lines.append(
             "\n请生成这部作品的开场剧情与初始推荐选项。开场通常不产生属性变化，state_delta 可为空对象 {}。"
         )
@@ -197,6 +222,7 @@ def prepare(state: StoryState) -> dict[str, Any]:
         _write_history_window(lines, state.get("history") or [])
         lines.append(f"\n当前属性：{_to_json(current)}")
         _write_attr_types(lines, attr_types)
+        _write_hidden(lines, world)
         lines.append(f"\n玩家现在的选择/行动：{state.get('choice', '')}")
         lines.append("\n请承接以上剧情，生成下一段剧情、新的推荐选项，以及本次选择引起的属性变化。")
 
@@ -428,23 +454,21 @@ async def _stream_pipeline(mode: str, base_state: dict[str, Any]) -> AsyncIterat
     start = time.perf_counter()
     ttfb_ms: int | None = None
     failures = 0
-    feedback = ""
+
+    # 有记忆的写手：一条持续的对话。首轮 system+user；被拒时追加"上一稿 + 审校反馈"，
+    # 让写手在自己上一稿上修订而非从头重写——减少来回震荡、更快收敛。审校仍是独立无记忆调用。
+    writer_msgs = [
+        SystemMessage(content=STORY_STREAM_SYSTEM),
+        HumanMessage(content=state["user_prompt"]),
+    ]
 
     try:
         while True:
-            prompt = state["user_prompt"]
-            if feedback:
-                prompt += (
-                    "\n【上一稿未通过质量审校】\n"
-                    f"以下问题必须全部修正：{feedback}\n"
-                    "请基于原始要求完整重写，正文照旧用哨兵分隔，不要解释修改过程。"
-                )
-
             # —— 流式写作：只把哨兵之前的正文作为 delta 外发，尾部留给 JSON ——
             buf = ""
             emitted = 0
             hold = len(_SENTINEL) - 1  # 末尾暂留，避免把半个哨兵当正文发出
-            async for chunk in chat_stream(STORY_STREAM_SYSTEM, prompt):
+            async for chunk in chat_stream(writer_msgs):
                 if ttfb_ms is None:
                     ttfb_ms = round((time.perf_counter() - start) * 1000)
                 buf += chunk
@@ -492,6 +516,14 @@ async def _stream_pipeline(mode: str, base_state: dict[str, Any]) -> AsyncIterat
                 yield {"type": "done", "result": result}
                 return
 
+            # 拒绝且未超限：把上一稿(原样)与审校反馈追加进写手对话，令其"修订"而非重写。
+            writer_msgs.append(AIMessage(content=buf))
+            writer_msgs.append(HumanMessage(content=(
+                f"上一稿未通过质量审校。需修正的问题：{feedback}\n"
+                "请在上一稿基础上**修订**：保留已经写好、没问题的部分，只针对上述问题改动；"
+                "若问题是结构性的（如整段方向或节奏不对），可以较大改动。"
+                "仍按原格式输出**完整的修订稿**（正文 <<<META>>> JSON尾），不要解释修改过程。"
+            )))
             yield {"type": "revise"}  # 通知前端清空已流出的正文，准备重来
     except Exception as e:  # noqa: BLE001 —— 打点后原样抛给路由转 SSE error
         elapsed_ms = round((time.perf_counter() - start) * 1000)

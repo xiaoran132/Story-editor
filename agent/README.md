@@ -58,9 +58,9 @@ flowchart LR
    - 续写：写入节点路径、最近滚动摘要、最近原文、当前状态与玩家选择。
    - 锁定允许出现在 `state_delta` 中的属性键和类型。
 
-2. `generate`
-   - 调用 `STORY_SYSTEM`，一次输出 `content`、`options`、`state_delta`、`summary`、结局字段。
-   - 若上一稿审校失败，附上 `issues`，要求完整重写 JSON。
+2. `generate` / 写手
+   - 调用 `STORY_SYSTEM`（流式为 `STORY_STREAM_SYSTEM`），一次输出 `content`、`options`、`state_delta`、`summary`、结局字段。
+   - 审校失败时重写：**流式路径用「有记忆的写手」**——把上一稿 + `issues` 追加进写手对话，令其在上一稿上**修订**而非从头重写（减少震荡、更快收敛，见 `story_graph.py` `_stream_pipeline` 的 `writer_msgs`）；非流式 langgraph 路径仍为带 `issues` 的完整重写。审校（`review`）本身保持无记忆、每次新鲜评判。
 
 3. `review`
    - 调用低温 `REVIEW_SYSTEM`，返回 `{"passed": true|false, "issues": [...]}`。
@@ -118,7 +118,7 @@ copy .env.example .env  # Windows；填入 DEEPSEEK_API_KEY
 | `DEEPSEEK_MODEL` | `deepseek-chat` | 模型名称 |
 | `AI_TEMPERATURE` | `0.8` | 正文生成随机性 |
 | `AI_TIMEOUT` | `60` | 单次 LLM 调用超时（秒） |
-| `AI_REVIEW_MAX_RETRIES` | `2` | 审校拒绝后的额外完整重写次数 |
+| `AI_REVIEW_MAX_RETRIES` | `2` | 审校拒绝后的额外重写/修订次数 |
 | `HISTORY_WINDOW` | `8` | 老数据无摘要时的滑动窗口大小；`<=0` 为全量历史 |
 
 ### 启动与检查

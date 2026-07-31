@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator
 from functools import lru_cache
 from typing import Any
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from .config import get_settings
@@ -57,12 +57,15 @@ def get_stream_llm() -> ChatOpenAI:
     )
 
 
-async def chat_stream(system: str, user: str) -> AsyncIterator[str]:
-    """流式单轮对话，逐块产出增量文本（可能为空块，调用方需容忍）。"""
+async def chat_stream(messages: list[BaseMessage]) -> AsyncIterator[str]:
+    """流式多轮对话，逐块产出增量文本（可能为空块，调用方需容忍）。
+
+    收完整消息列表（而非单轮 system+user），以支持"有记忆的写手"：
+    重写时把上一稿(AIMessage) + 审校反馈(HumanMessage) 追加进列表，让模型在自己
+    上一稿基础上修订，而非从头重写——减少来回震荡、更快收敛。
+    """
     llm = get_stream_llm()
-    async for chunk in llm.astream(
-        [SystemMessage(content=system), HumanMessage(content=user)]
-    ):
+    async for chunk in llm.astream(messages):
         text = chunk.content if isinstance(chunk.content, str) else str(chunk.content)
         if text:
             yield text
