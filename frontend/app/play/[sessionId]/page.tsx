@@ -17,6 +17,7 @@ export default function PlayPage() {
     session,
     currentNode,
     allNodes,
+    hiddenAttrs,
     busy,
     streamingText,
     loading,
@@ -48,6 +49,7 @@ export default function PlayPage() {
           <AttrBar
             stateJSON={session?.current_state ?? null}
             deltaJSON={currentNode?.state_delta ?? null}
+            hiddenAttrs={hiddenAttrs}
           />
           <StoryPane node={currentNode} busy={busy} streamingText={streamingText} />
           <OptionList node={currentNode} busy={busy} onChoose={choose} />

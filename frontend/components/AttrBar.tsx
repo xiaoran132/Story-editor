@@ -3,13 +3,15 @@ import { attrLabel, formatAttrValue, formatDelta, parseState } from "@/lib/state
 export default function AttrBar({
   stateJSON,
   deltaJSON,
+  hiddenAttrs = [],
 }: {
   stateJSON: string | null;
   deltaJSON?: string | null;
+  hiddenAttrs?: string[]; // 仅供 AI 参考的隐藏属性键：不在玩家端展示
 }) {
   const state = parseState(stateJSON);
   const delta = parseState(deltaJSON); // 本回合变化；开局/回溯为空对象
-  const keys = Object.keys(state);
+  const keys = Object.keys(state).filter((k) => !hiddenAttrs.includes(k));
   if (!keys.length) return null;
   return (
     <div className="attrs">

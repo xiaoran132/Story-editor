@@ -1,11 +1,12 @@
 import { create } from "zustand";
 import { api, postStream } from "@/lib/api";
-import type { Session, SessionResult, StoryNode } from "@/lib/types";
+import type { Session, SessionResult, Story, StoryNode } from "@/lib/types";
 
 interface PlayState {
   session: Session | null;
   currentNode: StoryNode | null;
   allNodes: StoryNode[]; // 该会话已探索的全部节点，供树状视图建树
+  hiddenAttrs: string[]; // world_config.attributes 里标了 hidden 的属性键：仅供 AI 参考，玩家端不展示
   busy: boolean; // AI 生成中，禁用交互
   streamingText: string; // 流式续写时逐字到达的正文（done 后清空，回落 currentNode.content）
   loading: boolean; // 首次加载会话中
@@ -18,6 +19,19 @@ interface PlayState {
   reset: () => void;
 }
 
+// 从作品 world_config 解析出 hidden 属性键（仅供 AI 参考、玩家端隐藏）。
+function parseHiddenAttrs(worldConfig: string): string[] {
+  try {
+    const attrs = (JSON.parse(worldConfig || "{}").attributes || {}) as Record<
+      string,
+      { hidden?: boolean }
+    >;
+    return Object.keys(attrs).filter((k) => attrs[k] && attrs[k].hidden === true);
+  } catch {
+    return [];
+  }
+}
+
 // 开场流式的去重守卫（按 sessionId）：避免 React 严格模式下 effect 双触发重复生成开场。
 // 放模块级，reset() 不清除，跨重挂载有效；出错时清除以允许重试。
 const openingRequested: Record<string, boolean> = {};
@@ -26,6 +40,7 @@ export const usePlayStore = create<PlayState>((set, get) => ({
   session: null,
   currentNode: null,
   allNodes: [],
+  hiddenAttrs: [],
   busy: false,
   streamingText: "",
   loading: false,
@@ -36,6 +51,7 @@ export const usePlayStore = create<PlayState>((set, get) => ({
       session: null,
       currentNode: null,
       allNodes: [],
+      hiddenAttrs: [],
       busy: false,
       streamingText: "",
       loading: false,
@@ -52,6 +68,11 @@ export const usePlayStore = create<PlayState>((set, get) => ({
         allNodes: r.nodes ?? [],
         loading: false,
       });
+      // 取作品 world_config，解析仅供 AI 参考的隐藏属性键（失败忽略，不影响游玩）。
+      api
+        .get<Story>(`/stories/${r.session.story_id}`)
+        .then((story) => set({ hiddenAttrs: parseHiddenAttrs(story.world_config) }))
+        .catch(() => {});
       // 空会话（尚无开场根节点）→ 触发开场流式生成。
       if (!r.current_node && r.session.status === "active") {
         get().startOpening();

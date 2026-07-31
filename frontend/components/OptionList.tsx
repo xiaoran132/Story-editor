@@ -26,7 +26,7 @@ export default function OptionList({
 
   return (
     <>
-      {!ending && !busy && (
+      {!ending && !busy && options.length > 0 && (
         <div className="options">
           {options.map((o, i) => (
             <button
@@ -39,6 +39,15 @@ export default function OptionList({
               {o.hint ? <span className="hint">（{o.hint}）</span> : null}
             </button>
           ))}
+        </div>
+      )}
+
+      {/* 纯叙事过场（无选项、非结局）：给一个「继续」让剧情往下流，无需玩家硬想输入 */}
+      {!ending && !busy && options.length === 0 && (
+        <div className="options">
+          <button className="opt continue" onClick={() => onChoose("继续")}>
+            继续 ▸
+          </button>
         </div>
       )}
 

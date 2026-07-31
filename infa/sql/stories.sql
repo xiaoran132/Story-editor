@@ -45,7 +45,10 @@ CREATE TABLE stories (
     --     --   scalar（覆盖式）  ：state_delta 给新值，  如 {"location": "王城"}
     --     --   set（集合增删）   ：state_delta 给 {"add":[...],"remove":[...]}
     --     -- 未声明类型的键由 Go 侧兜底推断（两侧皆数值则累加，否则覆盖），保证老作品兼容。
+    --     -- 可选 "hidden": true —— 该属性仅供 AI 参考（导演/走向计算），玩家端不展示；
+    --     --   适合"针对玩家的压力表"（如 怀疑度、处分风险、警戒度）。仍进 current_state、仍喂给 AI。
     --     "hp":       {"type": "number", "initial": 100},
+    --     "怀疑度":    {"type": "number", "initial": 0, "hidden": true},
     --     "location": {"type": "scalar", "initial": "村口"},
     --     "items":    {"type": "set",    "initial": []}
     --   },
