@@ -26,7 +26,7 @@ from ..prompts import (
 from .state import StoryState
 
 # 可观测性：每次生成打一行 logfmt 埋点（story.metrics gen ...），供离线 grep/jq 统计
-# 首稿审校通过率、平均重写次数、延迟与 ttfb、降级率。详见 docs/开发交接手册.md §9.1。
+# 首稿审校通过率、平均重写次数、延迟与 ttfb、降级率。详见 docs/handoff.md §9.1。
 logger = logging.getLogger("story.metrics")
 
 
@@ -125,7 +125,7 @@ def _latest_summary(history: list[dict[str, Any]]) -> str:
 
 
 def _write_history_window(lines: list[str], history: list[dict[str, Any]]) -> None:
-    """渲染续写上下文的“已发生剧情”，两条路径（见 docs/剧情上下文构建方案.md）：
+    """渲染续写上下文的“已发生剧情”，两条路径（见 docs/context-strategy.md）：
 
     - ④节点树增量摘要（优先）：历史带 summary 时 = 【前情提要】(最近节点滚动摘要) + 最近
       _RECENT_RAW 段原文。上下文 O(1)、与深度无关，且保留关键实体/伏笔，避免深剧情前后矛盾。

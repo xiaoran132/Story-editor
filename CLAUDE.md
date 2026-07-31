@@ -10,10 +10,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 文档维护与阅读顺序
 
 - 项目入口与快速启动：`README.md`。
-- **当前事实 / 接手手册**：`docs/开发交接手册.md`。修改主链路、接口、配置、数据字段、测试或优先级后，必须同步更新。
+- **当前事实 / 接手手册**：`docs/handoff.md`。修改主链路、接口、配置、数据字段、测试或优先级后，必须同步更新。
 - 工程约束与精确实现约定：本文件。
-- 产品愿景：`docs/功能设计.md`（PRD，不等于已实现）。
-- 技术决策：`docs/设计思路.md`；上下文方案：`docs/剧情上下文构建方案.md`；长期数据模型：`infa/sql/`。
+- 产品愿景：`docs/prd.md`（PRD，不等于已实现）。
+- 技术决策：`docs/design.md`；上下文方案：`docs/context-strategy.md`；长期数据模型：`infa/sql/`。
 - 模块级接口/配置/测试：`agent/README.md`、`frontend/README.md`。
 
 冲突时以运行代码与测试优先，其次是交接手册和本文件。完成任务时，不要只改 PRD：应更新受影响模块 README 与交接手册。
@@ -156,7 +156,7 @@ Service 层定义自己的输入结构体（如 `service.StoryCreateInput`、`se
 
 ### 剧情节点树 — JSONB 增量属性设计
 
-核心设计思想（详见 `docs/设计思路.md`）：剧情属性（HP、金币、好感度等）完全由创作者自定义，后端不硬编码字段。
+核心设计思想（详见 `docs/design.md`）：剧情属性（HP、金币、好感度等）完全由创作者自定义，后端不硬编码字段。
 
 - **`StoryNode`** 使用邻接表（`parent_id`）形成树，`depth` 记录层级，`is_ending` 标记结局
 - 属性变化存增量（`state_delta JSONB`），当前完整状态 = 路径上所有 delta 按类型合并 + 初始值
@@ -199,7 +199,7 @@ Service 层定义自己的输入结构体（如 `service.StoryCreateInput`、`se
 | AgentClient + Agent 服务对接              | 完成（`agent/` + Go HTTP 编排，属性类型系统 number/scalar/set） |
 | 游玩前端（Next.js）                         | 完成（`frontend/`：星图主题；作品选择、游玩、历史会话读档续玩+删档；已探索剧情线以发光星图展示、点击节点回溯；登录/注册未接入，沿用匿名 guest） |
 | 节点语义合并去重                            | 完成（续写流结束后 `applyContinueResult`：同层子节点按 `state_delta` 相等硬过滤 + agent `/merge-check` 判语义等价 → 命中复用不新建，避免近义分支污染剧情树） |
-| Agent 链路阶段一（导演节拍 + 有后果选择 + 属性入戏 + ④增量摘要 + 质量复查） | 完成（`generate` 后低温 `review` 回调审查；不通过则**有记忆写手修订**（在上一稿上改），最多 `AI_REVIEW_MAX_RETRIES` 次，**超限降级交付最后一稿**（容忍瑕疵，绝不让玩家操作失败）。`summary` 落库并在续写时回注入，老数据滑动窗口兜底。见 `docs/设计思路.md`「AI agent」三阶段） |
+| Agent 链路阶段一（导演节拍 + 有后果选择 + 属性入戏 + ④增量摘要 + 质量复查） | 完成（`generate` 后低温 `review` 回调审查；不通过则**有记忆写手修订**（在上一稿上改），最多 `AI_REVIEW_MAX_RETRIES` 次，**超限降级交付最后一稿**（容忍瑕疵，绝不让玩家操作失败）。`summary` 落库并在续写时回注入，老数据滑动窗口兜底。见 `docs/design.md`「AI agent」三阶段） |
 | 开局+续写全流式输出（SSE，阶段二切片） | 完成（续写 `/choice/stream`→`MakeChoiceStream`→agent `/continue/stream`；开局 `StartSession` 只建空会话、游玩页触发 `/opening/stream`→`StartOpeningStream`→agent `/generate/stream`。正文哨兵分隔逐字流出，结束后合并/去重/落库；review 拒绝发 revise。首字延迟 `ttfb_ms` 埋点约 0.4~1.5s vs 完整 ~7.7s） |
 | 预设开场补全 | 完成（有 `opening_content` 的作品开局：正文作单帧 delta + 调 `/opening/complete` 补起始选项+summary，避免开局只有自由输入框） |
 | Community（浏览/详情/点赞/评论）                | handler 桩，全部 TODO |
@@ -216,7 +216,7 @@ Service 层定义自己的输入结构体（如 `service.StoryCreateInput`、`se
 
 独立进程，Go 后端通过 `AGENT_URL`（默认 `http://localhost:8001`）调用，**不碰数据库**。DeepSeek 凭证下沉到 `agent/.env`，Go 侧不再直连大模型。
 
-- `app/graph/story_graph.py` — **唯一生成编排在 `_stream_pipeline`（真流式）**，历史上的 langgraph 非流式图已退休；`prepare`（构建上下文/注入属性类型与隐藏属性）、`normalize`（按类型规整 delta、过滤非法键、规整结局）、`review` 为共享纯函数，`run_start`/`run_continue` 是 drain 流式的同步适配器（供 `/opening/complete` 无关的工具与 `/assist/opening`）。**agent 链路阶段一**：写手单次输出「正文 `<<<META>>>` JSON尾」，兼任「导演 + 书记员」——节拍把控的正文（引用属性）+ 后果预期的选项 hint + 滚动 `summary`；正文逐字流出、结束后按哨兵解析 JSON 尾（缺失/非法用 `STRUCTURE_SYSTEM` 兜底）；随后低温 `review` 审查承接/属性/选项后果/delta 与摘要一致性，不通过则用**有记忆的写手修订**（把上一稿 AIMessage + 反馈 HumanMessage 追加进 `writer_msgs`，在上一稿上改而非重写，减少震荡）。最多额外重写 `AI_REVIEW_MAX_RETRIES` 次（默认 2），**超限则降级交付最后一稿**（打 `degraded=1` 埋点，不硬失败——属性/delta 只是辅助手段、瑕疵可容忍，绝不让玩家操作失败）。审校采**分级**：只挡阻断级硬伤（正文矛盾/无推进/无选项/summary 篡改关键事实/JSON 坏），delta 精度、未遂动作记账等模糊情形一律放行。隐藏属性（`attributes[k].hidden`）由 `_write_hidden` 注入提示、令 LLM 用它把控走向但不在正文/选项泄漏。续写上下文用 **④节点树增量摘要**（`_write_history_window`）：最近非空 `summary` 渲染为 `【前情提要】` + 最近 `_RECENT_RAW`(=2) 段原文，O(1)；老会话无 summary 回退**滑动窗口**（`HISTORY_WINDOW`，默认 8）。演进见 `docs/设计思路.md`「AI agent」，上下文方案见 `docs/剧情上下文构建方案.md`
+- `app/graph/story_graph.py` — **唯一生成编排在 `_stream_pipeline`（真流式）**，历史上的 langgraph 非流式图已退休；`prepare`（构建上下文/注入属性类型与隐藏属性）、`normalize`（按类型规整 delta、过滤非法键、规整结局）、`review` 为共享纯函数，`run_start`/`run_continue` 是 drain 流式的同步适配器（供 `/opening/complete` 无关的工具与 `/assist/opening`）。**agent 链路阶段一**：写手单次输出「正文 `<<<META>>>` JSON尾」，兼任「导演 + 书记员」——节拍把控的正文（引用属性）+ 后果预期的选项 hint + 滚动 `summary`；正文逐字流出、结束后按哨兵解析 JSON 尾（缺失/非法用 `STRUCTURE_SYSTEM` 兜底）；随后低温 `review` 审查承接/属性/选项后果/delta 与摘要一致性，不通过则用**有记忆的写手修订**（把上一稿 AIMessage + 反馈 HumanMessage 追加进 `writer_msgs`，在上一稿上改而非重写，减少震荡）。最多额外重写 `AI_REVIEW_MAX_RETRIES` 次（默认 2），**超限则降级交付最后一稿**（打 `degraded=1` 埋点，不硬失败——属性/delta 只是辅助手段、瑕疵可容忍，绝不让玩家操作失败）。审校采**分级**：只挡阻断级硬伤（正文矛盾/无推进/无选项/summary 篡改关键事实/JSON 坏），delta 精度、未遂动作记账等模糊情形一律放行。隐藏属性（`attributes[k].hidden`）由 `_write_hidden` 注入提示、令 LLM 用它把控走向但不在正文/选项泄漏。续写上下文用 **④节点树增量摘要**（`_write_history_window`）：最近非空 `summary` 渲染为 `【前情提要】` + 最近 `_RECENT_RAW`(=2) 段原文，O(1)；老会话无 summary 回退**滑动窗口**（`HISTORY_WINDOW`，默认 8）。演进见 `docs/design.md`「AI agent」，上下文方案见 `docs/context-strategy.md`
 - `app/routers/generate.py` — `POST /generate/stream` `/continue/stream`（流式 SSE：delta/revise/done/error）、`/opening/complete`（预设开场补选项+summary，非流式）、`/merge-check`（节点语义合并判定，非流式）。生成编排全在 `graph/story_graph.py` 的 `_stream_pipeline`（正文 `<<<META>>>` JSON尾，structurer 兜底，review 拒绝走有记忆写手修订、超限降级交付）
 - `app/routers/assist.py` — 创作辅助 `POST /assist/world|opening|polish|branches`（`/world` 会一并产出 `attributes` 类型声明）
 - `app/schemas.py` — 请求/响应模型，`WorldConfig.attributes` 承载属性类型声明，与 Go 契约对齐
@@ -236,7 +236,7 @@ Service 层定义自己的输入结构体（如 `service.StoryCreateInput`、`se
 2.8. ~~**游玩前端** — Next.js 作品选择/游玩/读档~~ ✅ 已完成（`frontend/`）
 3. **agent 链路演进（留存优先，前置于扩张）** — 阶段一（导演节拍 + 有后果选择 + 属性入戏 + ④增量摘要 + 生成后质量复查/有限重写）✅ 已完成。
    - 阶段二：把 `generate` 拆成 director/recall/write/critic 独立节点 + realtime 流式输出（WebSocket/SSE）对冲多节点延迟；recall 从节点摘要升级到 ③RAG。
-   - 阶段三：多 NPC 同场时并行派发人物子 agent，主 agent 归纳（完整多 agent 形态）。详见 `docs/设计思路.md`「AI agent」、`docs/剧情上下文构建方案.md`。
+   - 阶段三：多 NPC 同场时并行派发人物子 agent，主 agent 归纳（完整多 agent 形态）。详见 `docs/design.md`「AI agent」、`docs/context-strategy.md`。
 4. **community** — 作品发布/搜索/排行榜/点赞/收藏/评论
 5. **payment** — 付费解锁/打赏/分成（MVP 可 stub）
 6. **achievement** — 成就系统

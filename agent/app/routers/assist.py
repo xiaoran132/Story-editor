@@ -1,4 +1,4 @@
-"""创作辅助链路：世界观 / 开场 / 润色 / 分支建议（功能设计 1.3.1）。"""
+"""创作辅助链路：世界观 / 开场 / 润色 / 分支建议（见 docs/prd.md 1.3.1）。"""
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException

@@ -1,8 +1,8 @@
-> 📖 **本文为产品需求（PRD）**：功能、MVP 优先级、角色权限、开放问题。技术设计见 [设计思路.md](设计思路.md)，仓库总览见 [README.md](../README.md)。
+> 📖 **本文为产品需求（PRD）**：功能、MVP 优先级、角色权限、开放问题。技术设计见 [design.md](design.md)，仓库总览见 [README.md](../README.md)。
 # 1 功能设计
 
 > ## 阅读边界：愿景与当前实现
-> 本文是 **PRD / 产品愿景**，其中大量“支持”“提供”的描述是目标能力，**不代表已经实现**。当前可运行范围、接口、数据字段、测试和接手顺序，请先看 [开发交接手册.md](开发交接手册.md)；工程约束看 [`../CLAUDE.md`](../CLAUDE.md)。
+> 本文是 **PRD / 产品愿景**，其中大量“支持”“提供”的描述是目标能力，**不代表已经实现**。当前可运行范围、接口、数据字段、测试和接手顺序，请先看 [handoff.md](handoff.md)；工程约束看 [`../CLAUDE.md`](../CLAUDE.md)。
 >
 > 截至 **2026 年 7 月 28 日**：游玩闭环（生成、审校、回溯、读档）已完成；创作前端、社区、支付、成就、流式输出尚未实现。产品优先级是先验证游玩留存，再扩张创作与社区。
 
@@ -291,12 +291,12 @@
 ### 5.1 架构与实现一致性（高）
 1. ~~**`play_sessions` 缺失**~~ ✅ **已实现**：`model.PlaySession` + `repository/play_session.go` 已建，`main.go` 的 `AutoMigrate` 已纳入 `&model.PlaySession{}`；`service.PlayService`（`StartSession` / `MakeChoice` / `Backtrack` / `GetSession`）与 `/api/v1/play/*` 路由已打通，游玩链路可端到端跑通（最小页面 `templates/index.html` 已验证：开局→选择→AI 生成→属性更新→回溯）。
 2. **JSONB 的处理方式**：Go model 目前把 `world_config`/`state_delta`/`current_state` 定义为 `string`，与「后端直接做 JSONB `||` 合并」的设计前提不符。需决定：改用 `datatypes.JSON` + 原生合并，还是在应用层反序列化后合并再写回。
-3. **架构定位**：`设计思路.md` 的 5 个 “service” 是**逻辑模块/未来拆分方向**，当前实现为 Go 单体扁平分层。本文档按「MVP 单体、后期按需拆分微服务；AI 服务独立进程」定位。
+3. **架构定位**：`design.md` 的 5 个 “service” 是**逻辑模块/未来拆分方向**，当前实现为 Go 单体扁平分层。本文档按「MVP 单体、后期按需拆分微服务；AI 服务独立进程」定位。
 
 ### 5.2 属性系统语义（高）
 4. ~~**增量对非数值属性失效**~~ ✅ **已解决（AI + 合并层）**：属性分为 `number`（数值累加）/ `scalar`（覆盖式）/ `set`（集合增删）三类，创作者在 `world_config.attributes` 声明每键类型。Python `story_graph.normalize` 按类型规整 LLM 输出的 `state_delta`，Go `service.mergeState` 按类型合并（未声明类型的键回落为「数值累加否则覆盖」，兼容老作品），两端语义由 `play_merge_test.go` 锁定。
    > 遗留（低）：`assist/world` 生成的 `attributes` 目前无「与 `initial_state` 键一致」的硬校验；创作侧发布接口尚未做 `world_config` schema 校验。
-5. **三份状态的一致性成本**：见 `设计思路.md`「关键数据流与前后端契约」，需明确以 `current_state` 为准、`state_snapshot` 仅作回溯缓存的约定并强制事务化。
+5. **三份状态的一致性成本**：见 `design.md`「关键数据流与前后端契约」，需明确以 `current_state` 为准、`state_snapshot` 仅作回溯缓存的约定并强制事务化。
 
 ### 5.3 AI 不确定性（中）
 6. **「对比不同选择 / 重玩分支」vs AI 随机性**：`temperature` 较高时同一选择不可复现。已生成节点应**持久化复用**（回到旧节点看到的是原内容），仅在玩家主动「新开分支」时才请求 AI 生成——需在交互设计中区分「查看已有分支」与「探索新分支」。
