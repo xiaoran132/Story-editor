@@ -338,6 +338,12 @@ func deltaEqual(stored, fresh string) bool {
 	return dumpState(parseState(stored)) == dumpState(parseState(fresh))
 }
 
+// MigrateSessions 把一批 guest 会话领取到 userID 名下（登录后迁移匿名进度）。
+// 只迁移当前归属 guestID 且 id 命中的会话，返回实际迁移条数。
+func (s *PlayService) MigrateSessions(userID, guestID uuid.UUID, sessionIDs []uuid.UUID) (int64, error) {
+	return s.sessions.MigrateGuestSessions(context.Background(), userID, guestID, sessionIDs)
+}
+
 // Backtrack 回溯到某历史节点：不删数据，恢复该节点的状态快照，从该点继续分叉。
 func (s *PlayService) Backtrack(sessionID, nodeID uuid.UUID) (*SessionResult, error) {
 	ctx := context.Background()

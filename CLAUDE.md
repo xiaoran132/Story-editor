@@ -117,7 +117,7 @@ backend/
 - `/api/v1/auth/*` — 注册/登录/个人资料
 - `/api/v1/stories/*` — 剧情 CRUD + 节点创建
 - `/api/v1/nodes/*` — 节点查询/更新/删除
-- `/api/v1/play/*` — 游玩会话：建空会话 `POST /sessions`（不再同步生成开局）、**流式开局 `POST /sessions/:id/opening/stream`（SSE，幂等；游玩页见 current_node=null 时触发）**、列表 `GET /sessions`（当前玩家/guest 的历史会话，含 `story_title`，供读档）、查询 `GET /sessions/:id`、删除 `DELETE /sessions/:id`（删档，校验归属后事务级联删该局全部节点）、**流式选择 `POST /sessions/:id/choice/stream`（SSE：delta/revise/done/error）**、回溯 `POST /sessions/:id/backtrack`（匿名可玩）
+- `/api/v1/play/*` —（挂 `AuthOptional`：带 token 归属登录用户，否则匿名 guest）游玩会话：建空会话 `POST /sessions`（不再同步生成开局）、**登录后领取匿名进度 `POST /sessions/migrate`（AuthRequired，只迁本浏览器上报且 guest 名下的会话）**、**流式开局 `POST /sessions/:id/opening/stream`（SSE，幂等；游玩页见 current_node=null 时触发）**、列表 `GET /sessions`（当前玩家/guest 的历史会话，含 `story_title`，供读档）、查询 `GET /sessions/:id`、删除 `DELETE /sessions/:id`（删档，校验归属后事务级联删该局全部节点）、**流式选择 `POST /sessions/:id/choice/stream`（SSE：delta/revise/done/error）**、回溯 `POST /sessions/:id/backtrack`（匿名可玩）
 - `/api/v1/community/*` — 社区浏览/详情/点赞/评论（handler 桩）
 
 ### 统一错误处理

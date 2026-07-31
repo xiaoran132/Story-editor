@@ -2,6 +2,19 @@
 // 注意：current_state / suggested_options / state_snapshot 后端以 JSON **字符串** 返回，
 // 需经 lib/state.ts 的解析辅助转成对象，不要直接当对象用。
 
+export interface AuthUser {
+  id: string;
+  username: string;
+  nickname: string;
+  bio?: string;
+  role?: string;
+}
+
+export interface LoginResult {
+  token: string;
+  user: AuthUser;
+}
+
 export interface Story {
   id: string;
   creator_id: string;

@@ -6,6 +6,13 @@ const API_BASE =
 const CONNECT_ERR = "无法连接后端服务，请确认后端已启动";
 const httpErr = (status: number) => `请求失败（HTTP ${status}）`;
 
+// 登录 token 存 localStorage；每次请求带上 Authorization（未登录则为空、按匿名 guest 处理）。
+function authHeaders(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  const t = localStorage.getItem("token");
+  return t ? { Authorization: `Bearer ${t}` } : {};
+}
+
 interface Envelope<T> {
   success: boolean;
   data: T;
@@ -29,7 +36,7 @@ async function request<T>(
 ): Promise<T> {
   const opt: RequestInit = {
     method,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
   };
   if (body !== undefined) opt.body = JSON.stringify(body);
 
@@ -75,7 +82,11 @@ export async function postStream<T>(
 ): Promise<T> {
   const res = await safeFetch(path, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
+      ...authHeaders(),
+    },
     body: JSON.stringify(body),
   });
   if (!res.ok || !res.body) {

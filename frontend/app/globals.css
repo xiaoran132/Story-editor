@@ -120,6 +120,99 @@ h2 {
   color: var(--ink);
 }
 
+/* ---- 登录/注册组件 ---- */
+.auth {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--font-display);
+  font-size: 13px;
+}
+.auth-user {
+  color: var(--star);
+}
+.auth-link {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-family: var(--font-display);
+  font-size: 13px;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.auth-link:hover {
+  color: var(--ink);
+}
+.auth-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 240px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.auth-tabs {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.auth-tabs button {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-family: var(--font-display);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0;
+}
+.auth-tabs button.on {
+  color: var(--ink);
+  border-bottom: 2px solid var(--star);
+}
+.auth-close {
+  margin-left: auto;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+.auth-panel input {
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 14px;
+  outline: none;
+}
+.auth-panel input:focus {
+  border-color: var(--glow);
+}
+.auth-err {
+  color: var(--danger);
+  font-size: 12px;
+}
+.auth-submit {
+  padding: 8px 0;
+  background: var(--star);
+  color: #1a1206;
+  border: none;
+  border-radius: 8px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+}
+.auth-submit:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* ---- 首页 Hero ---- */
 .hero {
   position: relative;

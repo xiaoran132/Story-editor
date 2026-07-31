@@ -95,10 +95,11 @@ func main() {
 		nodes.DELETE("/:id", middleware.AuthRequired(cfg.JWTSecret), nodeH.Delete)
 	}
 
-	// 游玩：匿名可玩（不挂 AuthRequired；登录用户仍会被 GetUserID 解析）
-	play := api.Group("/play")
+	// 游玩：匿名可玩，但挂 AuthOptional——带 token 则归属登录用户，否则回退 guest。
+	play := api.Group("/play", middleware.AuthOptional(cfg.JWTSecret))
 	{
 		play.POST("/sessions", playH.Start)
+		play.POST("/sessions/migrate", middleware.AuthRequired(cfg.JWTSecret), playH.Migrate)
 		play.POST("/sessions/:id/opening/stream", playH.OpeningStream)
 		play.GET("/sessions", playH.List)
 		play.GET("/sessions/:id", playH.Get)

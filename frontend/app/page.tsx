@@ -3,12 +3,17 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import { trackGuestSession } from "@/lib/guestSessions";
+import { useAuthStore } from "@/store/authStore";
 import type { SessionListItem, SessionResult, Story } from "@/lib/types";
 import StoryCard from "@/components/StoryCard";
 import SessionCard from "@/components/SessionCard";
+import AuthWidget from "@/components/AuthWidget";
 
 export default function HomePage() {
   const router = useRouter();
+  const user = useAuthStore((s) => s.user);
+  const initAuth = useAuthStore((s) => s.init);
   const [stories, setStories] = useState<Story[]>([]);
   const [sessions, setSessions] = useState<SessionListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -16,21 +21,25 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    (async () => {
-      try {
-        const [st, se] = await Promise.all([
-          api.get<Story[]>("/stories/"),
-          api.get<SessionListItem[]>("/play/sessions"),
-        ]);
-        setStories(st ?? []);
-        setSessions(se ?? []);
-      } catch (e) {
-        setError((e as Error).message);
-      } finally {
-        setLoading(false);
-      }
-    })();
+    initAuth();
+  }, [initAuth]);
+
+  // 作品只需拉一次。
+  useEffect(() => {
+    api
+      .get<Story[]>("/stories/")
+      .then((st) => setStories(st ?? []))
+      .catch((e) => setError((e as Error).message))
+      .finally(() => setLoading(false));
   }, []);
+
+  // 历史会话随登录态变化重取（登录+迁移后归到账号、退出后回到匿名）。
+  useEffect(() => {
+    api
+      .get<SessionListItem[]>("/play/sessions")
+      .then((se) => setSessions(se ?? []))
+      .catch(() => {});
+  }, [user]);
 
   const startStory = async (story: Story) => {
     if (starting) return;
@@ -40,6 +49,7 @@ export default function HomePage() {
       const r = await api.post<SessionResult>("/play/sessions", {
         story_id: story.id,
       });
+      if (!user) trackGuestSession(r.session.id); // 匿名进度：记下以便登录后领取
       router.push(`/play/${r.session.id}`);
     } catch (e) {
       setError((e as Error).message);
@@ -61,6 +71,11 @@ export default function HomePage() {
 
   return (
     <div className="wrap">
+      <div className="topbar">
+        <span className="eyebrow">Story Editor</span>
+        <AuthWidget />
+      </div>
+
       <header className="hero">
         <div>
           <span className="eyebrow">AI 互动剧情共创</span>

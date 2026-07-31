@@ -112,6 +112,30 @@ func (h *PlayHandler) OpeningStream(c *gin.Context) {
 	send("done", result)
 }
 
+type migrateReq struct {
+	SessionIDs []uuid.UUID `json:"session_ids" binding:"required"`
+}
+
+// Migrate 登录后领取匿名进度：把前端上报的（本浏览器创建的）guest 会话迁到当前用户名下。
+func (h *PlayHandler) Migrate(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	if userID == uuid.Nil {
+		pkg.Error(c, pkg.Unauthorized("login required"))
+		return
+	}
+	var req migrateReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Error(c, pkg.BadRequest(err.Error()))
+		return
+	}
+	n, err := h.svc.MigrateSessions(userID, h.guestID, req.SessionIDs)
+	if err != nil {
+		pkg.Error(c, err)
+		return
+	}
+	pkg.Success(c, gin.H{"migrated": n})
+}
+
 type backtrackReq struct {
 	NodeID uuid.UUID `json:"node_id" binding:"required"`
 }
