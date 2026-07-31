@@ -5,13 +5,13 @@ import { buildPath } from "./state";
 // 数据来源：GET /play/sessions/:id 的 nodes（回溯不删数据，故含所有已探索分支）。
 
 // 布局常量（单位 px）
-export const ROW_H = 96; // 层间纵向间距
-export const COL_W = 168; // 叶子列横向间距
-export const NODE_W = 148; // 节点框宽
-export const NODE_H = 52; // 节点框高
+const ROW_H = 96; // 层间纵向间距
+const COL_W = 168; // 叶子列横向间距
+const NODE_W = 148; // 节点框宽
+export const NODE_H = 52; // 节点框高（StoryTree 用）
 const PAD = 24; // 画布四周留白
 
-export interface PositionedNode {
+interface PositionedNode {
   id: string;
   x: number; // 节点中心 x
   y: number; // 节点中心 y
@@ -20,7 +20,7 @@ export interface PositionedNode {
   onPath: boolean; // 位于根→当前的主线上
 }
 
-export interface Edge {
+interface Edge {
   id: string;
   x1: number;
   y1: number;
@@ -29,7 +29,7 @@ export interface Edge {
   onPath: boolean; // 父子两端都在主线上
 }
 
-export interface TreeLayout {
+interface TreeLayout {
   nodes: PositionedNode[];
   edges: Edge[];
   width: number;
@@ -37,7 +37,7 @@ export interface TreeLayout {
 }
 
 // 按 parent_id 分组子节点，子节点按 created_at 升序（探索先后）。
-export function buildChildrenMap(
+function buildChildrenMap(
   nodes: StoryNode[]
 ): Map<string | null, StoryNode[]> {
   const map = new Map<string | null, StoryNode[]>();

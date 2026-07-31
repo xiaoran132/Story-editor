@@ -52,29 +52,21 @@ type choiceReq struct {
 	Choice string `json:"choice" binding:"required"`
 }
 
-func (h *PlayHandler) Choice(c *gin.Context) {
-	sessionID, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		pkg.Error(c, pkg.BadRequest("invalid session id"))
-		return
+// sseStart 设置 SSE 响应头并返回逐帧发送函数（event/data + flush）。ChoiceStream/OpeningStream 共用。
+func sseStart(c *gin.Context) func(event string, data any) {
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("X-Accel-Buffering", "no") // 禁反代缓冲，保证逐帧下发
+	c.Writer.WriteHeader(200)
+	return func(event string, data any) {
+		b, _ := json.Marshal(data)
+		fmt.Fprintf(c.Writer, "event: %s\ndata: %s\n\n", event, b)
+		c.Writer.Flush()
 	}
-
-	var req choiceReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		pkg.Error(c, pkg.BadRequest(err.Error()))
-		return
-	}
-
-	result, err := h.svc.MakeChoice(sessionID, req.Choice)
-	if err != nil {
-		pkg.Error(c, err)
-		return
-	}
-	pkg.Success(c, result)
 }
 
-// ChoiceStream 与 Choice 相同，但以 SSE 流式返回：正文增量走 delta 帧、审校拒绝走 revise 帧，
-// 结束以 done 帧携带持久化后的 SessionResult；生成中出错以 error 帧告知（此时已是 200 流）。
+// ChoiceStream 流式续写（SSE）：delta 正文增量 / revise 审校重来 / done 持久化后的 SessionResult / error。
 func (h *PlayHandler) ChoiceStream(c *gin.Context) {
 	sessionID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -82,23 +74,11 @@ func (h *PlayHandler) ChoiceStream(c *gin.Context) {
 		return
 	}
 	var req choiceReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := c.ShouldBindJSON(&req); err != nil { // 绑定在开流前，坏 body 走正常 JSON 错误
 		pkg.Error(c, pkg.BadRequest(err.Error()))
 		return
 	}
-
-	c.Writer.Header().Set("Content-Type", "text/event-stream")
-	c.Writer.Header().Set("Cache-Control", "no-cache")
-	c.Writer.Header().Set("Connection", "keep-alive")
-	c.Writer.Header().Set("X-Accel-Buffering", "no") // 禁止反向代理缓冲，保证逐帧下发
-	c.Writer.WriteHeader(200)
-
-	send := func(event string, data any) {
-		b, _ := json.Marshal(data)
-		fmt.Fprintf(c.Writer, "event: %s\ndata: %s\n\n", event, b)
-		c.Writer.Flush()
-	}
-
+	send := sseStart(c)
 	result, err := h.svc.MakeChoiceStream(
 		sessionID, req.Choice,
 		func(t string) { send("delta", gin.H{"text": t}) },
@@ -119,19 +99,7 @@ func (h *PlayHandler) OpeningStream(c *gin.Context) {
 		pkg.Error(c, pkg.BadRequest("invalid session id"))
 		return
 	}
-
-	c.Writer.Header().Set("Content-Type", "text/event-stream")
-	c.Writer.Header().Set("Cache-Control", "no-cache")
-	c.Writer.Header().Set("Connection", "keep-alive")
-	c.Writer.Header().Set("X-Accel-Buffering", "no")
-	c.Writer.WriteHeader(200)
-
-	send := func(event string, data any) {
-		b, _ := json.Marshal(data)
-		fmt.Fprintf(c.Writer, "event: %s\ndata: %s\n\n", event, b)
-		c.Writer.Flush()
-	}
-
+	send := sseStart(c)
 	result, err := h.svc.StartOpeningStream(
 		sessionID,
 		func(t string) { send("delta", gin.H{"text": t}) },

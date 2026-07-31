@@ -2,7 +2,7 @@ import type { Option, StoryNode } from "./types";
 
 // 后端把若干字段以 JSON 字符串返回，这里统一安全解析（解析失败给兜底值）。
 
-export function parseJSON<T>(raw: string | null | undefined, fallback: T): T {
+function parseJSON<T>(raw: string | null | undefined, fallback: T): T {
   if (!raw) return fallback;
   try {
     return JSON.parse(raw) as T;

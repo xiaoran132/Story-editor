@@ -27,19 +27,6 @@ func (r *StoryRepository) FindByID(ctx context.Context, id uuid.UUID) (*model.St
 	return &story, err
 }
 
-func (r *StoryRepository) FindByCreatorID(ctx context.Context, creatorID uuid.UUID, offset, limit int) ([]model.Story, int64, error) {
-	var stories []model.Story
-	var total int64
-
-	q := r.db.WithContext(ctx).Where("creator_id = ?", creatorID)
-	if err := q.Model(&model.Story{}).Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-
-	err := q.Order("created_at DESC").Offset(offset).Limit(limit).Find(&stories).Error
-	return stories, total, err
-}
-
 func (r *StoryRepository) Create(ctx context.Context, story *model.Story) error {
 	return r.db.WithContext(ctx).Create(story).Error
 }

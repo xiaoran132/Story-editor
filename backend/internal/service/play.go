@@ -272,23 +272,8 @@ func (s *PlayService) applyContinueResult(
 	return &SessionResult{Session: session.ToResponse(), CurrentNode: node.ToResponse()}, nil
 }
 
-// MakeChoice 提交一次选择：回溯历史 → AI 生成 → 合并属性 → 写子节点 + 更新会话。
-func (s *PlayService) MakeChoice(sessionID uuid.UUID, choice string) (*SessionResult, error) {
-	ctx := context.Background()
-	session, world, pathNodes, history, err := s.loadChoiceContext(ctx, sessionID)
-	if err != nil {
-		return nil, err
-	}
-	currentState := parseState(session.CurrentState)
-	result, err := s.ai.Continue(ctx, world, history, currentState, choice)
-	if err != nil {
-		return nil, pkg.Internal("ai continue: " + err.Error())
-	}
-	return s.applyContinueResult(ctx, session, pathNodes, world, choice, result)
-}
-
-// MakeChoiceStream 与 MakeChoice 相同，但续写走流式：正文增量经 onDelta 实时外发，
-// 审校拒绝经 onRevise 通知；流结束拿到完整结果后再合并/去重/落库（这些依赖完整结果）。
+// MakeChoiceStream 提交一次选择（流式）：回溯历史 → AI 流式生成（正文增量经 onDelta 外发、
+// 审校拒绝经 onRevise 通知）→ 流结束拿到完整结果后合并属性/去重/写子节点/更新会话。
 func (s *PlayService) MakeChoiceStream(
 	sessionID uuid.UUID, choice string, onDelta func(string), onRevise func(),
 ) (*SessionResult, error) {

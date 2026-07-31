@@ -126,21 +126,6 @@ type mergeCheckResponse struct {
 	Reason       string `json:"reason"`
 }
 
-// StartStory 生成开场剧情。
-func (c *AgentClient) StartStory(ctx context.Context, world WorldConfig, initialState map[string]any) (*AIResult, error) {
-	return c.post(ctx, "/generate", generateRequest{World: world, InitialState: initialState})
-}
-
-// Continue 根据历史路径、当前属性和玩家选择生成下一段剧情。
-func (c *AgentClient) Continue(ctx context.Context, world WorldConfig, history []PathStep, currentState map[string]any, choice string) (*AIResult, error) {
-	return c.post(ctx, "/continue", continueRequest{
-		World:        world,
-		History:      history,
-		CurrentState: currentState,
-		Choice:       choice,
-	})
-}
-
 // CompleteOpening 为已写定的开场正文补生成起始选项 + 前情提要（预设 opening_content 的作品）。
 func (c *AgentClient) CompleteOpening(ctx context.Context, world WorldConfig, initialState map[string]any, content string) (*AIResult, error) {
 	return c.post(ctx, "/opening/complete", openingCompleteRequest{
@@ -264,13 +249,18 @@ func (c *AgentClient) streamInto(
 	if final == nil {
 		return nil, fmt.Errorf("ai stream ended without done frame")
 	}
-	if final.Options == nil {
-		final.Options = []Option{}
-	}
-	if final.StateDelta == nil {
-		final.StateDelta = map[string]any{}
-	}
+	normalizeAIResult(final)
 	return final, nil
+}
+
+// normalizeAIResult 把 nil 的 Options/StateDelta 归一为空值，避免下游 nil 判空。
+func normalizeAIResult(r *AIResult) {
+	if r.Options == nil {
+		r.Options = []Option{}
+	}
+	if r.StateDelta == nil {
+		r.StateDelta = map[string]any{}
+	}
 }
 
 // CheckMerge 判定新选择是否与某个已有同层候选语义等价（候选已按 state_delta 相等预筛）。
@@ -300,12 +290,7 @@ func (c *AgentClient) post(ctx context.Context, path string, payload any) (*AIRe
 	if err := c.postInto(ctx, path, payload, &result); err != nil {
 		return nil, err
 	}
-	if result.Options == nil {
-		result.Options = []Option{}
-	}
-	if result.StateDelta == nil {
-		result.StateDelta = map[string]any{}
-	}
+	normalizeAIResult(&result)
 	return &result, nil
 }
 

@@ -15,6 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 logging.getLogger("story.metrics").addHandler(logging.NullHandler())
 
+# run_start/run_continue 现为流式管线的同步 drain 适配器（drain 逻辑在 story_graph 内复用）。
 from app.graph.story_graph import run_continue, run_start  # noqa: E402
 
 BACKEND = "http://localhost:8080/api/v1"

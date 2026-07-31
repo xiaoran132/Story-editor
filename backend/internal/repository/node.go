@@ -18,12 +18,6 @@ func NewNodeRepository(db *gorm.DB) *NodeRepository {
 	return &NodeRepository{db: db}
 }
 
-func (r *NodeRepository) FindByStoryID(ctx context.Context, storyID uuid.UUID) ([]model.StoryNode, error) {
-	var nodes []model.StoryNode
-	err := r.db.WithContext(ctx).Where("story_id = ?", storyID).Order("depth, created_at").Find(&nodes).Error
-	return nodes, err
-}
-
 func (r *NodeRepository) FindBySessionID(ctx context.Context, sessionID uuid.UUID) ([]model.StoryNode, error) {
 	var nodes []model.StoryNode
 	err := r.db.WithContext(ctx).Where("session_id = ?", sessionID).Order("depth, created_at").Find(&nodes).Error

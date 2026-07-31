@@ -29,32 +29,31 @@ class LLMParseError(ValueError):
 
 
 @lru_cache
+def _build_llm(json_mode: bool) -> ChatOpenAI:
+    """构造共享的 ChatOpenAI 实例（DeepSeek 端点）。按 json_mode 缓存两个实例。
+
+    json_mode=True 强制返回 JSON 对象（chat_json 用）；False 不强制——流式下正文以
+    哨兵分隔（正文 <<<META>>> JSON 尾），JSON 模式会破坏正文的自然流式。
+    """
+    s = get_settings()
+    kwargs: dict[str, Any] = {
+        "model": s.deepseek_model,
+        "api_key": s.deepseek_api_key,
+        "base_url": s.deepseek_base_url,
+        "temperature": s.ai_temperature,
+        "timeout": s.ai_timeout,
+    }
+    if json_mode:
+        kwargs["model_kwargs"] = {"response_format": {"type": "json_object"}}
+    return ChatOpenAI(**kwargs)
+
+
 def get_llm() -> ChatOpenAI:
-    """构造共享的 ChatOpenAI 实例（DeepSeek 端点）。"""
-    s = get_settings()
-    return ChatOpenAI(
-        model=s.deepseek_model,
-        api_key=s.deepseek_api_key,
-        base_url=s.deepseek_base_url,
-        temperature=s.ai_temperature,
-        timeout=s.ai_timeout,
-        # DeepSeek 兼容 OpenAI 的 response_format，强制返回 JSON 对象
-        model_kwargs={"response_format": {"type": "json_object"}},
-    )
+    return _build_llm(True)
 
 
-@lru_cache
 def get_stream_llm() -> ChatOpenAI:
-    """流式专用实例：与 get_llm 相同，但**不强制** JSON 输出——流式下正文以哨兵
-    分隔（正文 <<<META>>> JSON 尾），JSON 模式会破坏正文的自然流式。"""
-    s = get_settings()
-    return ChatOpenAI(
-        model=s.deepseek_model,
-        api_key=s.deepseek_api_key,
-        base_url=s.deepseek_base_url,
-        temperature=s.ai_temperature,
-        timeout=s.ai_timeout,
-    )
+    return _build_llm(False)
 
 
 async def chat_stream(messages: list[BaseMessage]) -> AsyncIterator[str]:

@@ -1,20 +1,18 @@
-"""剧情生成 LangGraph 工作流：prepare -> generate -> normalize。
+"""剧情生成工作流：prepare（构建上下文）→ 流式写作 → normalize → review。
 
-对应功能设计 1.3.2「AI Agent 工作流配置」：把「构建上下文 / 调用模型 / 结果校验」
-拆成可编排、可替换、可扩展的图节点。后期可插入「检索历史」「一致性检查」「多模型
-路由」等节点而不影响调用方。
+唯一编排在 `_stream_pipeline`（真流式·单次哨兵分隔）；prepare/normalize/review 为共享
+纯函数，`complete_opening` 走非流式补全。历史上的 langgraph 非流式图已退休。
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
 from collections.abc import AsyncIterator
-from functools import lru_cache
 from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langgraph.graph import END, StateGraph
 
 from ..config import get_settings
 from ..llm import LLMParseError, chat_json, chat_stream
@@ -23,19 +21,13 @@ from ..prompts import (
     OPENING_COMPLETE_SYSTEM,
     REVIEW_SYSTEM,
     STORY_STREAM_SYSTEM,
-    STORY_SYSTEM,
     STRUCTURE_SYSTEM,
 )
 from .state import StoryState
 
-# 阶段一可观测性：每次生成打一行 logfmt 埋点，供离线 grep/jq 统计
-# 首稿审校通过率、每局平均重写次数、完整回复延迟 p95、报错率（按类型细分）。
-# 详见 docs/开发交接手册.md §9.1；刻意不建大屏/新表，验证期用日志聚合即可。
+# 可观测性：每次生成打一行 logfmt 埋点（story.metrics gen ...），供离线 grep/jq 统计
+# 首稿审校通过率、平均重写次数、延迟与 ttfb、降级率。详见 docs/开发交接手册.md §9.1。
 logger = logging.getLogger("story.metrics")
-
-
-class ReviewExhaustedError(RuntimeError):
-    """重写次数耗尽仍未通过审校。独立类型，便于与 LLMParseError 在埋点里区分。"""
 
 
 def _to_json(v: Any) -> str:
@@ -229,20 +221,6 @@ def prepare(state: StoryState) -> dict[str, Any]:
     return {"user_prompt": "\n".join(lines), "known_keys": known, "attr_types": attr_types}
 
 
-def generate(state: StoryState) -> dict[str, Any]:
-    """调用 LLM 生成结构化剧情；被审校拒绝时带反馈完整重写。"""
-    prompt = state["user_prompt"]
-    feedback = state.get("review_feedback", "")
-    if feedback:
-        prompt += (
-            "\n【上一稿未通过质量审校】\n"
-            f"以下问题必须全部修正：{feedback}\n"
-            "请基于原始要求完整重写，并严格返回完整 JSON，不要解释修改过程。"
-        )
-    raw = chat_json(STORY_SYSTEM, prompt)
-    return {"raw": raw, "review_feedback": ""}
-
-
 def review(state: StoryState) -> dict[str, Any]:
     """调用 AI 审校当前生成；拒绝时把可执行反馈交给下一次重写。"""
     candidate = _to_json(state.get("raw") or {})
@@ -274,29 +252,6 @@ def review(state: StoryState) -> dict[str, Any]:
         "review_feedback": feedback,
         "review_failures": state.get("review_failures", 0) + (0 if passed else 1),
     }
-
-
-def route_after_review(state: StoryState) -> str:
-    """通过则归一化；被拒绝则有限重写；重写耗尽则降级交付（不再硬失败）。"""
-    if state.get("review_passed"):
-        return "normalize"
-    max_retries = max(0, get_settings().ai_review_max_retries)
-    if state.get("review_failures", 0) <= max_retries:
-        return "generate"
-    return "deliver_degraded"
-
-
-def deliver_degraded(state: StoryState) -> dict[str, Any]:
-    """重写次数耗尽：交付最后一稿（已吸收最多反馈），不硬失败。
-
-    属性/state_delta 只是辅助 AI 分析与玩家参考的手段，轻微不精确可容忍；
-    宁可交付略有瑕疵的剧情，也绝不让玩家的操作失败。审校是质量推手而非硬门。
-    """
-    logger.warning(
-        "review degraded (delivered after %d rejections): %s",
-        state.get("review_failures", 0), state.get("review_feedback", ""),
-    )
-    return {"review_degraded": True}
 
 
 def normalize(state: StoryState) -> dict[str, Any]:
@@ -340,90 +295,10 @@ def normalize(state: StoryState) -> dict[str, Any]:
     return {"result": result}
 
 
-@lru_cache
-def get_story_graph():
-    """编译并缓存剧情生成图。"""
-    g = StateGraph(StoryState)
-    g.add_node("prepare", prepare)
-    g.add_node("generate", generate)
-    g.add_node("review", review)
-    g.add_node("deliver_degraded", deliver_degraded)
-    g.add_node("normalize", normalize)
-
-    g.set_entry_point("prepare")
-    g.add_edge("prepare", "generate")
-    g.add_edge("generate", "review")
-    g.add_conditional_edges(
-        "review",
-        route_after_review,
-        {"generate": "generate", "normalize": "normalize", "deliver_degraded": "deliver_degraded"},
-    )
-    g.add_edge("deliver_degraded", "normalize")  # 降级也走归一化，正常交付
-    g.add_edge("normalize", END)
-    return g.compile()
-
-
-def _invoke_with_metrics(mode: str, initial: dict[str, Any]) -> dict[str, Any]:
-    """执行图并打点。成功打 outcome=ok，超限/异常打 outcome=error 后原样抛出。
-
-    review_failures = 本次交付前被审校拒绝的次数（0 即首稿通过）；
-    elapsed_ms = 完整回复耗时（无流式，暂无首字延迟）。
-    """
-    start = time.perf_counter()
-    try:
-        out = get_story_graph().invoke(initial)
-    except Exception as e:  # noqa: BLE001 —— 仅打点后原样抛给路由转 502
-        elapsed_ms = round((time.perf_counter() - start) * 1000)
-        # 区分两类失败：审校超限（提示词/门槛问题）vs LLM 非法 JSON（解析/重试问题）。
-        if isinstance(e, ReviewExhaustedError):
-            outcome = "review_exhausted"
-        elif isinstance(e, LLMParseError):
-            outcome = "parse_error"
-        else:
-            outcome = "error"
-        logger.warning(
-            "gen mode=%s outcome=%s elapsed_ms=%d err_type=%s detail=%s",
-            mode, outcome, elapsed_ms, type(e).__name__, e,
-        )
-        raise
-    elapsed_ms = round((time.perf_counter() - start) * 1000)
-    failures = int(out.get("review_failures", 0))
-    degraded = bool(out.get("review_degraded"))
-    result = out["result"]
-    logger.info(
-        "gen mode=%s outcome=ok elapsed_ms=%d review_failures=%d first_draft_pass=%s degraded=%s is_ending=%s",
-        mode, elapsed_ms, failures, failures == 0, degraded, bool(result.get("is_ending")),
-    )
-    return result
-
-
-def run_start(world: dict[str, Any], initial_state: dict[str, Any]) -> dict[str, Any]:
-    return _invoke_with_metrics(
-        "start", {"mode": "start", "world": world, "initial_state": initial_state}
-    )
-
-
-def run_continue(
-    world: dict[str, Any],
-    history: list[dict[str, Any]],
-    current_state: dict[str, Any],
-    choice: str,
-) -> dict[str, Any]:
-    return _invoke_with_metrics(
-        "continue",
-        {
-            "mode": "continue",
-            "world": world,
-            "history": history,
-            "current_state": current_state,
-            "choice": choice,
-        },
-    )
-
-
-# ===== 流式流水线（真流式·单次哨兵分隔） =====
-# 与 langgraph 的同步 invoke 分离：正文 chat_stream 逐字产出，结束后按 _SENTINEL 切出
-# JSON 尾；尾缺失/非法则用 STRUCTURE_SYSTEM 兜底；再 normalize + review，拒绝则 revise 重写。
+# ===== 流式流水线（唯一的生成编排：真流式·单次哨兵分隔） =====
+# 正文 chat_stream 逐字产出，结束后按 _SENTINEL 切出 JSON 尾；尾缺失/非法则用
+# STRUCTURE_SYSTEM 兜底；再 normalize + review，拒绝则有记忆修订、超限则降级交付。
+# prepare/normalize/review 为共享纯函数；complete_opening 走非流式。
 
 def _structure_fallback(state: dict[str, Any], prose: str) -> dict[str, Any]:
     """哨兵后的 JSON 尾缺失/非法时，据已写好的正文补出结构化元数据（保住正文不重来）。"""
@@ -527,12 +402,7 @@ async def _stream_pipeline(mode: str, base_state: dict[str, Any]) -> AsyncIterat
             yield {"type": "revise"}  # 通知前端清空已流出的正文，准备重来
     except Exception as e:  # noqa: BLE001 —— 打点后原样抛给路由转 SSE error
         elapsed_ms = round((time.perf_counter() - start) * 1000)
-        if isinstance(e, ReviewExhaustedError):
-            outcome = "review_exhausted"
-        elif isinstance(e, LLMParseError):
-            outcome = "parse_error"
-        else:
-            outcome = "error"
+        outcome = "parse_error" if isinstance(e, LLMParseError) else "error"
         logger.warning(
             "gen mode=%s outcome=%s stream=1 elapsed_ms=%d ttfb_ms=%d err_type=%s detail=%s",
             mode, outcome, elapsed_ms, ttfb_ms if ttfb_ms is not None else -1,
@@ -560,6 +430,34 @@ def run_start_stream(
     return _stream_pipeline(
         "start", {"mode": "start", "world": world, "initial_state": initial_state}
     )
+
+
+def _drain(agen: AsyncIterator[dict[str, Any]]) -> dict[str, Any]:
+    """把流式管线同步跑到底，丢弃 delta，返回 done 的最终 result。
+
+    供**不需要流式**的调用方复用同一条编排（/assist/opening、离线工具），避免另起一套。
+    仅可在无运行中事件循环处调用（FastAPI 的 def 端点在线程池执行，满足）。
+    """
+    async def collect() -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        async for ev in agen:
+            if ev.get("type") == "done":
+                result = ev["result"]
+        return result
+    return asyncio.run(collect())
+
+
+def run_start(world: dict[str, Any], initial_state: dict[str, Any]) -> dict[str, Any]:
+    """同步开场（drain 流式管线取最终结果）。"""
+    return _drain(run_start_stream(world, initial_state))
+
+
+def run_continue(
+    world: dict[str, Any], history: list[dict[str, Any]],
+    current_state: dict[str, Any], choice: str,
+) -> dict[str, Any]:
+    """同步续写（drain 流式管线取最终结果）。"""
+    return _drain(run_continue_stream(world, history, current_state, choice))
 
 
 def complete_opening(

@@ -3,11 +3,23 @@
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8080/api/v1";
 
+const CONNECT_ERR = "无法连接后端服务，请确认后端已启动";
+const httpErr = (status: number) => `请求失败（HTTP ${status}）`;
+
 interface Envelope<T> {
   success: boolean;
   data: T;
   error: { code?: number; message?: string } | null;
   meta?: unknown;
+}
+
+// safeFetch：统一 fetch + 连接错误兜底（request 与 postStream 共用；两者在 fetch 后各自处理响应）。
+async function safeFetch(path: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(API_BASE + path, init);
+  } catch {
+    throw new Error(CONNECT_ERR);
+  }
 }
 
 async function request<T>(
@@ -21,28 +33,23 @@ async function request<T>(
   };
   if (body !== undefined) opt.body = JSON.stringify(body);
 
-  let res: Response;
-  try {
-    res = await fetch(API_BASE + path, opt);
-  } catch (e) {
-    throw new Error("无法连接后端服务，请确认后端已启动");
-  }
+  const res = await safeFetch(path, opt);
 
   // 204 No Content（如 DELETE）无响应体，直接视为成功。
   if (res.status === 204) {
     if (res.ok) return undefined as T;
-    throw new Error(`请求失败（HTTP ${res.status}）`);
+    throw new Error(httpErr(res.status));
   }
 
   let env: Envelope<T>;
   try {
     env = (await res.json()) as Envelope<T>;
   } catch {
-    throw new Error(`请求失败（HTTP ${res.status}）`);
+    throw new Error(httpErr(res.status));
   }
 
   if (!env.success) {
-    throw new Error(env.error?.message || `请求失败（HTTP ${res.status}）`);
+    throw new Error(env.error?.message || httpErr(res.status));
   }
   return env.data;
 }
@@ -66,18 +73,13 @@ export async function postStream<T>(
   body: unknown,
   handlers: StreamHandlers = {}
 ): Promise<T> {
-  let res: Response;
-  try {
-    res = await fetch(API_BASE + path, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-      body: JSON.stringify(body),
-    });
-  } catch {
-    throw new Error("无法连接后端服务，请确认后端已启动");
-  }
+  const res = await safeFetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+    body: JSON.stringify(body),
+  });
   if (!res.ok || !res.body) {
-    throw new Error(`请求失败（HTTP ${res.status}）`);
+    throw new Error(httpErr(res.status));
   }
 
   const reader = res.body.getReader();
@@ -129,5 +131,3 @@ export async function postStream<T>(
   if (done === undefined) throw new Error("生成中断：未收到完整结果");
   return done;
 }
-
-export { API_BASE };

@@ -1,4 +1,5 @@
-"""游玩链路：/generate（开场）与 /continue（续写），供 Go 后端调用。"""
+"""游玩链路（全流式）：/generate/stream（开场）、/continue/stream（续写）、
+/opening/complete（预设开场补全）、/merge-check（节点合并），供 Go 后端调用。"""
 from __future__ import annotations
 
 import json
@@ -7,13 +8,7 @@ from collections.abc import AsyncIterator
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
-from ..graph.story_graph import (
-    complete_opening,
-    run_continue,
-    run_continue_stream,
-    run_start,
-    run_start_stream,
-)
+from ..graph.story_graph import complete_opening, run_continue_stream, run_start_stream
 from ..llm import chat_json
 from ..prompts import MERGE_SYSTEM
 from ..schemas import (
@@ -46,32 +41,6 @@ async def _sse_stream(events: AsyncIterator[dict]) -> AsyncIterator[str]:
                 yield _sse("done", ev.get("result", {}))
     except Exception as e:  # noqa: BLE001 —— 流已开始，只能以 error 帧告知下游
         yield _sse("error", {"detail": f"{type(e).__name__}: {e}"})
-
-
-@router.post("/generate", response_model=AIResult)
-def generate(req: GenerateRequest) -> AIResult:
-    """生成作品开场剧情。"""
-    initial = req.initial_state or req.world.initial_state or {}
-    try:
-        result = run_start(req.world.model_dump(), initial)
-    except Exception as e:  # noqa: BLE001 —— 统一转成 502，交由 Go 侧重试
-        raise HTTPException(status_code=502, detail=f"ai generate failed: {e}") from e
-    return AIResult(**result)
-
-
-@router.post("/continue", response_model=AIResult)
-def continue_story(req: ContinueRequest) -> AIResult:
-    """根据历史路径与玩家选择续写下一段剧情。"""
-    try:
-        result = run_continue(
-            req.world.model_dump(),
-            [h.model_dump() for h in req.history],
-            req.current_state,
-            req.choice,
-        )
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"ai continue failed: {e}") from e
-    return AIResult(**result)
 
 
 @router.post("/generate/stream")

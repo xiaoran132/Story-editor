@@ -60,7 +60,7 @@ flowchart LR
 
 2. `generate` / 写手
    - 调用 `STORY_SYSTEM`（流式为 `STORY_STREAM_SYSTEM`），一次输出 `content`、`options`、`state_delta`、`summary`、结局字段。
-   - 审校失败时重写：**流式路径用「有记忆的写手」**——把上一稿 + `issues` 追加进写手对话，令其在上一稿上**修订**而非从头重写（减少震荡、更快收敛，见 `story_graph.py` `_stream_pipeline` 的 `writer_msgs`）；非流式 langgraph 路径仍为带 `issues` 的完整重写。审校（`review`）本身保持无记忆、每次新鲜评判。
+   - 审校失败时用**有记忆的写手**修订：把上一稿 + `issues` 追加进写手对话（`writer_msgs`），令其在上一稿上**修订**而非从头重写（减少震荡、更快收敛）。审校（`review`）本身无记忆、每次新鲜评判。
 
 3. `review`
    - 调用低温 `REVIEW_SYSTEM`，返回 `{"passed": true|false, "issues": [...]}`。
@@ -139,9 +139,8 @@ copy .env.example .env  # Windows；填入 DEEPSEEK_API_KEY
 
 | 方法 | 路径 | 调用方 / 作用 |
 |---|---|---|
-| `POST` | `/generate` | Go `StartSession`：生成开场（非流式） |
-| `POST` | `/continue` | Go `MakeChoice`：根据路径和选择续写（非流式，保留） |
-| `POST` | `/continue/stream` `/generate/stream` | 流式生成（SSE）：Go `ContinueStream` 消费 |
+| `POST` | `/generate/stream` | Go `StartStoryStream`：流式开场（AI 生成开局的作品） |
+| `POST` | `/continue/stream` | Go `ContinueStream`：流式续写 |
 | `POST` | `/opening/complete` | Go `StartSession` 预设开场：补起始选项 + summary |
 | `POST` | `/merge-check` | Go `tryMerge`：候选分支语义等价判断 |
 | `POST` | `/assist/world` | 创作辅助：灵感 → 世界观/属性声明 |
@@ -165,7 +164,7 @@ copy .env.example .env  # Windows；填入 DEEPSEEK_API_KEY
 }
 ```
 
-仅**真失败**（LLM 非法 JSON 重试耗尽、网络/API 异常）非流式路由才返回 HTTP 502；审校超限**不再算失败**（降级交付）。
+真失败（LLM 非法 JSON 重试耗尽、网络/API 异常）：流式端点以 SSE `error` 帧告知，`/opening/complete`·`/merge-check` 返回 HTTP 502。审校超限**不算失败**（降级交付最后一稿）。
 
 ### 流式（SSE）
 

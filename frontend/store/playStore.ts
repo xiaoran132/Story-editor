@@ -36,6 +36,33 @@ function parseHiddenAttrs(worldConfig: string): string[] {
 // 放模块级，reset() 不清除，跨重挂载有效；出错时清除以允许重试。
 const openingRequested: Record<string, boolean> = {};
 
+type Setter = (
+  partial: Partial<PlayState> | ((s: PlayState) => Partial<PlayState>)
+) => void;
+
+// runStream：开局/续写共用的流式执行外壳——起始置 busy、逐字累积 streamingText、
+// revise 清空、done 后由 onDone 决定如何并入节点、收尾清标志；出错走 onError + error。
+async function runStream(
+  set: Setter,
+  path: string,
+  body: unknown,
+  onDone: (r: SessionResult) => void,
+  onError?: () => void
+): Promise<void> {
+  set({ busy: true, error: null, streamingText: "" });
+  try {
+    const r = await postStream<SessionResult>(path, body, {
+      onDelta: (t) => set((s) => ({ streamingText: s.streamingText + t })),
+      onRevise: () => set({ streamingText: "" }),
+    });
+    onDone(r);
+    set({ busy: false, streamingText: "" });
+  } catch (e) {
+    onError?.();
+    set({ busy: false, streamingText: "", error: (e as Error).message });
+  }
+}
+
 export const usePlayStore = create<PlayState>((set, get) => ({
   session: null,
   currentNode: null,
@@ -86,57 +113,36 @@ export const usePlayStore = create<PlayState>((set, get) => ({
     const { session, busy } = get();
     if (!session || busy || openingRequested[session.id]) return;
     openingRequested[session.id] = true;
-    set({ busy: true, error: null, streamingText: "" });
-    try {
-      const r = await postStream<SessionResult>(
-        `/play/sessions/${session.id}/opening/stream`,
-        {},
-        {
-          onDelta: (t) => set((s) => ({ streamingText: s.streamingText + t })),
-          onRevise: () => set({ streamingText: "" }),
-        }
-      );
-      set({
-        session: r.session,
-        currentNode: r.current_node,
-        allNodes: r.current_node ? [r.current_node] : [],
-        busy: false,
-        streamingText: "",
-      });
-    } catch (e) {
-      delete openingRequested[session.id]; // 允许出错后重试
-      set({ busy: false, streamingText: "", error: (e as Error).message });
-    }
+    // 开局：整局第一个节点，allNodes 从空开始置为 [根节点]。
+    await runStream(
+      set,
+      `/play/sessions/${session.id}/opening/stream`,
+      {},
+      (r) =>
+        set({
+          session: r.session,
+          currentNode: r.current_node,
+          allNodes: r.current_node ? [r.current_node] : [],
+        }),
+      () => delete openingRequested[session.id] // 出错清守卫，允许重试
+    );
   },
 
   choose: async (choice) => {
     const { session, busy } = get();
     if (!session || busy || !choice.trim()) return;
-    set({ busy: true, error: null, streamingText: "" });
-    try {
-      // 流式续写：正文逐字流入 streamingText；审校拒绝(revise)时清空重来；
-      // done 帧携带持久化后的 SessionResult。
-      const r = await postStream<SessionResult>(
-        `/play/sessions/${session.id}/choice/stream`,
-        { choice: choice.trim() },
-        {
-          onDelta: (t) => set((s) => ({ streamingText: s.streamingText + t })),
-          onRevise: () => set({ streamingText: "" }),
-        }
-      );
-      set((s) => ({
-        session: r.session,
-        currentNode: r.current_node,
-        // 流式响应不含 nodes，新生成的子节点增量并入
-        allNodes: r.current_node
-          ? [...s.allNodes, r.current_node]
-          : s.allNodes,
-        busy: false,
-        streamingText: "",
-      }));
-    } catch (e) {
-      set({ busy: false, streamingText: "", error: (e as Error).message });
-    }
+    // 续写：新子节点增量并入 allNodes。
+    await runStream(
+      set,
+      `/play/sessions/${session.id}/choice/stream`,
+      { choice: choice.trim() },
+      (r) =>
+        set((s) => ({
+          session: r.session,
+          currentNode: r.current_node,
+          allNodes: r.current_node ? [...s.allNodes, r.current_node] : s.allNodes,
+        }))
+    );
   },
 
   backtrack: async (nodeId) => {
