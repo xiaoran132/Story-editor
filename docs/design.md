@@ -5,13 +5,11 @@
 具体功能设计详见 **prd.md**。
 首先是技术选型
 
-架构参考
+**目标/愿景架构**（下图是长期目标形态，含 API 网关、微服务拆分、消息队列、多模型路由、RAG、对象存储等——**当前均未实现**）。**当前实际架构**是 Next.js 前端 → Go 单体（`handler→service→repository`）→ Python FastAPI（单 `_stream_pipeline`）→ DeepSeek + PostgreSQL，见 [README.md](../README.md) 与 [handoff.md](handoff.md)。
 
-<img src=".\img\架构.png" alt="架构参考" style="zoom:40%;" />
+<img src="img/architecture.png" alt="目标架构（愿景）" style="zoom:40%;" />
 
-目录结构参考
-
-<img src=".\img\文件树参考.png" alt="文件目录" style="zoom:50%;" />
+> **目录结构**：当前真实目录树与分层约定见 [`../CLAUDE.md`](../CLAUDE.md)「分层架构」（此处原早期目录草图已过时删除）。
 
 ## 前端
 
@@ -43,9 +41,9 @@ fast api
 
 LangGraph
 
-Agent架构图
+Agent 架构图（**目标多 agent 形态·愿景**：上帝 agent 调度 + 主角/NPC/环境子 agent 并行归纳。**当前未实现**——现为单条 `_stream_pipeline`：prepare → 流式写作 → normalize → review，见 [handoff.md](handoff.md) 与 `agent/README.md`）。落地阶段见下文「目标形态与落地阶段」。
 
-<img src=".\img\Agent架构.png" alt="image-20260602122231019" style="zoom: 50%;" />
+<img src="img/agent-architecture.png" alt="目标多 agent 形态（愿景）" style="zoom: 50%;" />
 
 用户提问后，请求转发给上帝agent模块进行调度，rag检索上下文，找到选择相关的人物，派发子agent进行
 
