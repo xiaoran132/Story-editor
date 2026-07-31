@@ -60,7 +60,7 @@ type UserCredential struct {
 	Provider   string    `gorm:"size:20;not null;uniqueIndex:idx_credential_provider_identifier" json:"provider"`
 	Identifier string    `gorm:"size:200;not null;uniqueIndex:idx_credential_provider_identifier" json:"identifier"`
 	Secret     *string   `gorm:"type:text" json:"-"`
-	OAuthData  string    `gorm:"type:jsonb" json:"-"`
+	OAuthData  *string   `gorm:"type:jsonb" json:"-"` // 仅 OAuth 登录填；密码注册为 NULL（jsonb 拒绝空串 ""）
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
 }
