@@ -21,7 +21,7 @@
 
 > **架构定位（重要）**：下面这几个 “service” 是**逻辑模块划分 / 未来的微服务拆分方向**，不是一开始就拆成多进程。
 > MVP 阶段落地为**单个 Go 单体**（`handler → service → repository` 扁平分层，各模块是同一进程内的包），等某个模块真正成为瓶颈再独立拆分。
-> **唯一从一开始就独立进程的是 Python AI 服务**（Go 通过 HTTP 调用，见 `ai_client.go`）。
+> **唯一从一开始就独立进程的是 Python AI 服务**（Go 通过 HTTP/SSE 调用，见 `agent_client.go`）。
 
 `user-service` 注册/登录/JWT/OAuth（微信登录）
 
@@ -35,11 +35,9 @@
 
 ## AI agent
 
-Ai相关服务单独分出来用 **Python - FastAPI** 做 ai 服务
+Ai相关服务单独分出来用 **Python - FastAPI** 做 ai 服务。
 
-fast api
-
-LangGraph
+> 早期设想用 LangGraph 编排；**实际落地为轻量自研流式流水线 `_stream_pipeline`**（未引入 langgraph），见下文与 `agent/README.md`。
 
 Agent 架构图（**目标多 agent 形态·愿景**：上帝 agent 调度 + 主角/NPC/环境子 agent 并行归纳。**当前未实现**——现为单条 `_stream_pipeline`：prepare → 流式写作 → normalize → review，见 [handoff.md](handoff.md) 与 `agent/README.md`）。落地阶段见下文「目标形态与落地阶段」。
 
@@ -75,11 +73,34 @@ normalize
 
 三阶段演进（成本换体验，逐步逼近上图）：
 
-- **阶段一（已完成）｜生成质量闭环**：`generate` 的单次调用仍同时产出「节拍把控的正文 + 后果预期的选项 + 滚动前情提要 `summary`」。`summary` 落库到 `story_nodes.summary`（即「④节点树增量摘要」，见 [context-strategy.md](context-strategy.md)），续写时作【前情提要】喂回、替代滑动窗口的折叠段；老数据无 summary 时回退滑动窗口兜底。生成后新增低温 `review` 回调，审查剧情承接、属性反馈、选项后果、delta 与摘要一致性；不通过则带具体反馈完整重写，最多额外重写 `AI_REVIEW_MAX_RETRIES` 次（默认 2），超限报错且不交付未通过内容。该阶段命中「叙事记忆一致性 / 有后果的选择 / 属性入戏+节拍」三目标，但最坏情况下会增加审校和重写延迟。
-- **阶段二｜拆真节点 + 流式**：director/recall/write/critic 拆成职责独立的 LangGraph 节点，recall 从节点摘要升级到 RAG（③）；同时上 realtime 流式输出（WebSocket/SSE）对冲多节点延迟。
+- **阶段一（已完成）｜生成质量闭环 + 流式**：单次生成同时产出「节拍把控的正文 + 后果预期的选项 + 滚动 `summary`」；`summary` 落库到 `story_nodes.summary`（即「④节点树增量摘要」，见 [context-strategy.md](context-strategy.md)），续写时作【前情提要】喂回。**已含流式**：正文以 SSE 逐字流出（详见下「流式生成与质量策略」）。生成后低温 `review` 审查承接/属性/选项后果/delta 与摘要一致性，拒绝则**有记忆写手在上一稿上修订**，**超限降级交付最后一稿**（不硬失败）。另含**故事大纲导演**（outline）、**隐藏属性**（hidden，仅供 AI 参考不泄漏给玩家）、审校**分级**（只挡硬伤）。
+- **阶段二（部分完成）｜拆真节点 + RAG**：**流式已在阶段一落地**；剩余为把单次生成拆成 director/recall/write/critic 职责独立节点，recall 从节点摘要升级到 RAG（③）。
 - **阶段三｜按人物 fan-out**：多 NPC 同场时并行派发人物子 agent，主 agent 归纳——补齐完整多 agent 形态。
 
-> 当前 `agent/` 实现为「阶段一」：`prepare → generate → review`，审校不通过则回到 `generate`，通过后才 `normalize`。`generate` 的单次调用承担导演/书记员职责，`review` 是独立的质量回调；尚未拆出 director/recall/write 的完整子图（见 [agent/README.md](../agent/README.md)、`prompts.py`）。
+> 当前 `agent/` 生成编排是**单条 `_stream_pipeline`（真流式）**：`prepare →（chat_stream 逐字写作）→ 解析哨兵 → normalize → review`，拒绝则有记忆修订、超限降级交付。历史上的 langgraph 非流式图已退休；`prepare`/`normalize`/`review` 为共享纯函数（见 [agent/README.md](../agent/README.md)、`prompts.py`）。尚未拆出 director/recall/write 的完整子图。
+
+### 流式生成与质量策略（当前实现的关键设计决策）
+
+**为什么流式**：完整生成 + 审校约 7~8s，玩家点选项后要等这么久才见字。改为正文逐字 SSE 后**首字延迟降到 ~1s**，遮住尾延迟。
+
+**单次调用·哨兵分隔**：写手一次调用输出「正文 `<<<META>>>` JSON尾（options/state_delta/summary/…，不含 content）」。正文逐字外发，结束后按哨兵切出 JSON 尾解析。这样**只 1 次生成调用、成本不变**，且避开了「流式 JSON 里增量提取 content」的脆弱做法。尾缺失/非法时用 `STRUCTURE_SYSTEM` 兜底（对已得正文补结构化），保住正文不重来。
+
+**SSE 契约**（前端 ← Go ← agent，全程不缓冲）：
+```
+event: delta   data: {"text":"增量正文"}
+event: revise  data: {}                  # 审校拒绝 → 前端清空已流出正文，准备重来
+event: done    data: {<完整结果>}         # agent→Go 为 AIResult；Go→前端为持久化后的 SessionResult
+event: error   data: {"detail":"…"}
+```
+
+**落库时序约束**：状态合并（`mergeState`）、同层去重（`tryMerge`）、写节点 + 更新会话**只能在流结束拿到完整结果后做**——它们依赖完整的 delta/options/summary，不能在流中途做。
+
+**质量策略（容忍瑕疵 > 让玩家失败）**：
+- **审校分级**（`REVIEW_SYSTEM`）：只挡阻断级硬伤（正文矛盾/无推进/无选项/summary 篡改关键事实/JSON 坏）；delta 精度、未遂动作记账等模糊情形一律放行。
+- **有记忆写手修订**：审校拒绝时把「上一稿 + issues」追加进写手对话（`writer_msgs`），令其在上一稿基础上**修订**而非从头重写——减少来回震荡、更快收敛。审校本身无记忆、每次新鲜评判。
+- **超限降级交付**：达 `AI_REVIEW_MAX_RETRIES` 仍未过，则交付最后一稿（打 `degraded=1` 埋点），**绝不硬失败**。理由：属性/`state_delta` 只是辅助 AI 分析与玩家参考的手段，轻微不精确可容忍，但玩家的操作失败不可接受。真失败只剩「LLM 非法 JSON 重试耗尽 / 网络异常」。
+
+**隐藏属性**（`attributes[k].hidden`）：仅供 AI 把控走向的幕后仪表（怀疑度/警戒度等）。照常进 `current_state`、喂给 AI，但 `_write_hidden` 指示 LLM 不得在正文/选项点名或报数；前端 `AttrBar` 按 key 过滤不显示。
 
 ## 数据库设计
 
@@ -366,27 +387,24 @@ ALTER TABLE story_nodes ADD COLUMN state_snapshot JSONB;
 
 ## 关键数据流与前后端契约
 
-以「玩家做出一次选择」为例，端到端链路（P0 核心）：
+以「玩家做出一次选择」为例，端到端**流式**链路（P0 核心）：
 
 ```
-前端                Go 后端                         Python AI 服务
- │  POST 选择/自由输入   │                                │
- │ ───────────────────> │                                │
- │                      │ 1. 校验会话归属、读取当前 session│
- │                      │ 2. 递归 CTE 回溯 parent 路径 ──> 构建剧情历史上下文
- │                      │ 3. 调 AIClient.Continue ───────>│ 生成正文+选项+state_delta
- │                      │                                │ <──── 返回
- │                      │ 4. 一个事务内：                 │
- │                      │    - INSERT story_nodes         │
- │                      │      (含 state_delta + 快照)    │
- │                      │    - UPDATE play_sessions       │
- │                      │      (current_state / node_id / │
- │                      │       node_count)               │
- │ <─── 新节点 + 属性 ── │                                │
+前端                     Go 后端                        Python AI 服务
+ │ POST /choice/stream (SSE) │                              │
+ │ ────────────────────────> │ 1. 校验会话、递归 CTE 回溯 history │
+ │                           │ 2. ContinueStream ─────────> │ prepare→chat_stream 逐字写作
+ │      delta 正文增量 ◀──────┼──── SSE delta 逐帧转发 ◀──────┤   (正文 <<<META>>> JSON尾)
+ │      (revise 时清空重来)    │                              │ 结束: 解析尾→normalize→review
+ │                           │ 3. 流结束拿到完整 AIResult:   │   (拒绝→有记忆修订/超限→降级)
+ │                           │    mergeState → tryMerge 去重 │
+ │                           │    事务: INSERT 节点 +        │
+ │                           │          UPDATE 会话          │
+ │ done: 持久化后 SessionResult ◀─┤                          │
 ```
 
 **契约要点**：
-- AI 服务只负责「给定世界观 + 历史路径 + 玩家输入 → 返回 `{content, options, state_delta}`」，**不碰数据库**（`ai_client.go` 已是纯 HTTP 客户端，超时 60s）。返回的 `options` 落库到 `story_nodes.suggested_options`。
+- AI 服务只负责「给定世界观 + 历史路径 + 玩家输入 → 流式返回正文 + `{options, state_delta, summary, …}`」，**不碰数据库**（`agent_client.go`：非流式用带 90s 超时的 client，**流式用无超时 client + ctx 控时**）。`options` 落库到 `story_nodes.suggested_options`。**落库/去重只能在流结束后做**（依赖完整结果）。
 - 属性状态的**唯一事实来源是 `play_sessions.current_state`**；`state_delta` 是审计/回溯依据，`state_snapshot` 是回溯加速缓存。三者必须在同一事务写入，见本文「三份状态数据的一致性约定」一节。
 - 回溯：不删任何节点，以目标节点为新 `parent_id` 分叉；`current_state` 从目标节点 `state_snapshot` 恢复。
 

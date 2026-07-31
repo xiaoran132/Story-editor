@@ -22,7 +22,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 "AI驱动的互动剧情共创社区" — 用户既是玩家也是创作者，通过 AI Agent 协作完成剧情生成、体验、分享与再创作。
 
-技术栈：Go-Gin + PostgreSQL/GORM（后端）、Next.js + React + Zustand（游玩前端，已搭建，见 `frontend/`）、Python FastAPI + LangGraph（agent 服务，独立进程，已实现并对接）。
+技术栈：Go-Gin + PostgreSQL/GORM（后端）、Next.js + React + Zustand（游玩前端，已搭建，见 `frontend/`）、Python FastAPI（agent 服务，独立进程，已实现并对接；生成用轻量自研流式流水线 `_stream_pipeline`，未用 langgraph）。
 
 ## 构建与运行
 
@@ -212,7 +212,7 @@ Service 层定义自己的输入结构体（如 `service.StoryCreateInput`、`se
 - `play.sql`（003）— `play_sessions`（存**完整状态快照** `current_state JSONB`，与节点树的增量 delta 设计互补）+ 节点树
 - `community.sql`（004）— 点赞/收藏/评论/路线分享，含 `stories.like_count` 等冗余计数字段
 
-## Agent 服务（agent/，Python FastAPI + LangGraph）
+## Agent 服务（agent/，Python FastAPI）
 
 独立进程，Go 后端通过 `AGENT_URL`（默认 `http://localhost:8001`）调用，**不碰数据库**。DeepSeek 凭证下沉到 `agent/.env`，Go 侧不再直连大模型。
 
@@ -220,7 +220,7 @@ Service 层定义自己的输入结构体（如 `service.StoryCreateInput`、`se
 - `app/routers/generate.py` — `POST /generate/stream` `/continue/stream`（流式 SSE：delta/revise/done/error）、`/opening/complete`（预设开场补选项+summary，非流式）、`/merge-check`（节点语义合并判定，非流式）。生成编排全在 `graph/story_graph.py` 的 `_stream_pipeline`（正文 `<<<META>>>` JSON尾，structurer 兜底，review 拒绝走有记忆写手修订、超限降级交付）
 - `app/routers/assist.py` — 创作辅助 `POST /assist/world|opening|polish|branches`（`/world` 会一并产出 `attributes` 类型声明）
 - `app/schemas.py` — 请求/响应模型，`WorldConfig.attributes` 承载属性类型声明，与 Go 契约对齐
-- `app/llm.py` — DeepSeek（OpenAI 兼容）客户端，强制 `response_format=json_object`
+- `app/llm.py` — DeepSeek（OpenAI 兼容）客户端。`chat_json` 强制 `response_format=json_object`（审校/合并/结构化/创作辅助用）；`chat_stream` 不强制（流式写作，正文靠哨兵分隔）。`_build_llm(json_mode)` 缓存两个实例
 
 > 属性类型（number/scalar/set）的完整语义见上文「JSONB 增量属性设计」。`normalize` 对未在 `attributes` 里声明类型的键**透传**，由 Go 的 `mergeState` 兜底推断，保证无 `attributes` 的老作品照常工作。
 
@@ -230,15 +230,17 @@ Service 层定义自己的输入结构体（如 `service.StoryCreateInput`、`se
 
 ## 待实现模块（按顺序）
 
-1. ~~**save** — 会话续玩/读档~~ ✅ 已完成（`GET /play/sessions` 列表 + 前端首页读档续玩；登录接入后可按真实用户过滤）
+1. ~~**save** — 会话续玩/读档~~ ✅ 已完成（`GET /play/sessions` 列表 + 前端首页读档续玩；已按登录用户过滤，匿名回退 guest）
 2. ~~**ai** — agent_client 对接 Python agent 服务~~ ✅ 已完成（agent/ + Go 对接）
 2.5. ~~**play** — 游玩会话链路~~ ✅ 已完成（`PlayService` + `/play` 路由，含回溯）
 2.8. ~~**游玩前端** — Next.js 作品选择/游玩/读档~~ ✅ 已完成（`frontend/`）
-3. **agent 链路演进（留存优先，前置于扩张）** — 阶段一（导演节拍 + 有后果选择 + 属性入戏 + ④增量摘要 + 生成后质量复查/有限重写）✅ 已完成。
-   - 阶段二：把 `generate` 拆成 director/recall/write/critic 独立节点 + realtime 流式输出（WebSocket/SSE）对冲多节点延迟；recall 从节点摘要升级到 ③RAG。
+2.9. ~~**登录接入** — 前端登录 + 会话迁移~~ ✅ 已完成（可选登录、AuthOptional、guest 会话迁移）
+3. **agent 链路演进（留存优先，前置于扩张）** — 阶段一（导演节拍 + 有后果选择 + 属性入戏 + ④增量摘要 + 质量复查/有记忆修订/超限降级）✅ 已完成；**流式（SSE，原阶段二的一部分）✅ 已完成**。
+   - 阶段二余下：把单次生成拆成 director/recall/write/critic 独立节点；recall 从节点摘要升级到 ③RAG。
    - 阶段三：多 NPC 同场时并行派发人物子 agent，主 agent 归纳（完整多 agent 形态）。详见 `docs/design.md`「AI agent」、`docs/context-strategy.md`。
-4. **community** — 作品发布/搜索/排行榜/点赞/收藏/评论
-5. **payment** — 付费解锁/打赏/分成（MVP 可 stub）
-6. **achievement** — 成就系统
+4. **创作/编辑系统** — 创作者编辑器：世界观/大纲(outline)/角色/属性(含 hidden 声明)/开场的可视化编辑，消费已就绪的 agent `/assist/*`。当前缺口：`StoryCreateInput` 只收 title/description（进不了 `world_config`，富作品只能靠 seed），前端编辑器未做。是「创作→游玩→社区」的创作支柱。
+5. **community** — 作品发布/搜索/排行榜/点赞/收藏/评论
+6. **payment** — 付费解锁/打赏/分成（MVP 可 stub）
+7. **achievement** — 成就系统
 
 `templates/index.html` 为 Gin 模板占位，前端正式搭建后替换。

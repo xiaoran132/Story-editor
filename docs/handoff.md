@@ -18,8 +18,8 @@ Story Editor 的长期愿景是“AI 驱动的互动剧情共创社区”：用�
 | 用户 | 后端注册/登录/JWT/资料、凭证分表；**前端登录接入完成**（可选登录，未登录仍匿名 guest；登录后迁移本浏览器 guest 会话到账号） | OAuth/第三方登录未做；密码找回未做 |
 | 作品 | Story CRUD、作品列表、世界观/初始状态 JSON | 创作编辑器、发布管理 UI 未做 |
 | 游玩 | 开局、续写、自由输入、回溯、读档、删档、剧情树、状态合并 | 真实环境下的多回合质量/延迟指标尚未沉淀 |
-| Agent | LangGraph 生成、属性类型规整、滚动摘要、质量复查与有限重写、**开局+续写全流式(SSE)输出** | RAG、多 Agent fan-out、独立 director/recall/write 子图未做 |
-| 前端 | 作品选择、游玩、星图树、历史会话 | 登录、创作、社区、移动端/无障碍/自动化测试未做 |
+| Agent | **流式生成(SSE)**、属性类型规整（含 hidden）、故事大纲导演、滚动摘要、审校分级 + 有记忆修订 + 超限降级交付 | RAG、多 Agent fan-out、独立 director/recall/write 子图未做 |
+| 前端 | 作品选择、游玩、星图树、历史会话、正文逐字流式、**登录/注册 + 会话迁移** | 创作编辑器、社区、移动端/无障碍/自动化测试未做 |
 | 社区 | API 路由与 handler 占位 | 浏览、详情、点赞、评论、搜索、排行榜均未实现 |
 | 商业化 | SQL 蓝本中有概念 | 付费、打赏、分成、成就未做 |
 
@@ -27,9 +27,9 @@ Story Editor 的长期愿景是“AI 驱动的互动剧情共创社区”：用�
 
 ```mermaid
 flowchart LR
-  FE["Next.js 前端 :3000\n游玩 UI / Zustand"] -->|"HTTP /api/v1"| BE["Go + Gin 后端 :8080\n业务编排 / 持久化"]
+  FE["Next.js 前端 :3000\n游玩 UI / Zustand"] -->|"HTTP + SSE /api/v1"| BE["Go + Gin 后端 :8080\n业务编排 / 持久化"]
   BE -->|"GORM"| DB[("PostgreSQL\n剧情树 / 会话 / JSONB")]
-  BE -->|"HTTP"| AG["FastAPI + LangGraph :8001\n生成与质量审校"]
+  BE -->|"HTTP / SSE"| AG["FastAPI :8001\n流式生成与质量审校"]
   AG -->|"OpenAI-compatible"| LLM["DeepSeek"]
 ```
 

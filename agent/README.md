@@ -1,6 +1,6 @@
 # Story Editor · Agent 服务
 
-> Python FastAPI + LangGraph 服务。职责是把“世界观 + 剧情路径 + 当前状态 + 玩家行动”转换为**经 AI 质量审校的结构化剧情结果**。它是独立进程，**不访问 PostgreSQL，也不持久化任何剧情数据**；Go 后端是唯一的调用者和写库者。
+> Python FastAPI 服务。职责是把“世界观 + 剧情路径 + 当前状态 + 玩家行动”**流式**转换为**经 AI 质量审校的结构化剧情结果**。生成编排是单条自研流水线 `_stream_pipeline`（未用 langgraph）。它是独立进程，**不访问 PostgreSQL，也不持久化任何剧情数据**；Go 后端是唯一的调用者和写库者。
 
 ## 先了解什么
 
@@ -29,13 +29,14 @@ agent/
 │   ├── prompts.py               # 生成、审校、创作辅助、合并判断提示词
 │   ├── schemas.py               # 与 Go 对齐的 Pydantic 请求/响应模型
 │   ├── graph/
-│   │   ├── state.py             # LangGraph 共享状态
-│   │   └── story_graph.py       # 游玩生成/审校工作流
+│   │   ├── state.py             # 生成流水线共享状态（TypedDict）
+│   │   └── story_graph.py       # 流式生成编排 _stream_pipeline + prepare/normalize/review
 │   └── routers/
-│       ├── generate.py          # /generate、/continue、/merge-check
+│       ├── generate.py          # /generate/stream、/continue/stream、/opening/complete、/merge-check
 │       └── assist.py            # /assist/*
 ├── tests/
-│   └── test_story_graph_review.py # 审校重写循环离线测试
+│   ├── test_stream.py          # 流式管线：哨兵/兜底/拒绝修订/超限降级
+│   └── test_llm_parse_retry.py # parse 重试恢复/耗尽
 ├── .env.example
 └── requirements.txt
 ```

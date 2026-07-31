@@ -2,7 +2,7 @@
 
 ## 问题
 
-续写（`MakeChoice` → agent `/continue`）时，需要把"已发生剧情"作为上下文给到 LLM。
+续写（`MakeChoiceStream` → agent `/continue/stream`）时，需要把"已发生剧情"作为上下文给到 LLM。
 **最初实现是全量重放**：`FindPath` 取根→当前路径上的**每个节点**，把每段 `content` + `choice_text`
 逐字拼进提示（`story_graph.py` 的 `prepare`）。
 
@@ -31,7 +31,7 @@
 ### ④ 落地现状（已实现，含生成后质量审校）
 
 - **数据**：`story_nodes` 增列 `summary`（`model/node.go` 的 `StoryNode.Summary`，GORM AutoMigrate 自动加列、`default:''`）。
-- **生成 + 质量审校**：`STORY_SYSTEM`（`agent/app/prompts.py`）让一次生成在 `content` 外多吐 `summary`（滚动前情提要，强制保留关键实体/未回收伏笔/人物关系/已发生的不可逆事件）；随后低温 `REVIEW_SYSTEM` 审查剧情承接、属性/选项/delta/摘要一致性。拒绝时带 `issues` 回到 generate 完整重写，最多额外 `AI_REVIEW_MAX_RETRIES` 次（默认 2）；`normalize`（`story_graph.py`）仅处理审校通过的结果，`AIResult.Summary` 再落库（`play.go` 的 `StartSession` 根节点与 `MakeChoice` 子节点）。
+- **生成 + 质量审校**：`STORY_STREAM_SYSTEM`（`agent/app/prompts.py`）让一次流式生成在正文外多吐 `summary`（滚动前情提要，强制保留关键实体/未回收伏笔/人物关系/已发生的不可逆事件）；随后低温 `REVIEW_SYSTEM` 分级审查承接/属性/选项/delta/摘要一致性。拒绝时**有记忆写手在上一稿上修订**，最多额外 `AI_REVIEW_MAX_RETRIES` 次（默认 2），**超限降级交付最后一稿**（不硬失败）；`normalize`（`story_graph.py`）归一后 `AIResult.Summary` 落库（`play.go` 的 `StartOpeningStream` 根节点与 `applyContinueResult` 子节点）。
 - **续写上下文**：`play.go` 拼 history 时逐节点带上 `PathStep.Summary`；`_write_history_window`（`story_graph.py`）取最近非空 summary 渲染为 `【前情提要】` + 最近 `_RECENT_RAW`(=2) 段原文 → O(1)，替代原折叠占位。
 - **回溯零成本正确**：回溯到节点 X 再分叉时，history 末尾即 X 自己的 summary，天然涵盖截至 X 的一切。
 - **兜底**：历史无任何 summary（老会话）时 `_write_history_window` 自动回退 ① 滑动窗口。
@@ -56,8 +56,7 @@
 **核心思想**：借 append-only 节点树，把"前情提要"一次生成、永久复用。
 
 - **数据**：`story_nodes` 增列 `summary`（截至该节点的累计前情提要）。
-- **生成 + 审校**：让 `/continue` 的 `STORY_SYSTEM` 在返回 `content` 的同时**多吐一个
-  `summary`** = 父节点 `summary` 滚动更新后的版本；`review` 审校通过后，`AIResult`/schema 才将该结果交给 Go，新节点落库时一并写入。
+- **生成 + 审校**：流式生成在正文之外**多吐一个 `summary`** = 父节点 `summary` 滚动更新后的版本；经 `review`（拒绝则有记忆修订、超限降级交付）后 `AIResult` 交给 Go，新节点落库时一并写入。
 - **续写上下文** = `父节点.summary` + 最近 1~2 段原文 + 当前选择 → **O(1)**，与深度无关。
 - **回溯零成本正确**：回溯到节点 X 再分叉时直接用 `X.summary`（它已涵盖截至 X 的一切），
   无需回退/重算——这是节点树 append-only 结构独有的红利（②做不到，故②贵）。
