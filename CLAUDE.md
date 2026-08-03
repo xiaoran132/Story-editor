@@ -2,241 +2,241 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## 规则
-1. 所有回复用中文。
-2. 在完成一个任务后，及时更改文档库。
-3. 本项目目前还处在demo设计（未上线，0用户），你可以随时提出对项目的见解，不要一味的遵从用户的命令，而是不断提出合理化的质疑与建议，包括但不限于设计方案、技术规划、技术架构、数据库设计等；完成任务后也应自省实现能否简化。只要能让项目变得更好，你可以随时提出对任何东西的推倒重来。
+## Rules
+1. Reply in Chinese for all responses.
+2. After completing a task, update the documentation promptly.
+3. This project is currently in demo design stage (not launched, 0 users). Feel free to share your views on the project at any time — don't blindly follow the user's commands, but continuously raise reasonable challenges and suggestions, including but not limited to design proposals, technical planning, architecture, and database design. After completing a task, also reflect on whether the implementation can be simplified. As long as it makes the project better, you may propose rebuilding anything from scratch at any time.
 
-## 文档维护与阅读顺序
+## Documentation Maintenance & Reading Order
 
-- **阅读顺序 / 各文档职责与权威性**：见 `README.md`「先读什么」。
-- **文档维护规则**（改了什么要同步更新哪些）：见 `docs/handoff.md` §10。
-- **冲突优先级**：运行代码 / 测试 > `docs/handoff.md`（当前事实）> 本文件（工程约束）> 模块 README > `docs/design.md`（技术设计）> `docs/prd.md`（愿景）。
-- 完成代码任务后必须同步受影响文档，尤其 `docs/handoff.md`；不要只改 PRD。
+- **Reading order / responsibility & authority of each doc**: see "先读什么" (What to read first) in `README.md`.
+- **Documentation maintenance rules** (what to sync when you change something): see `docs/handoff.md` §10.
+- **Conflict priority**: running code / tests > `docs/handoff.md` (current facts) > this file (engineering constraints) > module README > `docs/design.md` (technical design) > `docs/prd.md` (vision).
+- After completing a code task, you must sync affected docs, especially `docs/handoff.md`; do not only update the PRD.
 
-## 项目概述
+## Project Overview
 
-"AI驱动的互动剧情共创社区" — 用户既是玩家也是创作者，通过 AI Agent 协作完成剧情生成、体验、分享与再创作。
+"AI-driven interactive story co-creation community" — users are both players and creators, collaborating via AI Agents to generate, experience, share, and re-create stories.
 
-技术栈：Go-Gin + PostgreSQL/GORM（后端）、Next.js + React + Zustand（游玩前端，已搭建，见 `frontend/`）、Python FastAPI（agent 服务，独立进程，已实现并对接；生成用轻量自研流式流水线 `_stream_pipeline`，未用 langgraph）。
+Tech stack: Go-Gin + PostgreSQL/GORM (backend), Next.js + React + Zustand (play frontend, built, see `frontend/`), Python FastAPI (agent service, standalone process, implemented and integrated; generation uses the lightweight in-house streaming pipeline `_stream_pipeline`, not langgraph).
 
-## 构建与运行
+## Build & Run
 
 ```powershell
-# 一键（Windows）：前置检查 + 独立窗口启动 Agent 服务(:8001)、后端(:8080)、前端(:3000)
-.\scripts\dev.ps1        # 全部；.\scripts\dev.ps1 -Only ai | -Only backend | -Only frontend 单起
+# One-click (Windows): pre-checks + launch Agent service (:8001), backend (:8080), frontend (:3000) in separate windows
+.\scripts\dev.ps1        # all; .\scripts\dev.ps1 -Only ai | -Only backend | -Only frontend to start one
 ```
 
 ```bash
-# 构建
+# Build
 cd backend && go build .
 
-# 运行（需要 PostgreSQL 运行中；须在 backend/ 下）
+# Run (requires a running PostgreSQL; must be under backend/)
 cd backend && go run .
 
-# 测试
+# Test
 cd backend && go test ./...
 
-# 添加依赖
+# Add a dependency
 cd backend && go get <pkg> && go mod tidy
 
-# Agent 服务（独立进程）
-cd agent && uvicorn app.main:app --port 8001   # 详见 agent/README.md
+# Agent service (standalone process)
+cd agent && uvicorn app.main:app --port 8001   # see agent/README.md
 
-# 前端（游玩，独立进程）
-cd frontend && npm install && npm run dev   # :3000，详见 frontend/README.md
+# Frontend (play, standalone process)
+cd frontend && npm install && npm run dev   # :3000, see frontend/README.md
 ```
 
-## 配置
+## Configuration
 
-`backend/config/config.go` 通过 viper 读取配置，优先级：**环境变量 > config.yaml > 默认值**。环境变量模板见 `backend/.env.example`。
+`backend/config/config.go` reads config via viper, with priority: **environment variables > config.yaml > defaults**. The env var template is in `backend/.env.example`.
 
-默认值在 `config.setDefaults()`（私有）中定义：DB localhost/5432/postgres/story_editor、`SERVER_PORT=":8080"`、`AGENT_URL="http://localhost:8001"`。
+Defaults are defined in `config.setDefaults()` (private): DB localhost/5432/postgres/story_editor, `SERVER_PORT=":8080"`, `AGENT_URL="http://localhost:8001"`.
 
-> `main.go` 用 `LoadHTMLGlob("../templates/*")` 加载模板，且 viper 从 `./config` 与 `.` 查找 config.yaml——因此**必须在 `backend/` 目录下运行**（`cd backend && go run .`），否则模板路径失效。
+> `main.go` uses `LoadHTMLGlob("../templates/*")` to load templates, and viper looks for config.yaml in `./config` and `.` — therefore you **must run under the `backend/` directory** (`cd backend && go run .`), otherwise the template path breaks.
 
-## 架构模式
+## Architecture Patterns
 
-### 分层架构（扁平分层）
+### Layered Architecture (flat layering)
 
-严格遵循 `handler → service → repository` 单向依赖。`model` 和 `pkg` 为无状态通用层，禁止包含业务逻辑。
+Strictly follows `handler → service → repository` unidirectional dependency. `model` and `pkg` are stateless common layers, forbidden from containing business logic.
 
 ```
 backend/
-├── main.go                     # 启动入口：config → db → DI → 路由 → 启动
-├── config/config.go            # viper 配置管理
+├── main.go                     # Startup entry: config → db → DI → routes → run
+├── config/config.go            # viper config management
 ├── internal/
-│   ├── model/                  # 纯 GORM 数据模型 + ToResponse() DTO
+│   ├── model/                  # Pure GORM data models + ToResponse() DTO
 │   │   ├── user.go
 │   │   ├── story.go
 │   │   └── node.go
-│   ├── handler/                # HTTP handler：参数绑定 → 调用 service → response
+│   ├── handler/                # HTTP handler: param binding → call service → response
 │   │   ├── user.go
 │   │   ├── story.go
 │   │   ├── node.go
 │   │   └── community.go
-│   ├── service/                # 业务逻辑层（纯 Go，不强绑 HTTP）
+│   ├── service/                # Business logic layer (pure Go, not tightly bound to HTTP)
 │   │   ├── user.go
 │   │   ├── story.go
 │   │   ├── node.go
-│   │   └── agent_client.go     # HTTP 调用 Python agent 服务
-│   ├── repository/             # 数据访问层（GORM 操作）
+│   │   └── agent_client.go     # HTTP calls to the Python agent service
+│   ├── repository/             # Data access layer (GORM operations)
 │   │   ├── user.go
 │   │   ├── story.go
 │   │   └── node.go
 │   └── middleware/
-│       ├── auth.go             # JWT Bearer 解析
-│       └── cors.go             # 跨域
-└── pkg/                        # 无业务依赖的工具包
-    ├── jwt.go                  # JWT 生成/验证
-    ├── response.go             # 统一响应格式
-    └── errors.go               # AppError + 业务错误码
+│       ├── auth.go             # JWT Bearer parsing
+│       └── cors.go             # Cross-origin
+└── pkg/                        # Utility packages with no business dependencies
+    ├── jwt.go                  # JWT generation/verification
+    ├── response.go             # Unified response format
+    └── errors.go               # AppError + business error codes
 ```
 
-### 分层规则
+### Layering Rules
 
-1. `handler` 只能调用 `service`，负责请求绑定校验和响应
-2. `service` 只能调用 `repository` 或 `agent_client`，负责业务逻辑
-3. `repository` 只做数据库操作，接收/返回 `model` 结构体
-4. `model` 只定义数据结构，禁止写业务逻辑
-5. `pkg` 无任何业务依赖，可被任意层引用
+1. `handler` may only call `service`, responsible for request binding/validation and response
+2. `service` may only call `repository` or `agent_client`, responsible for business logic
+3. `repository` only does database operations, accepts/returns `model` structs
+4. `model` only defines data structures, forbidden from writing business logic
+5. `pkg` has no business dependencies, may be referenced by any layer
 
-### 依赖注入
+### Dependency Injection
 
-在 `main.go` 中手动组装：config → database → repository → service → handler → 路由注册。
+Assembled manually in `main.go`: config → database → repository → service → handler → route registration.
 
-启动时 `main.go` 先执行 `CREATE EXTENSION IF NOT EXISTS pgcrypto`（`gen_random_uuid()` 依赖），再 `AutoMigrate` 当前五个模型：`User`、`UserCredential`、`Story`、`StoryNode`、`PlaySession`，随后 `seed()` 幂等预置 guest 用户 + demo 作品。`aiClient` 已注入 `PlayService`（`NewPlayService(sessionRepo, nodeRepo, storyRepo, aiClient)`），挂载在 `/api/v1/play/*`。
+On startup, `main.go` first executes `CREATE EXTENSION IF NOT EXISTS pgcrypto` (required by `gen_random_uuid()`), then `AutoMigrate` on the current five models: `User`, `UserCredential`, `Story`, `StoryNode`, `PlaySession`, followed by idempotent `seed()` that pre-seeds a guest user + demo works. `aiClient` is injected into `PlayService` (`NewPlayService(sessionRepo, nodeRepo, storyRepo, aiClient)`), mounted at `/api/v1/play/*`.
 
-### 路由注册
+### Route Registration
 
-直接在 `main.go` 中注册路由组：
-- `/api/v1/auth/*` — 注册/登录/个人资料
-- `/api/v1/stories/*` — 剧情 CRUD + 节点创建
-- `/api/v1/nodes/*` — 节点查询/更新/删除
-- `/api/v1/play/*` —（挂 `AuthOptional`：带 token 归属登录用户，否则匿名 guest）游玩会话：建空会话 `POST /sessions`（不再同步生成开局）、**登录后领取匿名进度 `POST /sessions/migrate`（AuthRequired，只迁本浏览器上报且 guest 名下的会话）**、**流式开局 `POST /sessions/:id/opening/stream`（SSE，幂等；游玩页见 current_node=null 时触发）**、列表 `GET /sessions`（当前玩家/guest 的历史会话，含 `story_title`，供读档）、查询 `GET /sessions/:id`、删除 `DELETE /sessions/:id`（删档，校验归属后事务级联删该局全部节点）、**流式选择 `POST /sessions/:id/choice/stream`（SSE：delta/revise/done/error）**、回溯 `POST /sessions/:id/backtrack`（匿名可玩）
-- `/api/v1/community/*` — 社区浏览/详情/点赞/评论（handler 桩）
+Routes are registered directly in route groups in `main.go`:
+- `/api/v1/auth/*` — register/login/profile
+- `/api/v1/stories/*` — story CRUD + node creation
+- `/api/v1/nodes/*` — node query/update/delete
+- `/api/v1/play/*` — (mounted with `AuthOptional`: with a token, belongs to the logged-in user; otherwise anonymous guest) play sessions: create empty session `POST /sessions` (no longer synchronously generates the opening), **claim anonymous progress after login `POST /sessions/migrate` (AuthRequired, only migrates sessions reported by this browser and owned by guest)**, **streaming opening `POST /sessions/:id/opening/stream` (SSE, idempotent; triggered when the play page sees current_node=null)**, list `GET /sessions` (the current player's/guest's history sessions, with `story_title`, for loading saves), query `GET /sessions/:id`, delete `DELETE /sessions/:id` (delete save, validates ownership then transactionally cascade-deletes all nodes of that run), **streaming choice `POST /sessions/:id/choice/stream` (SSE: delta/revise/done/error)**, backtrack `POST /sessions/:id/backtrack` (playable anonymously)
+- `/api/v1/community/*` — community browse/detail/like/comment (handler stubs)
 
-### 统一错误处理
+### Unified Error Handling
 
-`pkg/errors.go` — `AppError` 有两个关键字段：
-- `StatusCode` — HTTP 状态码（不序列化到 JSON）
-- `BizCode` — 业务错误码（序列化到 JSON 的 `error.code`）
+`pkg/errors.go` — `AppError` has two key fields:
+- `StatusCode` — HTTP status code (not serialized to JSON)
+- `BizCode` — business error code (serialized to `error.code` in JSON)
 
-预定义 HTTP 错误：`BadRequest(msg)`, `Unauthorized(msg)`, `NotFound(msg)`, `Forbidden(msg)`, `Conflict(msg)`, `Internal(msg)`。
-业务错误码 10001-10011 使用 `NewBusinessError(code)` 或 `NewBusinessErrorWithMessage(code, msg)`。
+Predefined HTTP errors: `BadRequest(msg)`, `Unauthorized(msg)`, `NotFound(msg)`, `Forbidden(msg)`, `Conflict(msg)`, `Internal(msg)`.
+Business error codes 10001-10011 use `NewBusinessError(code)` or `NewBusinessErrorWithMessage(code, msg)`.
 
-Handler 直接返回 service 层的 error，由 `pkg.Error(c, err)` 统一处理——通过类型断言提取 `AppError` 并正确设置 HTTP 状态码。
+Handlers directly return errors from the service layer, handled uniformly by `pkg.Error(c, err)` — which extracts `AppError` via type assertion and sets the correct HTTP status code.
 
-### 统一响应格式
+### Unified Response Format
 
-所有 JSON 响应用 `pkg/` 辅助函数，不要直接调用 `c.JSON()`：
+All JSON responses use `pkg/` helper functions; do not call `c.JSON()` directly:
 ```
 { "success": true, "data": {...}, "error": null, "meta": {...} }
 ```
-辅助函数：`pkg.Success`, `pkg.Created`, `pkg.SuccessWithMeta`, `pkg.Error`, `pkg.NoContent`。
+Helper functions: `pkg.Success`, `pkg.Created`, `pkg.SuccessWithMeta`, `pkg.Error`, `pkg.NoContent`.
 
-### 鉴权
+### Authentication
 
-`middleware.AuthRequired(secret)` — 解析 Bearer JWT，设置 `c.Set("user_id", ...)`。
-Handler 中用 `middleware.GetUserID(c)` 取值。
+`middleware.AuthRequired(secret)` — parses Bearer JWT, sets `c.Set("user_id", ...)`.
+In handlers, use `middleware.GetUserID(c)` to retrieve the value.
 
-## 关键设计约定
+## Key Design Conventions
 
-### DTO 模式
+### DTO Pattern
 
-每个 model 有 `ToResponse()` 方法返回对外 DTO（如 `UserResponse`），隐藏敏感字段（`PasswordHash` 等）。handler 只返回 DTO，不直接暴露 model。
+Each model has a `ToResponse()` method returning an external-facing DTO (e.g. `UserResponse`), hiding sensitive fields (`PasswordHash`, etc.). Handlers only return DTOs, never exposing models directly.
 
-### Service 输入类型
+### Service Input Types
 
-Service 层定义自己的输入结构体（如 `service.StoryCreateInput`、`service.NodeCreateInput`），不依赖 handler 的请求结构体。这保持了 service 与 HTTP 层的解耦。
+The service layer defines its own input structs (e.g. `service.StoryCreateInput`, `service.NodeCreateInput`), not depending on the handler's request structs. This keeps the service decoupled from the HTTP layer.
 
-### 剧情节点树 — JSONB 增量属性设计
+### Story Node Tree — JSONB Incremental Attribute Design
 
-核心设计思想（详见 `docs/design.md`）：剧情属性（HP、金币、好感度等）完全由创作者自定义，后端不硬编码字段。
+Core design idea (see `docs/design.md`): story attributes (HP, gold, affinity, etc.) are entirely customized by creators; the backend does not hardcode fields.
 
-- **`StoryNode`** 使用邻接表（`parent_id`）形成树，`depth` 记录层级，`is_ending` 标记结局
-- 属性变化存增量（`state_delta JSONB`），当前完整状态 = 路径上所有 delta 按类型合并 + 初始值
-- Postgres 递归 CTE 做树查询（回溯路径、子树展开），不需要应用层递归
-- 属性字段名对后端透明，直接用 JSONB 合并操作
+- **`StoryNode`** uses an adjacency list (`parent_id`) to form a tree, `depth` records the level, `is_ending` marks endings
+- Attribute changes are stored as increments (`state_delta JSONB`); the current full state = all deltas along the path merged by type + initial values
+- Postgres recursive CTE handles tree queries (backtrack path, subtree expansion), no application-layer recursion needed
+- Attribute field names are transparent to the backend, directly using JSONB merge operations
 
-**属性类型系统（number / scalar / set）**：创作者在 `world_config.attributes` 里声明每个属性键的类型，AI 与后端据此决定 `state_delta` 的格式与合并策略——
-- `number`（数值累加，如 hp/gold）：delta 给增减量 `{"hp": -10}`，合并时相加；
-- `scalar`（覆盖式，如 location/布尔 flag）：delta 给新值，后值覆盖前值；
-- `set`（集合增删，如背包 items）：delta 给 `{"add": [...], "remove": [...]}`，按元素增删去重；
-- **未声明类型的键**：向后兼容——两侧皆数值则累加，否则覆盖。
+**Attribute type system (number / scalar / set)**: creators declare the type of each attribute key in `world_config.attributes`; the AI and backend decide the format and merge strategy of `state_delta` accordingly —
+- `number` (numeric accumulation, e.g. hp/gold): delta gives the increment/decrement `{"hp": -10}`, added on merge;
+- `scalar` (overwrite, e.g. location/boolean flag): delta gives the new value, later value overwrites earlier;
+- `set` (set add/remove, e.g. inventory items): delta gives `{"add": [...], "remove": [...]}`, added/removed and deduplicated per element;
+- **keys without a declared type**: backward compatible — if both sides are numeric, accumulate; otherwise overwrite.
 
-合并逻辑落在 `service.mergeState`（`play.go`），类型来自 `WorldConfig.AttrTypes()`；Python 侧 `graph/story_graph.py` 的 `normalize` 按同一套类型规整 LLM 输出（丢弃非法键、校验格式）。两端语义严格对齐，见 `play_merge_test.go`。
+The merge logic lives in `service.mergeState` (`play.go`), with types coming from `WorldConfig.AttrTypes()`; on the Python side, `graph/story_graph.py`'s `normalize` regularizes LLM output by the same set of types (discards illegal keys, validates format). The two sides' semantics are strictly aligned, see `play_merge_test.go`.
 
-**隐藏属性（`"hidden": true`）**：属性声明可加 `hidden`，表示"仅供 AI 参考的幕后仪表"（如怀疑度/警戒度/命运值）。它**照常**进 `current_state`、随 delta 合并、透传给 agent；区别在于——① 玩家端 `AttrBar` 按 `world_config` 里的 hidden 键过滤，不显示（前端另拉 `GET /stories/:id` 拿 hidden 清单）；② agent `prepare` 用 `_hidden_attrs` 把隐藏键注入提示词，指示 LLM 照常更新其 delta、但**不得在 content/options 里点名或报数**，只用剧情间接体现；③ 创作端 `WORLD_SYSTEM` 允许 AI 自建世界观时主动把压力型属性标 hidden。是未来"让玩家自选隐藏属性"的地基。
+**Hidden attributes (`"hidden": true`)**: an attribute declaration may add `hidden`, meaning "a behind-the-scenes gauge for AI reference only" (e.g. suspicion/alertness/fate value). It **still** enters `current_state`, merges with deltas, and passes through to the agent; the difference is — ① the player-side `AttrBar` filters out hidden keys per `world_config` and does not display them (the frontend separately fetches `GET /stories/:id` for the hidden list); ② agent `prepare` uses `_hidden_attrs` to inject hidden keys into the prompt, instructing the LLM to update their deltas as usual but **not to name or report numbers** in content/options, only reflecting them indirectly through the story; ③ the creation-side `WORLD_SYSTEM` lets the AI proactively mark pressure-type attributes as hidden when building the worldview. This is the foundation for a future "let players choose which attributes to hide".
 
 ### AgentClient
 
-`service/agent_client.go` 是独立的 HTTP 客户端，调用 Python agent 服务的 `/generate`、`/continue`、`/merge-check` 端点。不依赖 repository 层。`CheckMerge` 用通用的 `postInto`（`post` 是其 `AIResult` 特化包装）。
+`service/agent_client.go` is a standalone HTTP client calling the Python agent service's `/generate`, `/continue`, `/merge-check` endpoints. It does not depend on the repository layer. `CheckMerge` uses the generic `postInto` (`post` is its `AIResult`-specialized wrapper).
 
-**节点语义合并去重**（`play.go` 的 `tryMerge`，在 `applyContinueResult` 内）：续写流结束、新建节点前，取当前节点的同层子节点（`FindChildren`），先按 `state_delta` 规范 JSON 相等**硬过滤**（`deltaEqual`，省掉 AI 调用），再对候选调 `CheckMerge` 判语义等价；命中则复用该子节点（改 session 指针、`NodeCount` 不变），否则新建。保守策略：agent 不确定即不合并。
+**Node semantic merge & dedup** (`tryMerge` in `play.go`, inside `applyContinueResult`): after the continuation stream ends and before creating a new node, take the current node's same-level children (`FindChildren`), first **hard-filter** by canonical JSON equality of `state_delta` (`deltaEqual`, saving an AI call), then call `CheckMerge` on the candidates to judge semantic equivalence; on a hit, reuse that child node (change the session pointer, `NodeCount` unchanged), otherwise create a new one. Conservative strategy: if the agent is unsure, do not merge.
 
 ## PostgreSQL / GORM
 
-- 驱动：`gorm.io/driver/postgres` + `gorm.io/gorm`
-- 模块名：`backend`，Go 1.25
-- 数据库名：`story_editor`（通过环境变量 DB_NAME 配置）
-- 表由 GORM AutoMigrate 自动创建
-- 模型定义在 `internal/model/`，使用 GORM 标签
+- Driver: `gorm.io/driver/postgres` + `gorm.io/gorm`
+- Module name: `backend`, Go 1.25
+- Database name: `story_editor` (configured via env var DB_NAME)
+- Tables are auto-created by GORM AutoMigrate
+- Model definitions are in `internal/model/`, using GORM tags
 
-## 当前实现状态
+## Current Implementation Status
 
-| 模块                                    | 状态 |
+| Module                                    | Status |
 |---------------------------------------|------|
-| 项目骨架（config, pkg, middleware, DI, 路由） | 完成 |
-| User（注册/登录/JWT/个人资料）                  | 完成（bcrypt 密码 + user_credentials 凭证分离） |
-| Story（CRUD + 列表）                      | 完成 |
-| Node（节点创建/子节点/更新/删除）                  | 完成 |
-| Play / 游玩会话（开局/选择/回溯 + 属性合并 + 会话列表）   | 完成（`PlayService` + `/play` 路由，含 `GET /sessions` 读档列表） |
-| AgentClient + Agent 服务对接              | 完成（`agent/` + Go HTTP 编排，属性类型系统 number/scalar/set） |
-| 游玩前端（Next.js）                         | 完成（`frontend/`：星图主题；作品选择、游玩、历史会话读档续玩+删档；已探索剧情线以发光星图展示、点击节点回溯；登录/注册未接入，沿用匿名 guest） |
-| 节点语义合并去重                            | 完成（续写流结束后 `applyContinueResult`：同层子节点按 `state_delta` 相等硬过滤 + agent `/merge-check` 判语义等价 → 命中复用不新建，避免近义分支污染剧情树） |
-| Agent 链路阶段一（导演节拍 + 有后果选择 + 属性入戏 + ④增量摘要 + 质量复查） | 完成（`generate` 后低温 `review` 回调审查；不通过则**有记忆写手修订**（在上一稿上改），最多 `AI_REVIEW_MAX_RETRIES` 次，**超限降级交付最后一稿**（容忍瑕疵，绝不让玩家操作失败）。`summary` 落库并在续写时回注入，老数据滑动窗口兜底。见 `docs/design.md`「AI agent」三阶段） |
-| 开局+续写全流式输出（SSE，阶段二切片） | 完成（续写 `/choice/stream`→`MakeChoiceStream`→agent `/continue/stream`；开局 `StartSession` 只建空会话、游玩页触发 `/opening/stream`→`StartOpeningStream`→agent `/generate/stream`。正文哨兵分隔逐字流出，结束后合并/去重/落库；review 拒绝发 revise。首字延迟 `ttfb_ms` 埋点约 0.4~1.5s vs 完整 ~7.7s） |
-| 预设开场补全 | 完成（有 `opening_content` 的作品开局：正文作单帧 delta + 调 `/opening/complete` 补起始选项+summary，避免开局只有自由输入框） |
-| Community（浏览/详情/点赞/评论）                | handler 桩，全部 TODO |
+| Project skeleton (config, pkg, middleware, DI, routes) | Done |
+| User (register/login/JWT/profile)                  | Done (bcrypt password + user_credentials credential separation) |
+| Story (CRUD + list)                      | Done |
+| Node (node creation/children/update/delete)                  | Done |
+| Play / play sessions (opening/choice/backtrack + attribute merge + session list)   | Done (`PlayService` + `/play` routes, incl. `GET /sessions` save-load list) |
+| AgentClient + Agent service integration              | Done (`agent/` + Go HTTP orchestration, attribute type system number/scalar/set) |
+| Play frontend (Next.js)                         | Done (`frontend/`: star-map theme; work selection, play, history session save-load resume + delete; explored story lines shown as a glowing star map, click node to backtrack; login/register not integrated, uses anonymous guest) |
+| Node semantic merge & dedup                            | Done (after continuation stream ends, `applyContinueResult`: same-level children hard-filtered by `state_delta` equality + agent `/merge-check` semantic equivalence judgment → reuse on hit instead of creating, avoiding near-synonymous branches polluting the story tree) |
+| Agent pipeline Phase 1 (director beats + consequential choices + attributes in play + ④ incremental summary + quality review) | Done (low-temperature `review` callback audit after `generate`; on failure, **memory-equipped writer revises** (edits on the previous draft), up to `AI_REVIEW_MAX_RETRIES` times, **degrades to deliver the last draft when exceeded** (tolerates flaws, never lets the player's operation fail). `summary` is persisted and re-injected during continuation; old data falls back to a sliding window. See "AI agent" three phases in `docs/design.md`) |
+| Full streaming output for opening + continuation (SSE, Phase 2 slice) | Done (continuation `/choice/stream`→`MakeChoiceStream`→agent `/continue/stream`; opening `StartSession` only creates an empty session, the play page triggers `/opening/stream`→`StartOpeningStream`→agent `/generate/stream`. Body text streams character-by-character separated by a sentinel, then merged/deduped/persisted after the end; review rejection emits revise. First-byte latency `ttfb_ms` telemetry ~0.4~1.5s vs full ~7.7s) |
+| Preset opening completion | Done (opening for works with `opening_content`: body text as a single-frame delta + call `/opening/complete` to fill starting options + summary, avoiding an opening with only a free-input box) |
+| Community (browse/detail/like/comment)                | handler stubs, all TODO |
 
-## 数据库设计蓝本（infa/sql/）
+## Database Design Blueprint (infa/sql/)
 
-`infa/sql/` 下的 SQL 文件是**完整数据模型的设计蓝本，领先于 Go 实现**——GORM 目前只 AutoMigrate 了其中一部分表。新增模块前应先对照对应 SQL：
-- `users.sql`（001）— 用户 + 凭证分离
-- `stories.sql`（002）— 作品 + world_config/initial_state
-- `play.sql`（003）— `play_sessions`（存**完整状态快照** `current_state JSONB`，与节点树的增量 delta 设计互补）+ 节点树
-- `community.sql`（004）— 点赞/收藏/评论/路线分享，含 `stories.like_count` 等冗余计数字段
+The SQL files under `infa/sql/` are the **complete data model design blueprint, ahead of the Go implementation** — GORM currently only AutoMigrates a subset of these tables. Before adding a new module, check the corresponding SQL first:
+- `users.sql` (001) — users + credential separation
+- `stories.sql` (002) — works + world_config/initial_state
+- `play.sql` (003) — `play_sessions` (stores the **full state snapshot** `current_state JSONB`, complementary to the node tree's incremental delta design) + node tree
+- `community.sql` (004) — likes/favorites/comments/route sharing, incl. redundant count fields like `stories.like_count`
 
-## Agent 服务（agent/，Python FastAPI）
+## Agent Service (agent/, Python FastAPI)
 
-独立进程，Go 后端通过 `AGENT_URL`（默认 `http://localhost:8001`）调用，**不碰数据库**。DeepSeek 凭证下沉到 `agent/.env`，Go 侧不再直连大模型。
+A standalone process; the Go backend calls it via `AGENT_URL` (default `http://localhost:8001`), and it **does not touch the database**. DeepSeek credentials are pushed down to `agent/.env`; the Go side no longer connects directly to the LLM.
 
-- `app/graph/story_graph.py` — **唯一生成编排在 `_stream_pipeline`（真流式）**，历史上的 langgraph 非流式图已退休；`prepare`（构建上下文/注入属性类型与隐藏属性）、`normalize`（按类型规整 delta、过滤非法键、规整结局）、`review` 为共享纯函数，`run_start`/`run_continue` 是 drain 流式的同步适配器（供 `/opening/complete` 无关的工具与 `/assist/opening`）。**agent 链路阶段一**：写手单次输出「正文 `<<<META>>>` JSON尾」，兼任「导演 + 书记员」——节拍把控的正文（引用属性）+ 后果预期的选项 hint + 滚动 `summary`；正文逐字流出、结束后按哨兵解析 JSON 尾（缺失/非法用 `STRUCTURE_SYSTEM` 兜底）；随后低温 `review` 审查承接/属性/选项后果/delta 与摘要一致性，不通过则用**有记忆的写手修订**（把上一稿 AIMessage + 反馈 HumanMessage 追加进 `writer_msgs`，在上一稿上改而非重写，减少震荡）。最多额外重写 `AI_REVIEW_MAX_RETRIES` 次（默认 2），**超限则降级交付最后一稿**（打 `degraded=1` 埋点，不硬失败——属性/delta 只是辅助手段、瑕疵可容忍，绝不让玩家操作失败）。审校采**分级**：只挡阻断级硬伤（正文矛盾/无推进/无选项/summary 篡改关键事实/JSON 坏），delta 精度、未遂动作记账等模糊情形一律放行。隐藏属性（`attributes[k].hidden`）由 `_write_hidden` 注入提示、令 LLM 用它把控走向但不在正文/选项泄漏。续写上下文用 **④节点树增量摘要**（`_write_history_window`）：最近非空 `summary` 渲染为 `【前情提要】` + 最近 `_RECENT_RAW`(=2) 段原文，O(1)；老会话无 summary 回退**滑动窗口**（`HISTORY_WINDOW`，默认 8）。演进见 `docs/design.md`「AI agent」，上下文方案见 `docs/context-strategy.md`
-- `app/routers/generate.py` — `POST /generate/stream` `/continue/stream`（流式 SSE：delta/revise/done/error）、`/opening/complete`（预设开场补选项+summary，非流式）、`/merge-check`（节点语义合并判定，非流式）。生成编排全在 `graph/story_graph.py` 的 `_stream_pipeline`（正文 `<<<META>>>` JSON尾，structurer 兜底，review 拒绝走有记忆写手修订、超限降级交付）
-- `app/routers/assist.py` — 创作辅助 `POST /assist/world|opening|polish|branches`（`/world` 会一并产出 `attributes` 类型声明）
-- `app/schemas.py` — 请求/响应模型，`WorldConfig.attributes` 承载属性类型声明，与 Go 契约对齐
-- `app/llm.py` — DeepSeek（OpenAI 兼容）客户端。`chat_json` 强制 `response_format=json_object`（审校/合并/结构化/创作辅助用）；`chat_stream` 不强制（流式写作，正文靠哨兵分隔）。`_build_llm(json_mode)` 缓存两个实例
+- `app/graph/story_graph.py` — **the only generation orchestration is in `_stream_pipeline` (true streaming)**; the historical non-streaming langgraph graph has been retired. `prepare` (build context / inject attribute types & hidden attributes), `normalize` (regularize deltas by type, filter illegal keys, regularize endings), and `review` are shared pure functions; `run_start`/`run_continue` are synchronous adapters that drain the stream (for tools unrelated to `/opening/complete` and for `/assist/opening`). **Agent pipeline Phase 1**: the writer outputs a single "body `<<<META>>>` JSON tail", doubling as "director + scribe" — beat-controlled body text (referencing attributes) + consequence-anticipating option hints + a rolling `summary`; body text streams character-by-character, and after the end the JSON tail is parsed by the sentinel (missing/illegal falls back to `STRUCTURE_SYSTEM`); then a low-temperature `review` audits continuity/attributes/option consequences/delta and summary consistency, and on failure a **memory-equipped writer revises** (appends the previous draft's AIMessage + feedback HumanMessage into `writer_msgs`, editing on the previous draft rather than rewriting, reducing oscillation). At most `AI_REVIEW_MAX_RETRIES` additional rewrites (default 2), and **on exceeding, degrades to deliver the last draft** (emits `degraded=1` telemetry, no hard failure — attributes/delta are only auxiliary means, flaws are tolerable, never let the player's operation fail). Review is **tiered**: only blocks blocking-level hard defects (body contradictions/no progress/no options/summary tampering with key facts/broken JSON); fuzzy cases like delta precision and attempted-action accounting are all let through. Hidden attributes (`attributes[k].hidden`) are injected into the prompt by `_write_hidden`, having the LLM steer the direction with them but not leak them in body/options. Continuation context uses the **④ node tree incremental summary** (`_write_history_window`): the most recent non-empty `summary` rendered as `【前情提要】` (recap) + the most recent `_RECENT_RAW`(=2) raw segments, O(1); old sessions without summary fall back to a **sliding window** (`HISTORY_WINDOW`, default 8). Evolution in `docs/design.md` "AI agent", context strategy in `docs/context-strategy.md`
+- `app/routers/generate.py` — `POST /generate/stream` `/continue/stream` (streaming SSE: delta/revise/done/error), `/opening/complete` (preset opening fills options + summary, non-streaming), `/merge-check` (node semantic merge judgment, non-streaming). The generation orchestration is all in `_stream_pipeline` in `graph/story_graph.py` (body `<<<META>>>` JSON tail, structurer fallback, review rejection → memory-equipped writer revision, degrade-on-exceed delivery)
+- `app/routers/assist.py` — creation assistance `POST /assist/world|opening|polish|branches` (`/world` also produces `attributes` type declarations)
+- `app/schemas.py` — request/response models; `WorldConfig.attributes` carries attribute type declarations, aligned with the Go contract
+- `app/llm.py` — DeepSeek (OpenAI-compatible) client. `chat_json` forces `response_format=json_object` (used for review/merge/structuring/creation assistance); `chat_stream` does not force it (streaming writing, body text separated by a sentinel). `_build_llm(json_mode)` caches two instances
 
-> 属性类型（number/scalar/set）的完整语义见上文「JSONB 增量属性设计」。`normalize` 对未在 `attributes` 里声明类型的键**透传**，由 Go 的 `mergeState` 兜底推断，保证无 `attributes` 的老作品照常工作。
+> The full semantics of attribute types (number/scalar/set) are in "JSONB Incremental Attribute Design" above. `normalize` **passes through** keys whose type is not declared in `attributes`, with Go's `mergeState` inferring as a fallback, ensuring old works without `attributes` still work.
 
-启动：`cd agent && pip install -r requirements.txt && uvicorn app.main:app --port 8001`（详见 `agent/README.md`）。
+Startup: `cd agent && pip install -r requirements.txt && uvicorn app.main:app --port 8001` (see `agent/README.md`).
 
-> Go 的 `NewAgentClient(cfg.AgentURL)` 只做 HTTP 编排；`StartStory`/`Continue` 签名不变，`play` 链路无感。
+> Go's `NewAgentClient(cfg.AgentURL)` only does HTTP orchestration; the `StartStory`/`Continue` signatures are unchanged, and the `play` pipeline is unaffected.
 
-## 待实现模块（按顺序）
+## Modules To Be Implemented (in order)
 
-1. ~~**save** — 会话续玩/读档~~ ✅ 已完成（`GET /play/sessions` 列表 + 前端首页读档续玩；已按登录用户过滤，匿名回退 guest）
-2. ~~**ai** — agent_client 对接 Python agent 服务~~ ✅ 已完成（agent/ + Go 对接）
-2.5. ~~**play** — 游玩会话链路~~ ✅ 已完成（`PlayService` + `/play` 路由，含回溯）
-2.8. ~~**游玩前端** — Next.js 作品选择/游玩/读档~~ ✅ 已完成（`frontend/`）
-2.9. ~~**登录接入** — 前端登录 + 会话迁移~~ ✅ 已完成（可选登录、AuthOptional、guest 会话迁移）
-3. **agent 链路演进（留存优先，前置于扩张）** — 阶段一（导演节拍 + 有后果选择 + 属性入戏 + ④增量摘要 + 质量复查/有记忆修订/超限降级）✅ 已完成；**流式（SSE，原阶段二的一部分）✅ 已完成**。
-   - 阶段二余下：把单次生成拆成 director/recall/write/critic 独立节点；recall 从节点摘要升级到 ③RAG。
-   - 阶段三：多 NPC 同场时并行派发人物子 agent，主 agent 归纳（完整多 agent 形态）。详见 `docs/design.md`「AI agent」、`docs/context-strategy.md`。
-4. **创作/编辑系统** — 创作者编辑器：世界观/大纲(outline)/角色/属性(含 hidden 声明)/开场的可视化编辑，消费已就绪的 agent `/assist/*`。当前缺口：`StoryCreateInput` 只收 title/description（进不了 `world_config`，富作品只能靠 seed），前端编辑器未做。是「创作→游玩→社区」的创作支柱。
-5. **community** — 作品发布/搜索/排行榜/点赞/收藏/评论
-6. **payment** — 付费解锁/打赏/分成（MVP 可 stub）
-7. **achievement** — 成就系统
+1. ~~**save** — session resume/save-load~~ ✅ Done (`GET /play/sessions` list + frontend homepage save-load resume; already filtered by logged-in user, falls back to guest anonymously)
+2. ~~**ai** — agent_client integration with Python agent service~~ ✅ Done (agent/ + Go integration)
+2.5. ~~**play** — play session pipeline~~ ✅ Done (`PlayService` + `/play` routes, incl. backtrack)
+2.8. ~~**play frontend** — Next.js work selection/play/save-load~~ ✅ Done (`frontend/`)
+2.9. ~~**login integration** — frontend login + session migration~~ ✅ Done (optional login, AuthOptional, guest session migration)
+3. **Agent pipeline evolution (retention-first, before expansion)** — Phase 1 (director beats + consequential choices + attributes in play + ④ incremental summary + quality review/memory-equipped revision/degrade-on-exceed) ✅ Done; **streaming (SSE, part of the original Phase 2) ✅ Done**.
+   - Remaining Phase 2: split the single generation into independent director/recall/write/critic nodes; upgrade recall from node summary to ③ RAG.
+   - Phase 3: when multiple NPCs are on scene, dispatch character sub-agents in parallel, with the main agent synthesizing (full multi-agent form). See `docs/design.md` "AI agent" and `docs/context-strategy.md`.
+4. **Creation/editing system** — creator editor: visual editing of worldview/outline/characters/attributes (incl. hidden declaration)/opening, consuming the already-ready agent `/assist/*`. Current gap: `StoryCreateInput` only accepts title/description (cannot reach `world_config`, so rich works can only rely on seed), and the frontend editor is not built. This is the creation pillar of "creation → play → community".
+5. **community** — work publishing/search/leaderboard/like/favorite/comment
+6. **payment** — paid unlock/tipping/revenue share (can be stubbed for MVP)
+7. **achievement** — achievement system
 
-`templates/index.html` 为 Gin 模板占位，前端正式搭建后替换。
+`templates/index.html` is a Gin template placeholder, to be replaced once the frontend is formally built.

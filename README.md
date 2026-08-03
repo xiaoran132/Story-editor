@@ -12,7 +12,7 @@
 | 1 | [开发交接手册](docs/handoff.md) | 当前实现、代码入口、数据契约、运行/验证、风险和下一步 | **当前事实总览** |
 | 2 | [CLAUDE.md](CLAUDE.md) | 仓库规则、分层边界、实现约定、可执行命令 | **开发规范** |
 | 3 | 本 README | 项目定位、架构、快速启动、当前优先级 | 项目入口 |
-| 4 | [Agent README](agent/README.md) / [前端 README](frontend/README.md) | 分别接手 AI 链路或游玩前端时阅读 | 模块事实 |
+| 4 | [后端 README](backend/README.md) / [Agent README](agent/README.md) / [前端 README](frontend/README.md) | 分别接手 后端中枢 / AI 链路 / 游玩前端时阅读 | 模块事实 |
 | 5 | [设计思路](docs/design.md) | 剧情树、JSONB、Agent 演进等技术决策与扩展方案 | 技术设计 |
 | 6 | [功能设计](docs/prd.md) | 产品愿景、功能边界、长期路线 | PRD；不等于已实现 |
 | 7 | [infa/sql](infa/sql/) | 完整数据模型蓝本；部分表尚未在 GORM 中落地 | 数据设计蓝本 |
