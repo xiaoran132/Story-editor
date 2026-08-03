@@ -29,33 +29,15 @@ func seed(db *gorm.DB) (uuid.UUID, error) {
 		return uuid.Nil, err
 	}
 
-	// 2. demo 作品（若 guest 名下还没有作品则创建）
-	var count int64
-	if err := db.Model(&model.Story{}).Where("creator_id = ?", guest.ID).Count(&count).Error; err != nil {
+	// 2. 清理已下线的种子作品（迷雾古堡改版后移除）。
+	//    Story 无软删除，硬删会经 FK ON DELETE CASCADE 一并清掉其会话/节点——仅 demo 数据，无碍。
+	if err := db.Where("creator_id = ? AND title = ?", guest.ID, "迷雾古堡").
+		Delete(&model.Story{}).Error; err != nil {
 		return uuid.Nil, err
-	}
-	if count == 0 {
-		demo := model.Story{
-			CreatorID:      guest.ID,
-			Title:          "迷雾古堡",
-			Description:    "一部悬疑向的互动短篇：你在暴雨夜误入一座废弃古堡，必须在天亮前找到出路。",
-			Status:         "published",
-			OpeningContent: "暴雨如注。你的车在山路上抛锚，唯一的灯光来自远处山坡上一座阴森的古堡。你浑身湿透，别无选择，只能推开那扇吱呀作响的橡木大门。门厅里烛火摇曳，空气中弥漫着尘土与铁锈的气味。楼梯尽头似乎有脚步声，而你的手机只剩最后 5% 的电量。",
-			WorldConfig: `{
-  "background": "一座与世隔绝的废弃古堡，传说上一任主人离奇失踪，堡内机关重重。",
-  "style": "mystery",
-  "rules": "夜晚会有异响，理智值过低会产生幻觉；某些门需要钥匙或密码。",
-  "initial_state": {"hp": 100, "sanity": 80, "clues": 0}
-}`,
-			PriceConfig: `{"type":"free"}`,
-		}
-		if err := db.Create(&demo).Error; err != nil {
-			return uuid.Nil, err
-		}
 	}
 
 	// 3. 丰富测试作品（含 outline/characters/attributes；opening_content 留空由 AI 生成开局）。
-	//    按标题幂等，逐个补齐——不受上面 demo 的 count 门控影响。
+	//    按标题幂等，逐个补齐。
 	for _, s := range richSeedStories(guest.ID) {
 		if err := ensureStory(db, s); err != nil {
 			return uuid.Nil, err
@@ -85,8 +67,17 @@ func ensureStory(db *gorm.DB, s model.Story) error {
 	}).Error
 }
 
-// richSeedStories 返回三部题材各异、配置丰富的测试作品（悬疑/奇幻/末世）。
+// richSeedStories 返回六部题材各异、配置丰富的测试作品：
+// 民国推理 / 奇幻学院 / 末世生存 / 武侠江湖 / 赛博朋克 / 治愈日常。
 // 用途：作为打磨 AI 叙事质量与玩法深度的测试床；opening_content 留空以测真·AI 开局流式。
+//
+// 属性设计约定（逐部已核对，保证逻辑一致）：
+//   - initial_state 的键与 attributes 的键严格一一对应；值与声明类型匹配
+//     （number→数值 / scalar→字符串 / set→数组）。
+//   - hidden=true：仅供 AI 参考的幕后压力量（怀疑度/处分风险/杀气/警戒/思念），玩家端永不显示。
+//   - reveal=true：开局尚未被剧情建立的属性（需清点的资源、尚未结识者的关系、未知的记忆），
+//     玩家发现前不显示，由 AI 在剧情建立时经 revealed 揭示——避免开局硬显示"指向不明"的属性。
+//   - 开局可见的属性都应是"此刻即成立"的（hp/位置/随身之物/自身状态）。
 func richSeedStories(creatorID uuid.UUID) []model.Story {
 	return []model.Story{
 		{
@@ -98,7 +89,7 @@ func richSeedStories(creatorID uuid.UUID) []model.Story {
 			WorldConfig: `{
   "background": "1937年孤岛时期的上海法租界。灯红酒绿之下暗流涌动，你是小有名气的私家侦探，受富商遗孀苏眉之托，调查其丈夫在书房中的离奇死亡——警方草草定为自杀，但她不信。",
   "style": "冷峻、悬疑、时代质感，重线索推理与人物博弈",
-  "rules": "线索需主动搜集与串联；贸然指认会打草惊蛇（提升怀疑度）；不同人物对你的信任度影响他们愿意透露多少；关键证物可用于对质。",
+  "rules": "线索需主动搜集与串联；贸然指认会打草惊蛇（提升怀疑度）；不同人物对你的信任度影响他们愿意透露多少，信任在与人真正打交道后才逐渐明朗；关键证物可用于对质。",
   "outline": "核心悬念:富商之死是自杀、他杀还是另有隐情。三幕:接案勘查现场→走访嫌疑人、比对矛盾证词→揭破真凶或落入陷阱。关键锚点:书房暗格里的账本、姨太太与账房先生的私情、码头的走私线索、遗孀本人的算计。可能结局:缉凶归案(good)/被灭口沉尸黄浦江(bad)/查明真相却被迫收声(hidden)。",
   "characters": [
     {"name": "苏眉", "role": "委托人", "personality": "优雅克制，悲伤之下似藏着算计"},
@@ -109,7 +100,7 @@ func richSeedStories(creatorID uuid.UUID) []model.Story {
   "attributes": {
     "线索": {"type": "number", "initial": 0},
     "怀疑度": {"type": "number", "initial": 0, "hidden": true},
-    "信任": {"type": "number", "initial": 50},
+    "信任": {"type": "number", "initial": 50, "reveal": true},
     "location": {"type": "scalar", "initial": "命案现场·书房"},
     "证物": {"type": "set", "initial": []}
   }
@@ -157,14 +148,94 @@ func richSeedStories(creatorID uuid.UUID) []model.Story {
     {"name": "老陈", "role": "同伴", "personality": "沉默寡言的退伍老兵，提供保护，但似乎藏着关于爆发起因的秘密"},
     {"name": "电波里的声音", "role": "神秘", "personality": "身份不明，偶尔切入你的频率，似乎知道得太多"}
   ],
-  "initial_state": {"hp": 100, "物资": 5, "信任": 40, "理智": 75, "location": "电台·播音室", "装备": ["对讲机"]},
+  "initial_state": {"hp": 100, "物资": 5, "幸存者信任": 40, "理智": 75, "location": "电台·播音室", "装备": ["对讲机"]},
   "attributes": {
     "hp": {"type": "number", "initial": 100},
-    "物资": {"type": "number", "initial": 5},
-    "信任": {"type": "number", "initial": 40},
+    "物资": {"type": "number", "initial": 5, "reveal": true},
+    "幸存者信任": {"type": "number", "initial": 40, "reveal": true},
     "理智": {"type": "number", "initial": 75},
     "location": {"type": "scalar", "initial": "电台·播音室"},
     "装备": {"type": "set", "initial": ["对讲机"]}
+  }
+}`,
+		},
+		{
+			CreatorID:   creatorID,
+			Title:       "朔风记·雁门残刀",
+			Description: "边关雁门，你是隐姓埋名的落魄剑客。十年前家门被灭，仇人如今执掌边军。一桩镖局血案，把你重新卷入江湖恩怨。",
+			Status:      "published",
+			PriceConfig: `{"type":"free"}`,
+			WorldConfig: `{
+  "background": "北境边关雁门。你本是名门之后，十年前满门被诬通敌而遭屠，唯你侥幸逃生，隐姓埋名以护镖为生。仇人如今已是执掌边军的都督裴烈。开春第一趟镖出关未久，镖队便在风雪隘口遭伏——而这桩血案，似乎与你的旧仇有关。",
+  "style": "苍凉、快意恩仇、留白写意的武侠",
+  "rules": "动武消耗内力，内力见底则招式使不出、需调息恢复；行事张扬会积累杀气（招致仇家察觉与旁人戒备，幕后暗涨）；侠名影响江湖人是否愿意相助或投靠；银两用于打点、疗伤、买马与情报；习得的武学可在对招时施展。",
+  "outline": "核心:在复仇与放下之间，揭开十年前灭门案的真相。三幕:护镖遇伏、被卷入血案→在雁门内外结交或试探江湖各方、查明裴烈的布局→雪夜直闯都督府的最终对决。关键锚点:亡父留下的半卷《裂云刀谱》、镖局少主不为人知的身世、裴烈帐下一名与你同源的剑客。可能结局:手刃仇人却背上新的血债(bad)/揭破当年冤案、还家门清白全身而退(good)/归隐雪山成为江湖传说(hidden)。",
+  "characters": [
+    {"name": "云娘", "role": "镖局当家", "personality": "泼辣爽利、重情重义，镖旗下藏着自己的旧伤"},
+    {"name": "沈孤鸿", "role": "亦敌亦友", "personality": "裴烈帐下冷面剑客，刀路竟与你同源，身世成谜"},
+    {"name": "瞎眼说书人", "role": "神秘", "personality": "市井茶肆里的盲眼老者，似乎知晓十年前的每一桩旧事"}
+  ],
+  "initial_state": {"内力": 40, "银两": 8, "侠名": 0, "杀气": 0, "location": "雁门关·镖局大堂", "武学": ["裂云式·残"]},
+  "attributes": {
+    "内力": {"type": "number", "initial": 40},
+    "银两": {"type": "number", "initial": 8},
+    "侠名": {"type": "number", "initial": 0},
+    "杀气": {"type": "number", "initial": 0, "hidden": true},
+    "location": {"type": "scalar", "initial": "雁门关·镖局大堂"},
+    "武学": {"type": "set", "initial": ["裂云式·残"]}
+  }
+}`,
+		},
+		{
+			CreatorID:   creatorID,
+			Title:       "义体黄昏·新九龙",
+			Description: "2087年的赛博城寨，你是接黑活的义体黑客。一次委托出了岔子，脑内被植入一段不属于自己的记忆，企业的清道夫已经盯上你。",
+			Status:      "published",
+			PriceConfig: `{"type":"free"}`,
+			WorldConfig: `{
+  "background": "2087年，霓虹与酸雨交织的新九龙城寨。你是接黑活的义体黑客。三天前一单侵入『苍穹生物』数据库的委托彻底翻车——你脑内被植入了一段不属于自己的记忆代码，而企业的清道夫已循着数据残迹找来。你在义肢黑医阿蛇的诊所里醒来，警报器正在城寨深处鸣响。",
+  "style": "霓虹、赛博朋克、悬疑，道德灰色、节奏凌厉",
+  "rules": "入侵与义体超频消耗神经负荷，过高会宕机、幻视甚至脑死；行动留下的数据痕迹会抬高企业警戒（幕后追踪度）；信用点用于买药、买情报、升级义体；安装的插件在对应场景生效；脑内那段记忆代码需要逐步解码才能看清。",
+  "outline": "核心:查明脑内记忆代码是什么、它为何让企业不惜代价追杀你。三幕:带着代码在城寨逃亡、寻求庇护→在地下各方势力间周旋、逐段解码记忆→抉择:交出代码换命、公开真相撼动企业、还是独吞其价值。关键锚点:代码里一个『已死』女孩的记忆残片、阿蛇讳莫如深的过去、清道夫K的真实身份。可能结局:掀翻企业阴谋、成为都市传说(good)/被清道夫格式化(bad)/带着代码消失、化作网络里的新幽灵(hidden)。",
+  "characters": [
+    {"name": "阿蛇", "role": "义肢黑医", "personality": "油滑爱钱却讲义气，替你续命，也似乎认得那段代码"},
+    {"name": "Null", "role": "神秘", "personality": "潜伏在网络深层的声音，时而援手时而戏弄，身份不明"},
+    {"name": "清道夫K", "role": "追猎者", "personality": "企业豢养的猎杀者，冷酷高效，从不失手"}
+  ],
+  "initial_state": {"信用点": 200, "神经负荷": 0, "警戒": 0, "记忆碎片": 0, "location": "新九龙·阿蛇的诊所", "插件": ["基础入侵包"]},
+  "attributes": {
+    "信用点": {"type": "number", "initial": 200},
+    "神经负荷": {"type": "number", "initial": 0},
+    "警戒": {"type": "number", "initial": 0, "hidden": true},
+    "记忆碎片": {"type": "number", "initial": 0, "reveal": true},
+    "location": {"type": "scalar", "initial": "新九龙·阿蛇的诊所"},
+    "插件": {"type": "set", "initial": ["基础入侵包"]}
+  }
+}`,
+		},
+		{
+			CreatorID:   creatorID,
+			Title:       "云屿·雾港邮局",
+			Description: "一座漂在雾海里的小岛，有间只在起雾时营业的邮局，替人投递那些寄往『再也无法送达之处』的信。你成了新任邮差。",
+			Status:      "published",
+			PriceConfig: `{"type":"free"}`,
+			WorldConfig: `{
+  "background": "云屿是一座漂浮在茫茫雾海中的小岛。岛上有一间只在起雾时才亮灯的邮局，替人投递那些寄往『再也无法送达之处』的信——写给逝者、写给回不去的从前、写给还没说出口的心事。你阴差阳错成了这里的新任邮差；推开门的第一天，第一封无法投递的信，已在柜台上等你。",
+  "style": "温柔、治愈、淡淡的奇幻与怅惘，慢节奏，重情感、倾听与选择（没有生命危险）",
+  "rules": "每投出一封信，都会牵动你与某位岛民的羁绊，羁绊在你真正走进对方的故事后才建立；用心倾听与共情，人才愿把心事托付；你的心情会随际遇起落，心情太低时会看不清雾里的路；投递途中收集到的信物，各自承载一段往事。",
+  "outline": "核心:在一封封『无法送达』的信里，走进岛民的遗憾，也解开邮局与雾海的温柔秘密。三幕:接手邮局、投出第一封信→在信件与信物中走进灯塔老人、离岛少年等人的过往→揭开前任邮差与雾海的真相，决定去留。关键锚点:前任邮差留下的一封始终没寄出的信、总在灯塔守望回音的老人、雾里偶尔飘来的钟声。可能结局:成为连接思念与释怀的摆渡人、让小岛重新有了灯火(good)/雾散人离、邮局归于沉寂(neutral)/寄出你自己那封信、随雾远行(hidden)。",
+  "characters": [
+    {"name": "阿雾", "role": "邮局的猫", "personality": "通人性的灰猫，会把你领到该去的门前"},
+    {"name": "灯塔老人", "role": "岛民", "personality": "在灯塔上守了几十年，等一封也许永远不会来的回信"},
+    {"name": "前任邮差", "role": "神秘", "personality": "只存在于信件与旁人只言片语里的身影，似乎从未真正离开"}
+  ],
+  "initial_state": {"心情": 60, "羁绊": 0, "思念": 0, "location": "云屿·雾港邮局", "信物": []},
+  "attributes": {
+    "心情": {"type": "number", "initial": 60},
+    "羁绊": {"type": "number", "initial": 0, "reveal": true},
+    "思念": {"type": "number", "initial": 0, "hidden": true},
+    "location": {"type": "scalar", "initial": "云屿·雾港邮局"},
+    "信物": {"type": "set", "initial": []}
   }
 }`,
 		},
