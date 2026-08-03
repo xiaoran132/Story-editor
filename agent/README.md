@@ -61,6 +61,7 @@ flowchart LR
 
 2. `generate` / 写手
    - 调用 `STORY_SYSTEM`（流式为 `STORY_STREAM_SYSTEM`），一次输出 `content`、`options`、`state_delta`、`summary`、结局字段。
+   - **针对三大高频拒因的提示词自检锚点**（提示词内嵌，非额外 LLM 调用）：① 流式格式要求「写 JSON 尾前回看正文、逐句把已落定的得失/位移倒推成 delta，把新出现的实体并入 summary」——利用「正文先流、JSON 尾后写」的时序治 *delta 与正文不一致 / summary 漏记新增实体*；② summary 规则要求「落笔前自检本段新登场人物/新物品/新线索」；③ hint 规则改为「预期收益+转折+风险/代价」两面结构，并给「无转折词即漏后果」的词法自检。设计取向是把散文规则换成**可自检的动作**而非堆更多规则。详见 `prompts.py` 与交接手册 §9.2。
    - 审校失败时用**有记忆的写手**修订：把上一稿 + `issues` 追加进写手对话（`writer_msgs`），令其在上一稿上**修订**而非从头重写（减少震荡、更快收敛）。审校（`review`）本身无记忆、每次新鲜评判。
 
 3. `review`
@@ -85,7 +86,7 @@ flowchart LR
 
 `story_graph.py` 打两类 `story.metrics` 日志（logfmt）：
 
-- `gen` —— 每次生成流一行（`_invoke_with_metrics`）：`mode`、`outcome`、`elapsed_ms`、成功附 `review_failures`(0=首稿通过)/`first_draft_pass`/`is_ending`，失败附 `err_type`/`detail`。`outcome` 细分 `ok`/`parse_error`(LLM 非法 JSON)/`review_exhausted`(审校超限)/`error`。
+- `gen` —— 每次生成流一行：`mode`、`outcome`、`elapsed_ms`、成功附 `review_failures`(0=首稿通过)/`first_draft_pass`/`degraded`(是否超限降级交付)/`is_ending`，失败附 `err_type`/`detail`。`outcome` 细分 `ok`(含降级交付)/`parse_error`(LLM 非法 JSON)/`error`；审校超限**不再算失败**，以 `ok degraded=1` 交付并另打一行 `review degraded ...` WARNING，无 `review_exhausted`。
 - `review` —— 每次审校判定一行：`verdict`(pass/reject)、`attempt`、拒绝附 `issues`。
 
 用 `tools/sample_metrics.py [每世界续写轮数]` 在进程内直驱采样并聚合（不经 HTTP、不碰 DB，避免 uvicorn 吞掉 INFO；会真实调用 DeepSeek）。背景与取舍见交接手册 §9.1。

@@ -87,6 +87,43 @@ WORLDS: list[dict] = [
             "location": {"type": "scalar"}, "implants": {"type": "set"},
         },
     },
+    # —— 以下两个「难」世界：多 NPC + 隐藏属性 + 长线伏笔/证据 set，专压三大拒因 ——
+    {
+        "background": "架空王朝的深宫，玩家是新入宫的年轻谋士，须在太后、老相、幼主三方之间周旋。",
+        "style": "权谋、暗涌、步步惊心",
+        "rules": "每次表态都牵动不同势力态度；暗中累积的猜忌过高会招致杀身之祸；关键人物的生死不可逆。",
+        "characters": [
+            {"name": "太后", "desc": "垂帘听政，多疑，暗中扶植母族"},
+            {"name": "沈相", "desc": "三朝老臣，主战派领袖，与太后不和"},
+            {"name": "幼主", "desc": "年仅十岁的皇帝，你名义上的主君"},
+        ],
+        "initial_state": {"favor": 20, "gold": 100, "suspicion": 0,
+                          "location": "翰林院", "allies": [], "secrets": ["先帝遗诏的下落"]},
+        "attributes": {
+            "favor": {"type": "number"}, "gold": {"type": "number"},
+            "suspicion": {"type": "number", "hidden": True},
+            "location": {"type": "scalar"},
+            "allies": {"type": "set"}, "secrets": {"type": "set"},
+        },
+    },
+    {
+        "background": "1920 年代新英格兰海港小镇，玩家是调查失踪案的私家侦探，逐渐触及不可名状的真相。",
+        "style": "诡谲、压抑、缓慢揭示的恐怖",
+        "rules": "接触真相侵蚀理智，理智耗尽将疯狂；收集的证据线索须长期保留；镇民中潜藏异端信徒。",
+        "characters": [
+            {"name": "警长哈罗德", "desc": "态度暧昧，似乎在隐瞒什么"},
+            {"name": "图书管理员薇拉", "desc": "熟知镇史，警告你不要深挖"},
+            {"name": "渔夫老马什", "desc": "眼神浑浊，皮肤有鳞状病变"},
+        ],
+        "initial_state": {"sanity": 80, "money": 30, "corruption": 0,
+                          "location": "镇口旅馆", "clues": ["失踪者的日记残页"], "items": ["左轮手枪"]},
+        "attributes": {
+            "sanity": {"type": "number"}, "money": {"type": "number"},
+            "corruption": {"type": "number", "hidden": True},
+            "location": {"type": "scalar"},
+            "clues": {"type": "set"}, "items": {"type": "set"},
+        },
+    },
 ]
 
 
