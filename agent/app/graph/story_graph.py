@@ -259,13 +259,14 @@ def normalize(state: StoryState) -> dict[str, Any]:
     raw = state.get("raw") or {}
     known = set(state.get("known_keys") or [])
 
-    # options 规整为 [{text, hint}]
+    # options 规整为 [{text}]：选项只给行动文字，不再产出 hint（见 prompts.py 选项规则）。
+    # 即便模型偶尔手滑塞了 hint，这里也丢弃——schema 的 Option.hint 默认空、前端隐藏，双重保证不外显。
     options: list[dict[str, str]] = []
     for opt in raw.get("options") or []:
         if isinstance(opt, dict):
-            options.append({"text": str(opt.get("text", "")), "hint": str(opt.get("hint", ""))})
+            options.append({"text": str(opt.get("text", ""))})
         elif isinstance(opt, str):
-            options.append({"text": opt, "hint": ""})
+            options.append({"text": opt})
 
     # state_delta 只保留已声明的属性键，并按类型规整；杜绝模型发明新键或用错格式
     delta_in = raw.get("state_delta") or {}

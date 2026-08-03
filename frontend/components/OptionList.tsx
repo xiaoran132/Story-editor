@@ -36,7 +36,6 @@ export default function OptionList({
               onClick={() => onChoose(o.text)}
             >
               {o.text}
-              {o.hint ? <span className="hint">（{o.hint}）</span> : null}
             </button>
           ))}
         </div>

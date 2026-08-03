@@ -520,11 +520,6 @@ h2 {
   opacity: 0.5;
   cursor: default;
 }
-.opt .hint {
-  color: var(--muted);
-  font-size: 13px;
-}
-
 .free {
   display: flex;
   gap: 10px;
