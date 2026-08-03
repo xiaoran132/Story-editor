@@ -520,6 +520,20 @@ h2 {
   color: var(--muted);
   white-space: pre-wrap;
 }
+/* 开场仪式感（只此一处，续写保持安静）：整段轻入场淡入 */
+.story.opening {
+  animation: story-in 0.7s ease both;
+}
+@keyframes story-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
 /* 流式光标：跟在逐字到达的正文后闪烁 */
 .story .caret {
   color: var(--star);
@@ -531,17 +545,32 @@ h2 {
     opacity: 0;
   }
 }
+/* 结局横幅：仪式化的一条金饰板 */
 .ending {
-  font-family: var(--font-display);
-  font-size: 13px;
-  letter-spacing: 0.04em;
-  color: var(--star);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 26px;
+  padding: 14px 18px;
   border: 1px solid var(--star);
   background: var(--star-soft);
-  border-radius: 8px;
-  padding: 8px 12px;
-  margin-top: 14px;
-  display: inline-block;
+  border-radius: var(--radius);
+  font-family: var(--font-display);
+}
+.ending-mark {
+  color: var(--star);
+  font-size: 17px;
+}
+.ending-text {
+  color: var(--star);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.ending-hint {
+  color: var(--muted);
+  font-size: 12px;
+  margin-left: auto;
 }
 
 /* ---- 选项（星点行动） ---- */

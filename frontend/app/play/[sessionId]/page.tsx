@@ -98,7 +98,12 @@ export default function PlayPage() {
           />
 
           <div className="stage">
-            <StoryPane node={currentNode} busy={busy} streamingText={streamingText} />
+            <StoryPane
+              node={currentNode}
+              busy={busy}
+              streamingText={streamingText}
+              opening={currentNode ? !currentNode.parent_id : true}
+            />
             <OptionList node={currentNode} busy={busy} onChoose={choose} />
             <div className={`status${error ? " err" : busy ? " pulse" : ""}`}>
               {error
