@@ -25,6 +25,11 @@ CREATE TABLE play_sessions (
     --   -- 创作者新增属性键时自动兼容，无需改表
     -- }
 
+    -- 本会话已向玩家揭示的「揭示门控」属性键集（JSON 数组）
+    -- 门控属性（world_config.attributes[k].reveal=true）被揭示前不在玩家端显示；
+    -- 非门控属性不入此集、始终可见。随剧情推进增长，回溯时按节点快照恢复。
+    revealed_attrs  JSONB       NOT NULL DEFAULT '[]',
+
     -- 玩家自定义的主角名（可覆盖作品默认名）
     protagonist_name VARCHAR(30),
 
@@ -100,11 +105,11 @@ CREATE TABLE story_nodes (
     -- 使上下文长度与剧情深度近似无关；老数据为空时回退滑动窗口。
     summary         TEXT        NOT NULL DEFAULT '',
 
-    suggested_options JSONB     NOT NULL DEFAULT '[]', -- AI 推荐的下一步选项
+    suggested_options JSONB     NOT NULL DEFAULT '[]', -- AI 推荐的下一步选项（纯行动文字，不预告后果）
     -- [
-    --   {"text": "继续逃跑", "hint": "风险较高"},
-    --   {"text": "原地等待", "hint": ""},
-    --   {"text": "寻找盟友", "hint": "需要魅力值 ≥ 30"}
+    --   {"text": "继续逃跑"},
+    --   {"text": "原地等待"},
+    --   {"text": "寻找盟友"}
     -- ]
 
     -- 属性变化（增量，只记本节点引起的变化）
@@ -117,6 +122,11 @@ CREATE TABLE story_nodes (
     -- 作用：回溯时直接恢复状态，无需递归累加所有 delta
     state_snapshot  JSONB       NOT NULL DEFAULT '{}',
     -- {"hp": 80, "gold": 120, "charm": 35, ...}
+
+    -- 截至本节点已向玩家揭示的「揭示门控」属性键集（JSON 数组）
+    -- 作用：回溯时随 state_snapshot 一并恢复可见性——回到"发现前"的节点会重新隐藏该属性
+    revealed_snapshot JSONB     NOT NULL DEFAULT '[]',
+    -- ["物资"]
 
     -- 标记
     is_ending       BOOLEAN     NOT NULL DEFAULT false,  -- 是否结局节点

@@ -55,6 +55,7 @@ class AIResult(BaseModel):
     options: list[Option] = Field(default_factory=list)
     state_delta: dict[str, Any] = Field(default_factory=dict)
     summary: str = ""  # 截至本段的前情提要，随节点落库供后续续写复用
+    revealed: list[str] = Field(default_factory=list)  # 本段揭示的「揭示门控」属性键（首次向玩家展示）
     is_ending: bool = False
     ending_type: str = ""
 
@@ -65,6 +66,7 @@ class GenerateRequest(NoneTolerantModel):
     """开场生成：给定世界观与初始属性。"""
     world: WorldConfig = Field(default_factory=WorldConfig)
     initial_state: dict[str, Any] = Field(default_factory=dict)
+    revealed_attrs: list[str] = Field(default_factory=list)  # 已揭示的门控属性（开局通常为空）
 
 
 class ContinueRequest(NoneTolerantModel):
@@ -73,6 +75,7 @@ class ContinueRequest(NoneTolerantModel):
     history: list[PathStep] = Field(default_factory=list)
     current_state: dict[str, Any] = Field(default_factory=dict)
     choice: str = ""
+    revealed_attrs: list[str] = Field(default_factory=list)  # 已揭示的门控属性，供 agent 知道还剩哪些未揭示
 
 
 class OpeningCompleteRequest(NoneTolerantModel):

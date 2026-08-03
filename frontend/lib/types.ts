@@ -34,6 +34,7 @@ export interface Session {
   story_id: string;
   player_id: string;
   current_state: string; // JSON 字符串
+  revealed_attrs: string; // JSON 字符串数组：已向玩家揭示的门控属性键
   protagonist_name: string | null;
   current_node_id: string | null;
   status: string; // active | ended

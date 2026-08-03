@@ -47,7 +47,7 @@ async def _sse_stream(events: AsyncIterator[dict]) -> AsyncIterator[str]:
 def generate_stream(req: GenerateRequest) -> StreamingResponse:
     """流式开场：正文逐字（delta），结束后 done 携带结构化结果。"""
     initial = req.initial_state or req.world.initial_state or {}
-    events = run_start_stream(req.world.model_dump(), initial)
+    events = run_start_stream(req.world.model_dump(), initial, req.revealed_attrs)
     return StreamingResponse(_sse_stream(events), media_type="text/event-stream")
 
 
@@ -59,6 +59,7 @@ def continue_stream(req: ContinueRequest) -> StreamingResponse:
         [h.model_dump() for h in req.history],
         req.current_state,
         req.choice,
+        req.revealed_attrs,
     )
     return StreamingResponse(_sse_stream(events), media_type="text/event-stream")
 

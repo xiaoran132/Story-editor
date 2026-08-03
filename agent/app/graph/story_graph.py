@@ -105,6 +105,37 @@ def _write_hidden(lines: list[str], world: dict[str, Any]) -> None:
     )
 
 
+def _reveal_gated_attrs(world: dict[str, Any]) -> list[str]:
+    """从 world.attributes 提取标了 reveal:true 的「揭示门控」属性键。
+
+    这些属性玩家尚未发现、暂不显示；由 AI 在剧情真正让玩家发现/清点时，通过输出的
+    revealed 列表揭示（区别于 hidden:true 的永不显示）。
+    """
+    declared = world.get("attributes") or {}
+    if not isinstance(declared, dict):
+        return []
+    return [
+        k for k, spec in declared.items()
+        if isinstance(spec, dict) and spec.get("reveal") is True
+    ]
+
+
+def _write_reveal_gated(lines: list[str], world: dict[str, Any], revealed: list[str]) -> None:
+    """告知模型哪些门控属性尚未向玩家揭示，以及如何/何时揭示。"""
+    gated = _reveal_gated_attrs(world)
+    already = set(revealed or [])
+    pending = [k for k in gated if k not in already]
+    if not pending:
+        return
+    lines.append(
+        "\n未揭示属性（玩家尚未发现，暂不向玩家显示）：" + "、".join(pending)
+        + "。在玩家真正发现/清点/接触到某项之前，**不要在 content 或 options 里点名或报出其数值**；"
+        "当这一段剧情让玩家真正发现它时，把该属性键放进输出的 revealed 列表以对玩家揭示，"
+        "并确保此刻它在 state_delta/当前属性中的数值真实合理。"
+        "**仅是整理/清点/查看等揭示性动作不改变其数量**（如清点后发现有 5 份就揭示 5，不要凭空增减）。"
+    )
+
+
 def _write_history_step(lines: list[str], idx: int, step: dict[str, Any]) -> None:
     if step.get("choice_text"):
         lines.append(f"  [玩家选择] {step['choice_text']}")
@@ -196,6 +227,7 @@ def prepare(state: StoryState) -> dict[str, Any]:
     lines: list[str] = []
     _write_world(lines, world)
 
+    revealed = state.get("revealed_attrs") or []
     if state.get("mode") == "start":
         initial = state.get("initial_state") or world.get("initial_state") or {}
         known = list(initial.keys())
@@ -203,6 +235,7 @@ def prepare(state: StoryState) -> dict[str, Any]:
         lines.append(f"\n当前属性：{_to_json(initial)}")
         _write_attr_types(lines, attr_types)
         _write_hidden(lines, world)
+        _write_reveal_gated(lines, world, revealed)
         lines.append(
             "\n请生成这部作品的开场剧情与初始推荐选项。开场通常不产生属性变化，state_delta 可为空对象 {}。"
         )
@@ -215,10 +248,16 @@ def prepare(state: StoryState) -> dict[str, Any]:
         lines.append(f"\n当前属性：{_to_json(current)}")
         _write_attr_types(lines, attr_types)
         _write_hidden(lines, world)
+        _write_reveal_gated(lines, world, revealed)
         lines.append(f"\n玩家现在的选择/行动：{state.get('choice', '')}")
         lines.append("\n请承接以上剧情，生成下一段剧情、新的推荐选项，以及本次选择引起的属性变化。")
 
-    return {"user_prompt": "\n".join(lines), "known_keys": known, "attr_types": attr_types}
+    return {
+        "user_prompt": "\n".join(lines),
+        "known_keys": known,
+        "attr_types": attr_types,
+        "reveal_gated": _reveal_gated_attrs(world),  # normalize 据此白名单校验 revealed
+    }
 
 
 def review(state: StoryState) -> dict[str, Any]:
@@ -285,11 +324,17 @@ def normalize(state: StoryState) -> dict[str, Any]:
     if is_ending and ending_type not in {"good", "bad", "neutral", "hidden"}:
         ending_type = "neutral"
 
+    # revealed 只保留声明为「揭示门控」的键，杜绝模型揭示非门控/不存在的属性。
+    gated = set(state.get("reveal_gated") or [])
+    revealed_in = raw.get("revealed") or []
+    revealed = [str(k) for k in revealed_in if k in gated] if isinstance(revealed_in, list) else []
+
     result = {
         "content": str(raw.get("content", "")),
         "options": options,
         "state_delta": state_delta,
         "summary": str(raw.get("summary", "")),  # ④节点树增量摘要，随节点落库供后续续写复用
+        "revealed": revealed,
         "is_ending": is_ending,
         "ending_type": ending_type,
     }
@@ -417,19 +462,23 @@ def run_continue_stream(
     history: list[dict[str, Any]],
     current_state: dict[str, Any],
     choice: str,
+    revealed_attrs: list[str] | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     return _stream_pipeline(
         "continue",
         {"mode": "continue", "world": world, "history": history,
-         "current_state": current_state, "choice": choice},
+         "current_state": current_state, "choice": choice,
+         "revealed_attrs": revealed_attrs or []},
     )
 
 
 def run_start_stream(
-    world: dict[str, Any], initial_state: dict[str, Any]
+    world: dict[str, Any], initial_state: dict[str, Any],
+    revealed_attrs: list[str] | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     return _stream_pipeline(
-        "start", {"mode": "start", "world": world, "initial_state": initial_state}
+        "start", {"mode": "start", "world": world, "initial_state": initial_state,
+                  "revealed_attrs": revealed_attrs or []},
     )
 
 

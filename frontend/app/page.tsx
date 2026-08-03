@@ -3,9 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
-import { trackGuestSession } from "@/lib/guestSessions";
 import { useAuthStore } from "@/store/authStore";
-import type { SessionListItem, SessionResult, Story } from "@/lib/types";
+import type { SessionListItem, Story } from "@/lib/types";
 import StoryCard from "@/components/StoryCard";
 import SessionCard from "@/components/SessionCard";
 import AuthWidget from "@/components/AuthWidget";
@@ -17,7 +16,6 @@ export default function HomePage() {
   const [stories, setStories] = useState<Story[]>([]);
   const [sessions, setSessions] = useState<SessionListItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -40,22 +38,6 @@ export default function HomePage() {
       .then((se) => setSessions(se ?? []))
       .catch(() => {});
   }, [user]);
-
-  const startStory = async (story: Story) => {
-    if (starting) return;
-    setStarting(true);
-    setError(null);
-    try {
-      const r = await api.post<SessionResult>("/play/sessions", {
-        story_id: story.id,
-      });
-      if (!user) trackGuestSession(r.session.id); // 匿名进度：记下以便登录后领取
-      router.push(`/play/${r.session.id}`);
-    } catch (e) {
-      setError((e as Error).message);
-      setStarting(false);
-    }
-  };
 
   // 删除会话：乐观移除，失败则回滚并提示。
   const deleteSession = async (id: string) => {
@@ -92,7 +74,6 @@ export default function HomePage() {
       </header>
 
       {error && <div className="status err">出错：{error}</div>}
-      {starting && <div className="status pulse">正在点亮新的星图…</div>}
 
       {sessions.length > 0 && (
         <>
@@ -121,8 +102,7 @@ export default function HomePage() {
             <StoryCard
               key={s.id}
               story={s}
-              disabled={starting}
-              onClick={() => startStory(s)}
+              onClick={() => router.push(`/story/${s.id}`)}
             />
           ))}
         </div>

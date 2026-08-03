@@ -161,10 +161,13 @@ copy .env.example .env  # Windows；填入 DEEPSEEK_API_KEY
   ],
   "state_delta": {"hp": -10},
   "summary": "截至本段的前情提要",
+  "revealed": [],
   "is_ending": false,
   "ending_type": ""
 }
 ```
+
+> `revealed`：本段揭示的「揭示门控」属性键（`world_config.attributes[k].reveal=true`，玩家发现前不显示）。请求可带 `revealed_attrs`（已揭示集合），`prepare`/`_write_reveal_gated` 据此把未揭示项注入提示，`normalize` 按声明白名单校验 `revealed`。详见交接手册 §5.3。
 
 真失败（LLM 非法 JSON 重试耗尽、网络/API 异常）：流式端点以 SSE `error` 帧告知，`/opening/complete`·`/merge-check` 返回 HTTP 502。审校超限**不算失败**（降级交付最后一稿）。
 

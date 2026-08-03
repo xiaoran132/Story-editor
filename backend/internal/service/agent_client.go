@@ -66,6 +66,20 @@ func (w WorldConfig) AttrTypes() map[string]string {
 	return out
 }
 
+// RevealGatedAttrs 提取声明了 reveal:true 的「揭示门控」属性键集合：
+// 这些属性在被 AI 揭示前不向玩家展示（区别于 hidden:true 的永不展示）。
+func (w WorldConfig) RevealGatedAttrs() map[string]bool {
+	out := map[string]bool{}
+	for k, spec := range w.Attributes {
+		if m, ok := spec.(map[string]any); ok {
+			if r, _ := m["reveal"].(bool); r {
+				out[k] = true
+			}
+		}
+	}
+	return out
+}
+
 // PathStep 是回溯路径上的一步，用于构建 AI 上下文。
 type PathStep struct {
 	ChoiceText string `json:"choice_text"`
@@ -84,7 +98,8 @@ type AIResult struct {
 	Content    string         `json:"content"`
 	Options    []Option       `json:"options"`
 	StateDelta map[string]any `json:"state_delta"`
-	Summary    string         `json:"summary"` // ④节点树增量摘要，落库到 StoryNode.Summary
+	Summary    string         `json:"summary"`  // ④节点树增量摘要，落库到 StoryNode.Summary
+	Revealed   []string       `json:"revealed"` // 本段揭示的「揭示门控」属性键（首次向玩家展示）
 	IsEnding   bool           `json:"is_ending"`
 	EndingType string         `json:"ending_type"`
 }
@@ -94,13 +109,15 @@ type AIResult struct {
 type generateRequest struct {
 	World        WorldConfig    `json:"world"`
 	InitialState map[string]any `json:"initial_state,omitempty"`
+	RevealedAttrs []string      `json:"revealed_attrs,omitempty"` // 已揭示的门控属性（开局通常为空）
 }
 
 type continueRequest struct {
-	World        WorldConfig    `json:"world"`
-	History      []PathStep     `json:"history,omitempty"`
-	CurrentState map[string]any `json:"current_state,omitempty"`
-	Choice       string         `json:"choice"`
+	World         WorldConfig    `json:"world"`
+	History       []PathStep     `json:"history,omitempty"`
+	CurrentState  map[string]any `json:"current_state,omitempty"`
+	Choice        string         `json:"choice"`
+	RevealedAttrs []string       `json:"revealed_attrs,omitempty"` // 已揭示的门控属性，供 agent 知道还剩哪些未揭示
 }
 
 type openingCompleteRequest struct {
@@ -140,20 +157,23 @@ func (c *AgentClient) CompleteOpening(ctx context.Context, world WorldConfig, in
 func (c *AgentClient) ContinueStream(
 	ctx context.Context,
 	world WorldConfig, history []PathStep, currentState map[string]any, choice string,
+	revealedAttrs []string,
 	onDelta func(string), onRevise func(),
 ) (*AIResult, error) {
 	return c.streamInto(ctx, "/continue/stream", continueRequest{
 		World: world, History: history, CurrentState: currentState, Choice: choice,
+		RevealedAttrs: revealedAttrs,
 	}, onDelta, onRevise)
 }
 
 // StartStoryStream 流式生成开场（无预设 opening_content 的作品）。语义同 ContinueStream。
 func (c *AgentClient) StartStoryStream(
 	ctx context.Context, world WorldConfig, initialState map[string]any,
+	revealedAttrs []string,
 	onDelta func(string), onRevise func(),
 ) (*AIResult, error) {
 	return c.streamInto(ctx, "/generate/stream", generateRequest{
-		World: world, InitialState: initialState,
+		World: world, InitialState: initialState, RevealedAttrs: revealedAttrs,
 	}, onDelta, onRevise)
 }
 
@@ -260,6 +280,9 @@ func normalizeAIResult(r *AIResult) {
 	}
 	if r.StateDelta == nil {
 		r.StateDelta = map[string]any{}
+	}
+	if r.Revealed == nil {
+		r.Revealed = []string{}
 	}
 }
 

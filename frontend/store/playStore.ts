@@ -6,7 +6,9 @@ interface PlayState {
   session: Session | null;
   currentNode: StoryNode | null;
   allNodes: StoryNode[]; // 该会话已探索的全部节点，供树状视图建树
+  storyTitle: string; // 作品标题，用于游玩页顶栏展示
   hiddenAttrs: string[]; // world_config.attributes 里标了 hidden 的属性键：仅供 AI 参考，玩家端不展示
+  revealGated: string[]; // world_config.attributes 里标了 reveal 的门控属性键：揭示前不显示
   busy: boolean; // AI 生成中，禁用交互
   streamingText: string; // 流式续写时逐字到达的正文（done 后清空，回落 currentNode.content）
   loading: boolean; // 首次加载会话中
@@ -19,14 +21,14 @@ interface PlayState {
   reset: () => void;
 }
 
-// 从作品 world_config 解析出 hidden 属性键（仅供 AI 参考、玩家端隐藏）。
-function parseHiddenAttrs(worldConfig: string): string[] {
+// 从作品 world_config.attributes 解析出标了某布尔标记的属性键集合。
+function parseFlaggedAttrs(worldConfig: string, flag: "hidden" | "reveal"): string[] {
   try {
     const attrs = (JSON.parse(worldConfig || "{}").attributes || {}) as Record<
       string,
-      { hidden?: boolean }
+      Record<string, unknown>
     >;
-    return Object.keys(attrs).filter((k) => attrs[k] && attrs[k].hidden === true);
+    return Object.keys(attrs).filter((k) => attrs[k] && attrs[k][flag] === true);
   } catch {
     return [];
   }
@@ -67,7 +69,9 @@ export const usePlayStore = create<PlayState>((set, get) => ({
   session: null,
   currentNode: null,
   allNodes: [],
+  storyTitle: "",
   hiddenAttrs: [],
+  revealGated: [],
   busy: false,
   streamingText: "",
   loading: false,
@@ -78,7 +82,9 @@ export const usePlayStore = create<PlayState>((set, get) => ({
       session: null,
       currentNode: null,
       allNodes: [],
+      storyTitle: "",
       hiddenAttrs: [],
+      revealGated: [],
       busy: false,
       streamingText: "",
       loading: false,
@@ -95,10 +101,16 @@ export const usePlayStore = create<PlayState>((set, get) => ({
         allNodes: r.nodes ?? [],
         loading: false,
       });
-      // 取作品 world_config，解析仅供 AI 参考的隐藏属性键（失败忽略，不影响游玩）。
+      // 取作品：标题（顶栏展示）+ 隐藏属性键（AI 参考）+ 揭示门控属性键（发现前不显示）。失败忽略，不影响游玩。
       api
         .get<Story>(`/stories/${r.session.story_id}`)
-        .then((story) => set({ hiddenAttrs: parseHiddenAttrs(story.world_config) }))
+        .then((story) =>
+          set({
+            storyTitle: story.title,
+            hiddenAttrs: parseFlaggedAttrs(story.world_config, "hidden"),
+            revealGated: parseFlaggedAttrs(story.world_config, "reveal"),
+          })
+        )
         .catch(() => {});
       // 空会话（尚无开场根节点）→ 触发开场流式生成。
       if (!r.current_node && r.session.status === "active") {

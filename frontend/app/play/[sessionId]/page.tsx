@@ -17,7 +17,9 @@ export default function PlayPage() {
     session,
     currentNode,
     allNodes,
+    storyTitle,
     hiddenAttrs,
+    revealGated,
     busy,
     streamingText,
     loading,
@@ -33,10 +35,18 @@ export default function PlayPage() {
     return () => reset();
   }, [sessionId, load, reset]);
 
+  // 本会话已揭示的门控属性键（后端以 JSON 字符串数组返回）。
+  let revealedAttrs: string[] = [];
+  try {
+    revealedAttrs = JSON.parse(session?.revealed_attrs || "[]");
+  } catch {
+    revealedAttrs = [];
+  }
+
   return (
     <div className="wrap">
       <div className="topbar">
-        <h1>AI 互动剧情</h1>
+        <h1>{storyTitle || "载入中…"}</h1>
         <span className="back" onClick={() => router.push("/")}>
           ← 返回作品
         </span>
@@ -50,6 +60,8 @@ export default function PlayPage() {
             stateJSON={session?.current_state ?? null}
             deltaJSON={currentNode?.state_delta ?? null}
             hiddenAttrs={hiddenAttrs}
+            revealGated={revealGated}
+            revealedAttrs={revealedAttrs}
           />
           <StoryPane node={currentNode} busy={busy} streamingText={streamingText} />
           <OptionList node={currentNode} busy={busy} onChoose={choose} />

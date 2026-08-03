@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"time"
 
 	"backend/internal/model"
@@ -58,12 +59,13 @@ func (s *PlayService) StartSession(playerID, storyID uuid.UUID) (*SessionResult,
 	}
 
 	session := &model.PlaySession{
-		StoryID:      storyID,
-		PlayerID:     playerID,
-		CurrentState: dumpState(initialState), // 开局前 current_state 即初始值
-		Status:       "active",
-		NodeCount:    0,
-		LastPlayedAt: time.Now(),
+		StoryID:       storyID,
+		PlayerID:      playerID,
+		CurrentState:  dumpState(initialState), // 开局前 current_state 即初始值
+		RevealedAttrs: "[]",                    // 门控属性开局均未揭示（非门控属性不入此集、始终可见）
+		Status:        "active",
+		NodeCount:     0,
+		LastPlayedAt:  time.Now(),
 	}
 	if err := s.sessions.Create(ctx, session); err != nil {
 		return nil, err
@@ -133,11 +135,14 @@ func (s *PlayService) StartOpeningStream(
 			opening.Content = story.OpeningContent
 		}
 	} else {
-		opening, err = s.ai.StartStoryStream(ctx, world, initialState, onDelta, onRevise)
+		opening, err = s.ai.StartStoryStream(ctx, world, initialState, parseStrList(session.RevealedAttrs), onDelta, onRevise)
 		if err != nil {
 			return nil, pkg.Internal("ai start story stream: " + err.Error())
 		}
 	}
+
+	// 开场揭示（若 AI 在开场即揭示某门控属性）：并入会话与根节点快照。
+	revealedJSON := mergeRevealed(session.RevealedAttrs, opening.Revealed, world.RevealGatedAttrs())
 
 	root := &model.StoryNode{
 		StoryID:          session.StoryID,
@@ -149,6 +154,7 @@ func (s *PlayService) StartOpeningStream(
 		SuggestedOptions: dumpAny(opening.Options),
 		StateDelta:       "{}",
 		StateSnapshot:    dumpState(initialState),
+		RevealedSnapshot: revealedJSON,
 	}
 	err = s.sessions.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(root).Error; err != nil {
@@ -156,6 +162,7 @@ func (s *PlayService) StartOpeningStream(
 		}
 		session.CurrentNodeID = &root.ID
 		session.NodeCount = 1
+		session.RevealedAttrs = revealedJSON
 		session.LastPlayedAt = time.Now()
 		return tx.Save(session).Error
 	})
@@ -217,12 +224,15 @@ func (s *PlayService) applyContinueResult(
 ) (*SessionResult, error) {
 	currentState := parseState(session.CurrentState)
 	newState := mergeState(currentState, result.StateDelta, world.AttrTypes())
+	// 揭示集合：把本段新揭示的门控属性并入会话已揭示集（仅保留声明为门控的键）。
+	revealedJSON := mergeRevealed(session.RevealedAttrs, result.Revealed, world.RevealGatedAttrs())
 
 	// 生成后去重：若新选择与当前节点的某个已有直接子节点「状态变化相同 + 语义等价」，
 	// 复用该子节点而不新建，避免近义选择（如“冲进衣帽间”/“冲到衣帽间内”）污染剧情树。
 	if merged, err := s.tryMerge(ctx, *session.CurrentNodeID, choice, result); err == nil && merged != nil {
 		session.CurrentNodeID = &merged.ID
-		session.CurrentState = merged.StateSnapshot // delta 与父状态一致，快照等价
+		session.CurrentState = merged.StateSnapshot     // delta 与父状态一致，快照等价
+		session.RevealedAttrs = merged.RevealedSnapshot // 揭示状态同步到复用节点快照
 		session.LastPlayedAt = time.Now()
 		if merged.IsEnding {
 			session.Status = "ended"
@@ -246,6 +256,7 @@ func (s *PlayService) applyContinueResult(
 		SuggestedOptions: dumpAny(result.Options),
 		StateDelta:       dumpState(result.StateDelta),
 		StateSnapshot:    dumpState(newState),
+		RevealedSnapshot: revealedJSON,
 		IsEnding:         result.IsEnding,
 	}
 	if result.IsEnding && result.EndingType != "" {
@@ -258,6 +269,7 @@ func (s *PlayService) applyContinueResult(
 			return err
 		}
 		session.CurrentState = dumpState(newState)
+		session.RevealedAttrs = revealedJSON
 		session.CurrentNodeID = &node.ID
 		session.NodeCount++
 		session.LastPlayedAt = time.Now()
@@ -283,7 +295,7 @@ func (s *PlayService) MakeChoiceStream(
 		return nil, err
 	}
 	currentState := parseState(session.CurrentState)
-	result, err := s.ai.ContinueStream(ctx, world, history, currentState, choice, onDelta, onRevise)
+	result, err := s.ai.ContinueStream(ctx, world, history, currentState, choice, parseStrList(session.RevealedAttrs), onDelta, onRevise)
 	if err != nil {
 		return nil, pkg.Internal("ai continue stream: " + err.Error())
 	}
@@ -366,7 +378,8 @@ func (s *PlayService) Backtrack(sessionID, nodeID uuid.UUID) (*SessionResult, er
 
 	session.CurrentNodeID = &node.ID
 	session.CurrentState = node.StateSnapshot
-	session.Status = "active" // 回到旧节点则重新激活
+	session.RevealedAttrs = node.RevealedSnapshot // 回溯同时恢复"已揭示"可见性（发现前的节点会重新隐藏）
+	session.Status = "active"                      // 回到旧节点则重新激活
 	session.LastPlayedAt = time.Now()
 	if err := s.sessions.Update(ctx, session); err != nil {
 		return nil, err
@@ -507,6 +520,40 @@ func dumpState(m map[string]any) string {
 
 func dumpAny(v any) string {
 	raw, err := json.Marshal(v)
+	if err != nil {
+		return "[]"
+	}
+	return string(raw)
+}
+
+// parseStrList 解析存为 JSON 数组字符串的键集（如 revealed_attrs）。
+func parseStrList(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	var out []string
+	_ = json.Unmarshal([]byte(raw), &out)
+	return out
+}
+
+// mergeRevealed 把本段新揭示的键（仅保留声明为「揭示门控」的）并入已揭示集合，
+// 返回有序 JSON 数组字符串（有序保证可比、快照稳定）。
+func mergeRevealed(existing string, fresh []string, gated map[string]bool) string {
+	set := map[string]bool{}
+	for _, k := range parseStrList(existing) {
+		set[k] = true
+	}
+	for _, k := range fresh {
+		if gated[k] {
+			set[k] = true
+		}
+	}
+	keys := make([]string, 0, len(set))
+	for k := range set {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	raw, err := json.Marshal(keys)
 	if err != nil {
 		return "[]"
 	}

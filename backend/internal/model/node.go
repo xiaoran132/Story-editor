@@ -19,6 +19,7 @@ type StoryNode struct {
 	SuggestedOptions string     `gorm:"type:jsonb;not null;default:'[]'" json:"suggested_options"`
 	StateDelta       string     `gorm:"type:jsonb;not null;default:'{}'" json:"state_delta"`
 	StateSnapshot    string     `gorm:"type:jsonb;not null;default:'{}'" json:"state_snapshot"`
+	RevealedSnapshot string     `gorm:"type:jsonb;not null;default:'[]'" json:"revealed_snapshot"` // 截至该节点已揭示的门控属性键集，供回溯恢复可见性
 	IsEnding         bool       `gorm:"not null;default:false" json:"is_ending"`
 	EndingType       *string    `gorm:"size:20" json:"ending_type"`
 	IsPublic         bool       `gorm:"not null;default:false" json:"is_public"`

@@ -14,6 +14,10 @@ type PlaySession struct {
 	StoryID         uuid.UUID  `gorm:"type:uuid;not null;index" json:"story_id"`
 	PlayerID        uuid.UUID  `gorm:"type:uuid;not null;index" json:"player_id"`
 	CurrentState    string     `gorm:"type:jsonb;not null;default:'{}'" json:"current_state"`
+	// RevealedAttrs 是本会话已向玩家揭示的「揭示门控」属性键集（JSON 数组）。
+	// 门控属性（world_config.attributes[k].reveal=true）在被揭示前不在玩家端显示；
+	// 非门控属性不入此集、始终可见。与 current_state 同生命周期，随剧情推进增长、回溯恢复。
+	RevealedAttrs   string     `gorm:"type:jsonb;not null;default:'[]'" json:"revealed_attrs"`
 	ProtagonistName *string    `gorm:"size:30" json:"protagonist_name"`
 	CurrentNodeID   *uuid.UUID `gorm:"type:uuid" json:"current_node_id"`
 	Status          string     `gorm:"size:20;not null;default:active" json:"status"`
@@ -36,6 +40,7 @@ type SessionResponse struct {
 	StoryID         uuid.UUID  `json:"story_id"`
 	PlayerID        uuid.UUID  `json:"player_id"`
 	CurrentState    string     `json:"current_state"`
+	RevealedAttrs   string     `json:"revealed_attrs"`
 	ProtagonistName *string    `json:"protagonist_name"`
 	CurrentNodeID   *uuid.UUID `json:"current_node_id"`
 	Status          string     `json:"status"`
@@ -50,6 +55,7 @@ func (s *PlaySession) ToResponse() *SessionResponse {
 		StoryID:         s.StoryID,
 		PlayerID:        s.PlayerID,
 		CurrentState:    s.CurrentState,
+		RevealedAttrs:   s.RevealedAttrs,
 		ProtagonistName: s.ProtagonistName,
 		CurrentNodeID:   s.CurrentNodeID,
 		Status:          s.Status,
