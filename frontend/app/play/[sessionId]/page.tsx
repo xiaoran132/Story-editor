@@ -130,12 +130,28 @@ export default function PlayPage() {
                 收起 ✕
               </button>
             </div>
+            <ul className="tree-legend">
+              <li>
+                <i className="lg cur" />当前
+              </li>
+              <li>
+                <i className="lg on" />主线
+              </li>
+              <li>
+                <i className="lg dim" />已放弃
+              </li>
+              <li>
+                <i className="lg end" />结局
+              </li>
+            </ul>
+            <p className="drawer-hint">点任一节点，即可回溯到那里、另辟一条命运线。</p>
             <StoryTree
               nodes={allNodes}
               currentNodeId={session?.current_node_id ?? null}
               busy={busy}
               onBacktrack={handleBacktrack}
               bare
+              active={drawerOpen}
             />
           </aside>
         </>

@@ -699,6 +699,7 @@ h2 {
 }
 
 .tree-edge {
+  fill: none; /* 弧线用 <path>，须去掉默认填充 */
   stroke: var(--line);
   stroke-width: 1.2;
 }
@@ -739,6 +740,16 @@ h2 {
 }
 .tree-node.cur .dot {
   filter: drop-shadow(0 0 10px var(--star));
+  animation: star-pulse 2.4s ease-in-out infinite;
+}
+@keyframes star-pulse {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 6px var(--star));
+  }
+  50% {
+    filter: drop-shadow(0 0 13px var(--star));
+  }
 }
 .tree-node.cur .label {
   fill: var(--star);
@@ -963,7 +974,52 @@ h2 {
   padding-top: 0;
 }
 .drawer .tree-scroll {
-  max-height: calc(100dvh - 110px);
+  max-height: calc(100dvh - 190px);
+}
+/* 星图图例：解释节点颜色含义 */
+.tree-legend {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+}
+.tree-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-display);
+  font-size: 12px;
+  color: var(--muted);
+}
+.tree-legend .lg {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+}
+.tree-legend .lg.cur {
+  background: var(--star);
+  box-shadow: 0 0 6px var(--star);
+}
+.tree-legend .lg.on {
+  background: var(--glow);
+  box-shadow: 0 0 6px var(--glow);
+}
+.tree-legend .lg.dim {
+  background: var(--muted);
+  opacity: 0.55;
+}
+.tree-legend .lg.end {
+  background: transparent;
+  border: 1.5px solid var(--star);
+}
+.drawer-hint {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
 }
 
 /* 窄屏：两列降级为堆叠（状态台回到正文上方），抽屉占满 */
