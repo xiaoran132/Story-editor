@@ -5,7 +5,7 @@ import { buildPath } from "./state";
 // 数据来源：GET /play/sessions/:id 的 nodes（回溯不删数据，故含所有已探索分支）。
 
 // 布局常量（单位 px）
-const ROW_H = 96; // 层间纵向间距
+const ROW_H = 108; // 层间纵向间距（容两行节点标签）
 const COL_W = 168; // 叶子列横向间距
 const NODE_W = 148; // 节点框宽
 export const NODE_H = 52; // 节点框高（StoryTree 用）

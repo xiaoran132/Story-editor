@@ -4,13 +4,28 @@ import { layoutTree, NODE_H } from "@/lib/tree";
 // 已探索剧情线的星图视图（发光节点连线）。
 // 完整展示该会话所有已探索分支：当前=暖金大星、主线=冷蓝发光、放弃分支=暗淡；点击历史节点回溯。
 
-const LABEL_MAX = 10; // 节点标签最大字数
+const LINE_MAX = 9; // 每行最大字数
+const LINE_COUNT = 2; // 最多行数
 
+// 节点完整标签文本（不截断，供 <title> 悬停显示全文）。
 function label(n: StoryNode): string {
   if (!n.parent_id) return "开局";
   const t = (n.choice_text ?? "").trim();
-  if (!t) return "继续";
-  return t.length > LABEL_MAX ? t.slice(0, LABEL_MAX) + "…" : t;
+  return t || "继续";
+}
+
+// 标签折行：按 LINE_MAX 切成最多 LINE_COUNT 行，超出末行省略——
+// 兼顾"尽量展示全"与星图不被长句撑乱（约可显 18 字，覆盖多数选择）。
+function labelLines(n: StoryNode): string[] {
+  const text = label(n);
+  const lines: string[] = [];
+  for (let i = 0; i < text.length && lines.length < LINE_COUNT; i += LINE_MAX) {
+    lines.push(text.slice(i, i + LINE_MAX));
+  }
+  if (text.length > LINE_MAX * LINE_COUNT) {
+    lines[LINE_COUNT - 1] = lines[LINE_COUNT - 1].slice(0, LINE_MAX - 1) + "…";
+  }
+  return lines;
 }
 
 export default function StoryTree({
@@ -18,18 +33,20 @@ export default function StoryTree({
   currentNodeId,
   busy,
   onBacktrack,
+  bare = false,
 }: {
   nodes: StoryNode[];
   currentNodeId: string | null;
   busy: boolean;
   onBacktrack: (nodeId: string) => void;
+  bare?: boolean; // true：省略自带标题与外边距，供抽屉容器承载（抽屉头已有标题）
 }) {
   if (nodes.length <= 1) return null;
   const { nodes: pn, edges, width, height } = layoutTree(nodes, currentNodeId);
 
   return (
-    <div className="story-tree">
-      <h2>剧情星图（点击历史节点可回溯）</h2>
+    <div className={`story-tree${bare ? " bare" : ""}`}>
+      {!bare && <h2>剧情星图（点击历史节点可回溯）</h2>}
       <div className="tree-scroll">
         <svg
           width={width}
@@ -70,13 +87,12 @@ export default function StoryTree({
                   <circle className="ring" cx={p.x} cy={p.y} r={r + 4} />
                 )}
                 <circle className="dot" cx={p.x} cy={p.y} r={r} />
-                <text
-                  className="label"
-                  x={p.x}
-                  y={p.y + NODE_H / 2}
-                  textAnchor="middle"
-                >
-                  {label(p.node)}
+                <text className="label" x={p.x} y={p.y + NODE_H / 2} textAnchor="middle">
+                  {labelLines(p.node).map((ln, i) => (
+                    <tspan key={i} x={p.x} dy={i === 0 ? 0 : "1.25em"}>
+                      {ln}
+                    </tspan>
+                  ))}
                 </text>
               </g>
             );

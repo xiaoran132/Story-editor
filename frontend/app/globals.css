@@ -24,6 +24,9 @@
     serif;
 
   --maxw: 820px;
+  --maxw-play: 1040px; /* 游玩页两列布局用更宽的画布 */
+  --rail-w: 240px; /* 左侧状态台宽度 */
+  --drawer-w: min(92vw, 560px); /* 右侧星图抽屉宽度 */
   --radius: 12px;
 }
 
@@ -362,63 +365,128 @@ h2 {
   border-color: var(--danger);
 }
 
-/* ---- 属性条（星光胶囊） ---- */
-.attrs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 22px 0 8px;
-}
-.attr {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: var(--surface);
+/* ---- 左侧状态台（属性栏） ---- */
+.rail {
+  align-self: start;
+  position: sticky;
+  top: 24px;
+  background: var(--surface-2);
   border: 1px solid var(--line);
-  font-size: 13px;
+  border-radius: var(--radius);
+  padding: 16px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
-.attr::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--glow);
-  box-shadow: 0 0 8px var(--glow);
+.rail-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
 }
-.attr b {
+.rail-head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.rail-sub {
   font-family: var(--font-display);
-  font-weight: 500;
-  font-size: 11px;
-  letter-spacing: 0.06em;
+  font-size: 13px;
+  color: var(--ink);
+}
+/* 旅程小节：回合 / 已探索，让状态台成为真正的控制台而非空壳 */
+.rail-meta {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  gap: 10px;
+}
+.rail-meta-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.rail-meta-item span {
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--muted);
 }
-.attr .val {
+.rail-meta-item b {
   font-family: var(--font-display);
+  font-size: 18px;
+  color: var(--glow);
+}
+/* 占位头像：未来放主角头像 / 任务入口 */
+.avatar {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--star);
+  background: var(--star-soft);
+  border: 1px solid var(--star-soft);
+  font-size: 15px;
+}
+.attr-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.attr-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+}
+.attr-k {
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attr-v {
+  font-family: var(--font-display);
+  font-size: 14px;
   color: var(--ink);
+  text-align: right;
 }
-
-/* 本回合发生变化的属性：暖金描边 + 变化徽标，让「属性入戏」可见 */
-.attr.changed {
-  border-color: var(--star);
-  box-shadow: 0 0 0 1px var(--star-soft) inset;
+/* 本回合发生变化：暖金描边 + 变化徽标，让「属性入戏」可见 */
+.attr-row.changed {
+  border-color: var(--star-soft);
+  background: var(--star-soft);
 }
-.attr.changed::before {
-  background: var(--star);
-  box-shadow: 0 0 8px var(--star);
-}
-.attr .delta {
+.attr-d {
+  grid-column: 2;
+  justify-self: end;
   font-family: var(--font-display);
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.02em;
   color: var(--star);
-  background: var(--star-soft);
-  border-radius: 999px;
-  padding: 1px 7px;
   animation: delta-in 0.32s ease;
+}
+.rail-empty {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0;
 }
 @keyframes delta-in {
   from {
@@ -703,36 +771,48 @@ h2 {
 }
 .detail-block h2 {
   font-family: var(--font-display);
-  font-size: 14px;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  color: var(--glow);
+  margin: 0 0 10px;
+  border: none;
+  padding: 0;
 }
 .detail-block p {
   margin: 0;
   line-height: 1.9;
+  color: var(--ink);
 }
 .char-list {
   list-style: none;
   padding: 0;
   margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+.char-list li {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
 }
 .char-list b {
   font-family: var(--font-display);
+  font-size: 15px;
 }
 .char-role {
   color: var(--star);
-  margin-left: 4px;
-  font-size: 13px;
+  margin-left: 6px;
+  font-size: 12px;
+  font-family: var(--font-display);
 }
 .char-desc {
   display: block;
   color: var(--muted);
-  font-size: 14px;
-  margin-top: 2px;
+  font-size: 13px;
+  margin-top: 6px;
   line-height: 1.7;
 }
 .detail-actions {
@@ -756,4 +836,120 @@ h2 {
 .primary-btn:disabled {
   opacity: 0.55;
   cursor: default;
+}
+
+/* ---- 游玩页两列布局 + 星图抽屉 ---- */
+/* 应用式左对齐布局：状态台贴近屏幕左侧（留页边距），正文紧随其右，
+   富余空间落在右侧——避免居中窄带在宽屏下让状态台左边空出一大片。 */
+.play-wrap {
+  max-width: none;
+  margin: 0;
+  padding: 40px clamp(20px, 4vw, 56px) 96px;
+}
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: none;
+}
+/* 顶栏次要按钮（星图 / 收起） */
+.ghost-btn {
+  font-family: var(--font-display);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: var(--glow);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.ghost-btn:hover:not(:disabled) {
+  border-color: var(--glow);
+  background: var(--glow-soft);
+}
+.ghost-btn:disabled {
+  color: var(--muted);
+  opacity: 0.5;
+  cursor: default;
+}
+
+.play-grid {
+  display: grid;
+  grid-template-columns: var(--rail-w) minmax(0, 720px); /* 正文列上限 720，多余空间留右侧 */
+  gap: 36px;
+  align-items: start;
+  justify-content: start; /* 左对齐，不拉伸铺满 */
+  margin-top: 22px;
+}
+.stage {
+  min-width: 0;
+}
+
+/* 右侧星图抽屉 */
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 7, 15, 0.62);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+  z-index: 40;
+}
+.drawer-backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100dvh;
+  width: var(--drawer-w);
+  background: var(--surface);
+  border-left: 1px solid var(--line);
+  box-shadow: -24px 0 64px rgba(0, 0, 0, 0.45);
+  transform: translateX(100%);
+  transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  padding: 18px 18px 24px;
+  overflow: auto;
+}
+.drawer.open {
+  transform: none;
+}
+.drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+/* 抽屉内的星图树：去掉自带的全宽外边距/分隔线，交给抽屉承载 */
+.story-tree.bare {
+  margin-top: 0;
+  border-top: none;
+  padding-top: 0;
+}
+.drawer .tree-scroll {
+  max-height: calc(100dvh - 110px);
+}
+
+/* 窄屏：两列降级为堆叠（状态台回到正文上方），抽屉占满 */
+@media (max-width: 720px) {
+  .play-grid {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+  .rail {
+    position: static;
+  }
+  .stage {
+    max-width: none;
+  }
+  .drawer {
+    width: 100vw;
+  }
 }
