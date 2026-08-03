@@ -438,10 +438,19 @@ h2 {
   line-height: 2;
   letter-spacing: 0.01em;
   margin: 18px 0 6px;
-  white-space: pre-wrap;
 }
+/* 每段首行缩进 2 字，段间距由 margin 精确控制（远小于旧的整行空白） */
+.story-p {
+  margin: 0 0 0.5em;
+  text-indent: 2em;
+}
+.story-p:last-child {
+  margin-bottom: 0;
+}
+/* 占位/加载态是单行提示，保留裸文本换行 */
 .story.loading {
   color: var(--muted);
+  white-space: pre-wrap;
 }
 /* 流式光标：跟在逐字到达的正文后闪烁 */
 .story .caret {
