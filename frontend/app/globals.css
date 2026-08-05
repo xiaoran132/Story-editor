@@ -18,6 +18,10 @@
   --star-soft: rgba(244, 201, 107, 0.14);
   --danger: #ff8095;
 
+  /* 星云背景两团光晕色（body 背景用）。抽成变量以支持作品级换肤。 */
+  --nebula-a: rgba(110, 168, 255, 0.1); /* 右上冷团 */
+  --nebula-b: rgba(244, 201, 107, 0.06); /* 左下暖团 */
+
   --font-display: var(--font-space-grotesk), "Space Grotesk", system-ui,
     sans-serif;
   --font-body: "Songti SC", "Noto Serif SC", "Source Han Serif SC", Georgia,
@@ -45,19 +49,60 @@ body {
   color: var(--ink);
   line-height: 1.85;
   min-height: 100vh;
-  /* 深空底 + 两团极淡星云光晕，不喧宾夺主 */
+  /* 深空底 + 两团极淡星云光晕，不喧宾夺主。星云色走变量，随 [data-theme] 换肤 */
   background: radial-gradient(
       1100px 620px at 78% -8%,
-      rgba(110, 168, 255, 0.1),
+      var(--nebula-a),
       transparent 60%
     ),
     radial-gradient(
       900px 520px at 8% 108%,
-      rgba(244, 201, 107, 0.06),
+      var(--nebula-b),
       transparent 55%
     ),
     var(--bg);
   background-attachment: fixed;
+  transition: background-color 0.35s ease, color 0.35s ease;
+}
+
+/* ============================================================
+   作品级主题换肤（[data-theme] 挂在 <html>，仅体验页：详情/游玩）
+   每套只覆盖约 8–12 个语义变量；star = :root 默认，无需单独块。
+   离开体验页时 data-theme 清除，恢复星图默认。
+   ============================================================ */
+
+/* 民国墨色：暖墨深底 + 宣纸感正文，强调朱砂红 / 墨青 */
+[data-theme="ink"] {
+  --bg: #14100c;
+  --surface: #1f1a14;
+  --surface-2: #2a2318;
+  --ink: #ece3d2;
+  --muted: #9a8f78;
+  --line: #362e22;
+  --glow: #7ca9a0; /* 墨青：结构/连线 */
+  --glow-soft: rgba(124, 169, 160, 0.16);
+  --star: #d9553b; /* 朱砂：当前/主线/主行动 */
+  --star-soft: rgba(217, 85, 59, 0.16);
+  --nebula-a: rgba(124, 169, 160, 0.08);
+  --nebula-b: rgba(217, 85, 59, 0.07);
+  --font-body: "Songti SC", "Noto Serif SC", "Source Han Serif SC", Georgia,
+    serif;
+}
+
+/* 血色恐怖：近黑冷底，强调血红 / 惨白 */
+[data-theme="horror"] {
+  --bg: #0a0708;
+  --surface: #14100f;
+  --surface-2: #1c1615;
+  --ink: #e8e2e2;
+  --muted: #837578;
+  --line: #241c1d;
+  --glow: #8a9096; /* 惨白冷灰：结构/连线 */
+  --glow-soft: rgba(138, 144, 150, 0.14);
+  --star: #c8324a; /* 血红：当前/主线/主行动 */
+  --star-soft: rgba(200, 50, 74, 0.18);
+  --nebula-a: rgba(200, 50, 74, 0.09);
+  --nebula-b: rgba(138, 144, 150, 0.05);
 }
 
 a {
@@ -324,6 +369,20 @@ h2 {
   font-size: 12px;
   letter-spacing: 0.03em;
   color: var(--muted);
+}
+/* 作品主题微染：默认描边淡染作品强调色（--glow-soft 已被卡片本地覆盖为主题色），
+   右上角一颗强调色点——让「多风格」在首页外壳（维持星图）里也可见，克制不整卡换肤。 */
+.card.themed {
+  border-color: var(--glow-soft);
+}
+.card-theme-dot {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  opacity: 0.9;
 }
 
 /* 会话卡：状态徽标 + 删除 */
@@ -1137,6 +1196,48 @@ h2 {
 .ed-idea .ed-input {
   width: 100%;
 }
+/* 主题皮肤选择器：色块 + 名称 */
+.theme-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.theme-swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px 7px 8px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-family: var(--font-display);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.theme-swatch:hover {
+  color: var(--ink);
+}
+.theme-swatch.on {
+  color: var(--ink);
+  border-color: var(--glow);
+}
+.theme-swatch-chip {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid;
+  display: grid;
+  place-items: center;
+}
+.theme-swatch-chip i {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  display: block;
+}
 /* 角色行 */
 .ed-char-row {
   display: grid;
@@ -1327,9 +1428,15 @@ h2 {
   padding-top: 18px;
   border-top: 1px solid var(--line);
 }
+/* 标签独占一行，下面「连接 + 模型」两列并排——820px 详情列不再挤。 */
 .llm-bind-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.llm-bind-fields {
   display: grid;
-  grid-template-columns: 1.3fr 1fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 10px;
   align-items: center;
 }
@@ -1339,18 +1446,22 @@ h2 {
   gap: 2px;
 }
 @media (max-width: 640px) {
-  .llm-bind-row {
+  .llm-bind-fields {
     grid-template-columns: 1fr;
   }
 }
 /* 作品详情页「本作品 AI 配置」折叠面板 */
+/* 与该页其余区块的 .detail-block h2 成体系：冷蓝 eyebrow 风（宽字距、12px）。 */
 .llm-panel-toggle {
   background: none;
   border: none;
   padding: 0;
-  color: var(--muted);
+  color: var(--glow);
   font-family: var(--font-display);
-  font-size: 13px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
   cursor: pointer;
 }
 .llm-panel-toggle:hover {

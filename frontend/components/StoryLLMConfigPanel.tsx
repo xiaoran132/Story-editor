@@ -106,6 +106,7 @@ export default function StoryLLMConfigPanel({
             </p>
           ) : (
             <>
+              <p className="ed-hint">选连接后模型可下拉选择，也可手填。</p>
               {PLAY_STAGES.map((st) => {
                 const b = cfg[st.key] || { conn: "", model: "" };
                 const models = b.conn ? modelsByConn[b.conn] || [] : [];
@@ -116,21 +117,23 @@ export default function StoryLLMConfigPanel({
                       <span className="ed-label">{st.label}</span>
                       <span className="ed-hint">{st.desc}</span>
                     </div>
-                    <select className="ed-input ed-select" value={b.conn}
-                      onChange={(e) => setStage(st.key, { conn: e.target.value, model: "" })}>
-                      <option value="">（回退平台）</option>
-                      {conns.map((c) => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
-                      ))}
-                    </select>
-                    <input className="ed-input" value={b.model} list={listId} disabled={!b.conn}
-                      placeholder={b.conn ? "选择或手填模型" : "先选连接"}
-                      onChange={(e) => setStage(st.key, { model: e.target.value })} />
-                    <datalist id={listId}>
-                      {models.map((m) => (
-                        <option key={m} value={m} />
-                      ))}
-                    </datalist>
+                    <div className="llm-bind-fields">
+                      <select className="ed-input ed-select" value={b.conn}
+                        onChange={(e) => setStage(st.key, { conn: e.target.value, model: "" })}>
+                        <option value="">（回退平台）</option>
+                        {conns.map((c) => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                      <input className="ed-input" value={b.model} list={listId} disabled={!b.conn}
+                        placeholder={b.conn ? "选择或手填模型" : "先选连接"}
+                        onChange={(e) => setStage(st.key, { model: e.target.value })} />
+                      <datalist id={listId}>
+                        {models.map((m) => (
+                          <option key={m} value={m} />
+                        ))}
+                      </datalist>
+                    </div>
                   </div>
                 );
               })}

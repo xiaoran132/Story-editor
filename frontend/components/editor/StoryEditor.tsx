@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useEditorStore } from "@/store/editorStore";
 import { api } from "@/lib/api";
-import type { LLMConnection } from "@/lib/types";
+import { THEMES, type LLMConnection } from "@/lib/types";
 import Textarea from "./Textarea";
+import Input from "./Input";
 import CharacterList from "./CharacterList";
 import AttrTable from "./AttrTable";
 
@@ -120,6 +121,33 @@ export default function StoryEditor() {
         />
         <Textarea label="背景" value={s.background} onChange={(v) => s.setField("background", v)} />
         <Textarea label="风格" value={s.style} onChange={(v) => s.setField("style", v)} rows={1} />
+
+        <div className="ed-field">
+          <span className="ed-label">
+            主题皮肤
+            <span className="ed-hint">玩家进入本作品的详情/游玩页时整页换肤，离开恢复星图</span>
+          </span>
+          <div className="theme-picker">
+            {THEMES.map((t) => (
+              <button
+                type="button"
+                key={t.id}
+                className={`theme-swatch${s.theme === t.id ? " on" : ""}`}
+                onClick={() => s.setField("theme", t.id)}
+                aria-pressed={s.theme === t.id}
+              >
+                <span
+                  className="theme-swatch-chip"
+                  style={{ background: t.swatch[1], borderColor: t.swatch[0] }}
+                >
+                  <i style={{ background: t.swatch[0] }} />
+                </span>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <Textarea label="规则" value={s.rules} onChange={(v) => s.setField("rules", v)} />
         <Textarea
           label="大纲"
@@ -164,8 +192,8 @@ export default function StoryEditor() {
           标注你创作/调试这部作品时各环节用的模型。
           <span className="ed-hint">仅作推荐展示——玩家用自己的连接游玩，不会自动套用你的配置。</span>
         </p>
-        <Textarea label="推荐续写模型" value={s.recWriteModel} onChange={(v) => s.setField("recWriteModel", v)} rows={1} hint="如 deepseek-reasoner" />
-        <Textarea label="推荐审校模型" value={s.recReviewModel} onChange={(v) => s.setField("recReviewModel", v)} rows={1} hint="如 deepseek-chat" />
+        <Input label="推荐续写模型" value={s.recWriteModel} onChange={(v) => s.setField("recWriteModel", v)} hint="如 deepseek-reasoner" />
+        <Input label="推荐审校模型" value={s.recReviewModel} onChange={(v) => s.setField("recReviewModel", v)} hint="如 deepseek-chat" />
       </section>
 
       {/* 5. 发布栏 */}

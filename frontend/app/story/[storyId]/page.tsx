@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { trackGuestSession } from "@/lib/guestSessions";
 import { useAuthStore } from "@/store/authStore";
+import { useDocumentTheme } from "@/lib/useDocumentTheme";
 import StoryLLMConfigPanel from "@/components/StoryLLMConfigPanel";
 import type { RecommendedModels, SessionResult, Story } from "@/lib/types";
 
@@ -14,6 +15,7 @@ function parseWorld(worldConfig: string): {
   style?: string;
   characters?: Array<{ name?: string; role?: string; personality?: string }>;
   recommended_models?: RecommendedModels;
+  theme?: string;
 } {
   try {
     return JSON.parse(worldConfig || "{}");
@@ -59,6 +61,7 @@ export default function StoryDetailPage() {
   };
 
   const world = story ? parseWorld(story.world_config) : {};
+  useDocumentTheme(world.theme); // 作品主题：整页换肤，离开恢复星图
 
   return (
     <div className="wrap">

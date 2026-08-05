@@ -47,6 +47,19 @@ export const LLM_PROVIDERS: { key: string; label: string; baseURL: string; model
   { key: "custom", label: "自定义", baseURL: "", model: "" },
 ];
 
+// ===== 作品级主题换肤 =====
+// 主题是作品属性（存于 world_config.theme，透传、零后端改动）。体验页（详情/游玩）
+// 整页换肤，外壳页维持默认 star。swatch=[强调色, 底色] 用于编辑器色块 + 首页卡片微染。
+export const THEMES: { id: string; label: string; swatch: [string, string] }[] = [
+  { id: "star", label: "星图（默认）", swatch: ["#6ea8ff", "#0a0e1a"] },
+  { id: "ink", label: "民国墨色", swatch: ["#d9553b", "#14100c"] },
+  { id: "horror", label: "血色恐怖", swatch: ["#c8324a", "#0a0708"] },
+];
+// 取某主题的强调色（首页卡片微染用），未知 id 回落星图冷蓝。
+export function themeAccent(id: string | undefined): string {
+  return (THEMES.find((t) => t.id === id)?.swatch[0]) ?? "#6ea8ff";
+}
+
 // GET /llm/connections 列表项：绝不含 key，只回是否已配置 + 打码提示。
 export interface LLMConnection {
   id: string;
@@ -181,6 +194,7 @@ export interface WorldConfigObj {
   characters: Character[];
   initial_state: Record<string, unknown>;
   attributes: Record<string, Record<string, unknown>>;
+  theme?: string; // 作品级主题 id（缺省 star）；透传，后端忽略未知键
 }
 
 // /assist/world 响应

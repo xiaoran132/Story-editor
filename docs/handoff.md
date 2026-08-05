@@ -19,7 +19,7 @@ Story Editor 的长期愿景是“AI 驱动的互动剧情共创社区”：用�
 | 作品 | Story CRUD、作品列表、世界观/初始状态 JSON；**创作编辑器(MVP)**：`world_config`/`opening_content` 可写入、运行时校验(`pkg.ValidateWorldConfig`，草稿宽松/发布严格)、发布态切换、我的作品列表、assist Go 转发 | 封面上传、`/assist/polish`·`/assist/branches` 编辑内接入未做 |
 | 游玩 | 开局、续写、自由输入、回溯、读档、删档、剧情树、状态合并 | 真实环境下的多回合质量/延迟指标尚未沉淀 |
 | Agent | **流式生成(SSE)**、属性类型规整（含 hidden）、故事大纲导演、滚动摘要、审校分级 + 有记忆修订 + 超限降级交付 | RAG、多 Agent fan-out、独立 director/recall/write 子图未做 |
-| 前端 | 作品选择、**作品详情/过渡页**、游玩(顶栏剧本名 + **左侧状态台 + 正文居中 + 星图树右抽屉**布局)、历史会话、正文逐字流式、属性揭示门控可见性、**登录/注册 + 会话迁移**、**创作编辑器**(`/create`·`/edit/:id`·`/mine`，AI 优先 + 结构化属性表)、**个人主页 `/me`**(资料编辑 + BYOK 连接管理)、**作品详情页按作品配模型 + admin `/admin` 平台设置** | 社区、移动端/无障碍/自动化测试未做 |
+| 前端 | 作品选择、**作品详情/过渡页**、游玩(顶栏剧本名 + **左侧状态台 + 正文居中 + 星图树右抽屉**布局)、历史会话、正文逐字流式、属性揭示门控可见性、**登录/注册 + 会话迁移**、**创作编辑器**(`/create`·`/edit/:id`·`/mine`，AI 优先 + 结构化属性表)、**个人主页 `/me`**(资料编辑 + BYOK 连接管理)、**作品详情页按作品配模型 + admin `/admin` 平台设置**、**作品级主题换肤**(创作者在编辑器选，玩家进详情/游玩页整页换肤，见 §13) | 社区、移动端/无障碍/自动化测试未做 |
 | 社区 | API 路由与 handler 占位 | 浏览、详情、点赞、评论、搜索、排行榜均未实现 |
 | 商业化 | SQL 蓝本中有概念 | 付费、打赏、分成、成就未做 |
 
@@ -79,7 +79,7 @@ handler → service → repository
 | 模型 | 关键字段 / 作用 |
 |---|---|
 | `User` / `UserCredential` | 用户资料与密码/OAuth 凭证分离；密码不出响应 |
-| `Story` | 作品元信息；`world_config`（含 `background`/`style`/`rules`/`outline`(故事大纲，导演走向锚点)/`characters`/`initial_state`/`attributes`）、`opening_content`、`price_config` 为 JSON/文本配置 |
+| `Story` | 作品元信息；`world_config`（含 `background`/`style`/`rules`/`outline`(故事大纲，导演走向锚点)/`characters`/`initial_state`/`attributes`/`theme`(作品级主题皮肤 id，见 §13)/`recommended_models`）、`opening_content`、`price_config` 为 JSON/文本配置 |
 | `StoryNode` | 邻接表剧情树。`parent_id`、`depth`、`choice_text`、`content`、`suggested_options`、`state_delta`、`state_snapshot`、`revealed_snapshot`(截至本节点已揭示的门控属性,供回溯恢复可见性)、`summary` |
 | `PlaySession` | 会话归属与当前指针；`current_node_id`、`current_state`、`revealed_attrs`(本会话已揭示的门控属性键集)、`node_count`、`status` |
 
@@ -362,3 +362,17 @@ cd agent
 
 **admin 门槛（最小）**：JWT 携带 `role` 快照（`pkg.GenerateToken(userID, role, secret)`）；`middleware.RequireAdmin()` 校验；`/admin/llm/*` 挂 `AuthRequired+RequireAdmin`。
 - **产生第一个 admin**：手动改库 `UPDATE users SET role='admin' WHERE username='<你的用户名>';`，然后该用户**重新登录**（role 是 JWT 签发时快照，旧 token 不含新角色）。前端 `/admin` 与 `/me` 的「平台设置」入口按 `user.role==='admin'` 显示；后端才是硬防线。
+
+## 13. 作品级主题换肤（v1）
+
+**目标**：平台外壳恒定「星图」；主题是**作品属性**、由创作者在编辑器选，玩家进入该作品的**详情页 + 游玩页**时整页换肤，离开恢复星图。纯前端、**零后端改动、零迁移**。
+
+**数据**：主题 id 存于 `world_config.theme`（字符串，缺省 `"star"`）。与 `recommended_models` 同法透传——后端 `worldConfigShape` 固定 struct 反序列化忽略未知键，`ValidateWorldConfig` 不受影响。
+
+**令牌**：`globals.css` `:root` = 默认主题 star；`[data-theme="ink"]`/`[data-theme="horror"]` 各覆盖约 8–12 个语义变量（`--bg/--surface/--surface-2/--ink/--muted/--line/--glow/--glow-soft/--star/--star-soft` + 星云 `--nebula-a/--nebula-b`，ink 另换 `--font-body`）。星云原为 body 背景里的硬编码 rgba，已抽成变量方能换肤。
+
+**适用点（关键）**：`data-theme` **必须挂在 `<html>`**（`lib/useDocumentTheme.ts` hook：挂载设 `document.documentElement.dataset.theme`、卸载清除）——CSS 自定义属性只父→子继承，body 是页面容器祖先，挂在 `.wrap` 上则 body 星云不换肤。仅体验页调用：详情页 `app/story/[storyId]/page.tsx`（读 `parseWorld().theme`）、游玩页 `app/play/[sessionId]/page.tsx`（读 `playStore.theme`，由 `load()` 复用已拉的 `/stories/:id` 响应解析，零额外请求）。外壳页（首页/`/me`/编辑器/`/admin`）不挂即维持 star。
+
+**入口/展示**：编辑器 `components/editor/StoryEditor.tsx` ② 世界观区块有色块选择器（读 `lib/types.ts` `THEMES`）；`store/editorStore.ts` `theme` 字段 round-trip（`worldObject` 写、`loadStory` 回填）。首页卡片 `components/StoryCard.tsx` 按作品 theme **微染**（本地覆盖 `--glow/--glow-soft` + 右上角强调色点），不整卡换肤。剧情树/抽屉已用 `--glow/--star`，换肤后自动变色。
+
+**边界（v1 不做）**：玩家全局覆盖皮肤（不管作者选什么一律用我的）推迟 v2，避免过早引入「作者意图 vs 玩家偏好」优先级问题；预设暂 star/ink/horror 3 套，跑通后再扩 romance/cyber/paper。

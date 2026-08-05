@@ -25,6 +25,7 @@ interface EditorForm {
   openingOptions: Option[]; // 仅预览，不入库（开场 options 游玩时由后端重生成）
   recWriteModel: string; // 作者推荐的续写模型（仅标注展示给玩家，不自动套用）
   recReviewModel: string; // 作者推荐的审校模型
+  theme: string; // 作品级主题 id（star/ink/horror…），玩家进详情/游玩页整页换肤
 }
 
 interface EditorState extends EditorForm {
@@ -74,6 +75,7 @@ const EMPTY_FORM: EditorForm = {
   openingOptions: [],
   recWriteModel: "",
   recReviewModel: "",
+  theme: "star",
 };
 
 // 按类型给属性初值一个合理默认（切换 type 时重置，避免残留错型值）。
@@ -127,6 +129,7 @@ function worldObject(f: EditorForm) {
     characters: f.characters,
     initial_state,
     attributes,
+    theme: f.theme || "star",
     ...(Object.keys(rec).length ? { recommended_models: rec } : {}),
   };
 }
@@ -228,6 +231,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         recReviewModel: String(
           ((w.recommended_models as Record<string, { model?: string }>)?.review?.model) ?? ""
         ),
+        theme: String(w.theme ?? "star") || "star",
         loading: false,
       });
     } catch (e) {

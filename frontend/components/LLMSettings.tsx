@@ -24,6 +24,10 @@ const EMPTY_FORM: ConnForm = {
   default_model: "deepseek-chat",
 };
 
+// 供应商机器值 → 友好名（deepseek → DeepSeek）；未知回落原值。
+const providerLabel = (p: string) =>
+  LLM_PROVIDERS.find((x) => x.key === p)?.label ?? p;
+
 export default function LLMSettings({ flash }: { flash: (m: string) => void }) {
   const [conns, setConns] = useState<LLMConnection[]>([]);
   const [form, setForm] = useState<ConnForm | null>(null);
@@ -126,7 +130,7 @@ export default function LLMSettings({ flash }: { flash: (m: string) => void }) {
           <div className="llm-conn-row" key={c.id}>
             <div className="llm-conn-meta">
               <span className="llm-conn-name">{c.name}</span>
-              <span className="badge">{c.provider}</span>
+              <span className="badge">{providerLabel(c.provider)}</span>
               <span className="ed-hint">{c.default_model}</span>
               {c.has_key && <span className="ed-hint">{c.key_hint}</span>}
             </div>

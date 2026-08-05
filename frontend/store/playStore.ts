@@ -7,6 +7,7 @@ interface PlayState {
   currentNode: StoryNode | null;
   allNodes: StoryNode[]; // 该会话已探索的全部节点，供树状视图建树
   storyTitle: string; // 作品标题，用于游玩页顶栏展示
+  theme: string; // 作品级主题 id：游玩页整页换肤（挂 <html data-theme>）
   hiddenAttrs: string[]; // world_config.attributes 里标了 hidden 的属性键：仅供 AI 参考，玩家端不展示
   revealGated: string[]; // world_config.attributes 里标了 reveal 的门控属性键：揭示前不显示
   busy: boolean; // AI 生成中，禁用交互
@@ -31,6 +32,15 @@ function parseFlaggedAttrs(worldConfig: string, flag: "hidden" | "reveal"): stri
     return Object.keys(attrs).filter((k) => attrs[k] && attrs[k][flag] === true);
   } catch {
     return [];
+  }
+}
+
+// 从作品 world_config 取主题 id（缺省 star）。
+function parseTheme(worldConfig: string): string {
+  try {
+    return String(JSON.parse(worldConfig || "{}").theme ?? "star") || "star";
+  } catch {
+    return "star";
   }
 }
 
@@ -70,6 +80,7 @@ export const usePlayStore = create<PlayState>((set, get) => ({
   currentNode: null,
   allNodes: [],
   storyTitle: "",
+  theme: "star",
   hiddenAttrs: [],
   revealGated: [],
   busy: false,
@@ -83,6 +94,7 @@ export const usePlayStore = create<PlayState>((set, get) => ({
       currentNode: null,
       allNodes: [],
       storyTitle: "",
+      theme: "star",
       hiddenAttrs: [],
       revealGated: [],
       busy: false,
@@ -107,6 +119,7 @@ export const usePlayStore = create<PlayState>((set, get) => ({
         .then((story) =>
           set({
             storyTitle: story.title,
+            theme: parseTheme(story.world_config),
             hiddenAttrs: parseFlaggedAttrs(story.world_config, "hidden"),
             revealGated: parseFlaggedAttrs(story.world_config, "reveal"),
           })

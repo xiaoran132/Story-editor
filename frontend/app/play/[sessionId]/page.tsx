@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { usePlayStore } from "@/store/playStore";
+import { useDocumentTheme } from "@/lib/useDocumentTheme";
 import AttrBar from "@/components/AttrBar";
 import StoryPane from "@/components/StoryPane";
 import OptionList from "@/components/OptionList";
@@ -18,6 +19,7 @@ export default function PlayPage() {
     currentNode,
     allNodes,
     storyTitle,
+    theme,
     hiddenAttrs,
     revealGated,
     busy,
@@ -31,6 +33,8 @@ export default function PlayPage() {
   } = usePlayStore();
 
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  useDocumentTheme(theme); // 作品主题：整页换肤，离开恢复星图
 
   useEffect(() => {
     if (sessionId) load(sessionId);
