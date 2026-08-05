@@ -1,0 +1,20 @@
+[Unit]
+Description=Story Editor · Agent (FastAPI, :8001, 内部)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=story
+# 关键：工作目录 = agent/，使 pydantic-settings 能读到本目录的 .env（含 DEEPSEEK_API_KEY）
+WorkingDirectory=/opt/story-editor/agent
+# 只监听本机，仅供后端调用；不对公网暴露
+ExecStart=/opt/story-editor/agent/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8001
+Restart=always
+RestartSec=3
+# 埋点(story.metrics)走 stderr → journald，可 `journalctl -u story-agent` 取回分析
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

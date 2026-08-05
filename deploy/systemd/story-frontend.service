@@ -1,0 +1,19 @@
+[Unit]
+Description=Story Editor · Frontend (Next.js, :3000)
+After=network-online.target story-backend.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=story
+WorkingDirectory=/opt/story-editor/frontend
+# 需先 `npm run build`（deploy.sh 会做）。只监听本机，仅经 nginx 暴露。
+# 注意：NEXT_PUBLIC_API_BASE 是构建时固化的，务必在 build 前设为 /api/v1（见 deploy.sh）。
+ExecStart=/usr/bin/npm run start -- -H 127.0.0.1 -p 3000
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

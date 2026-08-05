@@ -1,0 +1,10 @@
+# Agent（FastAPI）：python slim + 依赖。构建上下文 = 仓库根。
+# DEEPSEEK_API_KEY 等由 compose 的 env_file 以环境变量注入（pydantic-settings 读 env）。
+FROM python:3.12-slim
+WORKDIR /app/agent
+COPY agent/requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+COPY agent/app ./app
+COPY agent/tools ./tools
+EXPOSE 8001
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8001"]

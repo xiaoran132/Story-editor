@@ -1,0 +1,15 @@
+# Go 后端：多阶段构建 → 静态二进制 + templates。构建上下文 = 仓库根。
+FROM golang:1.25 AS build
+WORKDIR /src
+COPY backend/go.mod backend/go.sum ./backend/
+RUN cd backend && go mod download
+COPY backend ./backend
+RUN cd backend && CGO_ENABLED=0 GOOS=linux go build -o /out/backend .
+
+FROM gcr.io/distroless/static-debian12
+# 关键：cwd = /app/backend，使 LoadHTMLGlob("../templates/*") 命中 /app/templates
+WORKDIR /app/backend
+COPY --from=build /out/backend /app/backend/backend
+COPY templates /app/templates
+EXPOSE 8080
+ENTRYPOINT ["/app/backend/backend"]

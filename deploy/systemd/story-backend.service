@@ -1,0 +1,24 @@
+[Unit]
+Description=Story Editor · Backend (Go+Gin, :8080)
+# 本机 PG 与 Agent 先就绪；PG 服务名按发行版可能是 postgresql.service
+After=network-online.target postgresql.service story-agent.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=story
+# 关键：工作目录必须是 backend/，否则 LoadHTMLGlob("../templates/*") 与 viper 配置搜索路径失效
+WorkingDirectory=/opt/story-editor/backend
+# 环境变量：从 backend/.env 读（纯 KEY=value，无 export/引号）。至少要有：
+#   DB_HOST=127.0.0.1  DB_PORT=5432  DB_USER=postgres  DB_PASSWORD=***  DB_NAME=story_editor
+#   JWT_SECRET=***      AGENT_URL=http://127.0.0.1:8001
+#   SERVER_PORT=127.0.0.1:8080   ← 只监听本机，仅经 nginx 暴露
+EnvironmentFile=/opt/story-editor/backend/.env
+ExecStart=/opt/story-editor/backend/backend
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

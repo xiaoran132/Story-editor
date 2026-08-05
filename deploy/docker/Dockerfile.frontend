@@ -1,0 +1,19 @@
+# Next.js 前端：多阶段 → 自包含 standalone 产物（运行时零 npm install）。构建上下文 = 仓库根。
+# 注意：NEXT_PUBLIC_API_BASE 在 build 时固化，同域反代下用同源相对地址 /api/v1。
+FROM node:20-slim AS build
+WORKDIR /app
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend ./
+ARG NEXT_PUBLIC_API_BASE=/api/v1
+ENV NEXT_PUBLIC_API_BASE=$NEXT_PUBLIC_API_BASE
+RUN npm run build
+
+FROM node:20-slim AS run
+WORKDIR /app
+ENV NODE_ENV=production
+# standalone 自带最小 server.js + 精简 node_modules；再补静态资源
+COPY --from=build /app/.next/standalone ./
+COPY --from=build /app/.next/static ./.next/static
+EXPOSE 3000
+CMD ["node", "server.js"]

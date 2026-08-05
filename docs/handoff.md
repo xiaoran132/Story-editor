@@ -222,17 +222,47 @@ cd ..\agent
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-当前 Python 测试覆盖“流式哨兵解析/结构化兜底/拒绝→有记忆修订/超限降级交付”（`test_stream.py`）与“parse 重试恢复/耗尽”（`test_llm_parse_retry.py`）。Go 已有 `play_merge_test.go` 覆盖节点语义合并。
+当前 Python 测试覆盖“流式哨兵解析/结构化兜底/拒绝→有记忆修订/超限降级交付”（`test_stream.py`）、“parse 重试恢复/耗尽”（`test_llm_parse_retry.py`）与“揭示门控白名单/prepare 注入抑制”（`test_reveal.py`）。Go 有 `play_merge_test.go`（节点语义合并）与 `seed_config_test.go`（六部作品 world_config 逻辑一致性：键对应/类型匹配/initial/布尔标记）。
 
 ### 8.3 必做的人工验收
 
 自动测试不能证明叙事好玩。每次修改 Agent 提示、上下文、质量规则或状态合并后，至少要：
 
 1. 运行真实 Agent、后端和前端；
-2. 连续游玩多回合，并回溯后开新分支；
+2. 连续游玩多回合，**专挑矛盾/高风险选项**，并回溯后开新分支、走深剧情；
 3. 检查属性显示、状态变化、节点树、读档是否一致；
 4. 检查摘要是否遗漏/篡改伏笔和人物关系；
-5. 记录审校重写次数与耗时，避免质量循环把体验拖垮。
+5. 记录审校重写次数与耗时，避免质量循环把体验拖垮；
+6. **验揭示门控**：开局属性栏不显示 `reveal` 属性（如《最后的深夜电台》物资/幸存者信任）→ 剧情"清点/首次接触"时才出现且数值合理（不再 5→4）→ **回溯到揭示前又消失**。
+
+### 8.4 真机验收操作手册（起进程 + 留埋点 + 分析）
+
+真人多回合验收的门槛很低。要**留存质量埋点**，关键是让 Agent 的 `story.metrics` 输出落到文件（`dev.ps1` 各开一窗、日志留不下来，故 Agent 单独起并重定向）：
+
+```powershell
+# 窗口A · Agent（*> 收下 stderr 上的 story.metrics 埋点到 agent.log）
+cd agent
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --port 8001 *> agent.log
+
+# 窗口B · 后端
+cd backend; go run .
+
+# 窗口C · 前端
+cd frontend; npm run dev            # http://localhost:3000
+```
+
+玩够量后**离线聚合埋点**：
+
+```powershell
+cd agent
+.\.venv\Scripts\python.exe tools\aggregate_log.py agent.log
+```
+
+输出：首稿通过率 / 降级率 / 审校拒绝率 / **拒因按频次分布** / 完整延迟与 ttfb 的均值·p95 / 按 mode(start,continue) 分解。据此回答"叙事质量与延迟"这类可量化问题（指标含义见 §9.1）。
+
+- **埋点两行**：`gen`（`outcome/elapsed_ms/ttfb_ms/review_failures/first_draft_pass/degraded/is_ending`）与 `review`（`verdict/attempt/issues`），源在 `agent/app/graph/story_graph.py`。
+- **别用 `tools/sample_metrics.py` 做验收**：它自动线性采样（永远点第一个选项），触发不了三类高频拒因，只能跑通/看延迟基线（原委见 §9.2）。
+- 日志覆盖不了、仍须人眼看的：摘要漂移、人物/伏笔矛盾、选择无后果、揭示/回溯一致性、阅读手感与延迟忍受度（即 §8.3 第 2/4/6 项）。
 
 ## 9. 当前风险、技术债与优先级
 
