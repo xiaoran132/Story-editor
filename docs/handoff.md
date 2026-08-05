@@ -7,7 +7,7 @@
 
 Story Editor 的长期愿景是“AI 驱动的互动剧情共创社区”：用户既可以游玩，也可以创作、分享和再创作。
 
-**当前 MVP 只验证游玩体验**。已经打通的闭环是：作品 → 匿名会话 → AI 生成 → 状态变化/剧情树 → 回溯与读档。创作辅助 Agent 有接口，但没有 UI；社区路由是桩；前端没有登录。
+**已打通游玩 + 创作两条闭环**。游玩：作品 → 匿名会话 → AI 生成 → 状态变化/剧情树 → 回溯与读档。创作(MVP)：一句话灵感 →(Go 转发)agent `/assist/world` → 结构化表单微调 → `/assist/opening` → 存草稿/发布 → 首页作为可玩作品出现。社区路由仍是桩。
 
 不要把 [prd.md](prd.md) 的愿景功能当作已实现功能。当前实现状态应以本手册、`CLAUDE.md` 和代码为准。
 
@@ -16,10 +16,10 @@ Story Editor 的长期愿景是“AI 驱动的互动剧情共创社区”：用�
 | 域 | 已完成 | 未完成或限制 |
 |---|---|---|
 | 用户 | 后端注册/登录/JWT/资料、凭证分表；**前端登录接入完成**（可选登录，未登录仍匿名 guest；登录后迁移本浏览器 guest 会话到账号） | OAuth/第三方登录未做；密码找回未做 |
-| 作品 | Story CRUD、作品列表、世界观/初始状态 JSON | 创作编辑器、发布管理 UI 未做 |
+| 作品 | Story CRUD、作品列表、世界观/初始状态 JSON；**创作编辑器(MVP)**：`world_config`/`opening_content` 可写入、运行时校验(`pkg.ValidateWorldConfig`，草稿宽松/发布严格)、发布态切换、我的作品列表、assist Go 转发 | 封面上传、`/assist/polish`·`/assist/branches` 编辑内接入未做 |
 | 游玩 | 开局、续写、自由输入、回溯、读档、删档、剧情树、状态合并 | 真实环境下的多回合质量/延迟指标尚未沉淀 |
 | Agent | **流式生成(SSE)**、属性类型规整（含 hidden）、故事大纲导演、滚动摘要、审校分级 + 有记忆修订 + 超限降级交付 | RAG、多 Agent fan-out、独立 director/recall/write 子图未做 |
-| 前端 | 作品选择、**作品详情/过渡页**、游玩(顶栏剧本名 + **左侧状态台 + 正文居中 + 星图树右抽屉**布局)、历史会话、正文逐字流式、属性揭示门控可见性、**登录/注册 + 会话迁移** | 创作编辑器、社区、移动端/无障碍/自动化测试未做 |
+| 前端 | 作品选择、**作品详情/过渡页**、游玩(顶栏剧本名 + **左侧状态台 + 正文居中 + 星图树右抽屉**布局)、历史会话、正文逐字流式、属性揭示门控可见性、**登录/注册 + 会话迁移**、**创作编辑器**(`/create`·`/edit/:id`·`/mine`，AI 优先 + 结构化属性表) | 社区、移动端/无障碍/自动化测试未做 |
 | 社区 | API 路由与 handler 占位 | 浏览、详情、点赞、评论、搜索、排行榜均未实现 |
 | 商业化 | SQL 蓝本中有概念 | 付费、打赏、分成、成就未做 |
 
@@ -194,7 +194,7 @@ prepare
 | `POST /generate/stream` `POST /continue/stream` | 流式生成：SSE `delta`/`revise`/`done`/`error` 帧（`done` 携带完整 AIResult） |
 | `POST /opening/complete` | 为已写定的开场正文补起始选项 + summary（预设 opening_content 的作品） |
 | `POST /merge-check` | 在 Go 的 `state_delta` 硬过滤之后判断同层候选是否语义等价 |
-| `POST /assist/world`、`/opening`、`/polish`、`/branches` | 创作辅助；暂无前端消费者 |
+| `POST /assist/world`、`/opening`、`/polish`、`/branches` | 创作辅助；**经 Go `/api/v1/assist/*` 转发**给创作编辑器消费（agent 无鉴权/CORS，前端不直连；Go 侧用 180s `assistClient`） |
 | `GET /health` | 检查模型配置状态 |
 
 Agent 的开场和续写响应统一包含：`content`、`options`、`state_delta`、`summary`、`is_ending`、`ending_type`。详见 [`../agent/README.md`](../agent/README.md)。
@@ -308,10 +308,9 @@ cd agent
 ### 9.3 建议的后续顺序
 
 1. **试玩与观测**：补 Agent/PlayService 回归测试、埋点或日志，跑真实多回合样本。
-2. **Agent 阶段二的最小切片**：依据数据选择先拆 director、先补 recall/RAG，或先做 SSE 流式反馈；不要一次完成完整多 Agent。
-3. **真实身份接入前端**：让会话、作品和后续社区具备明确归属。
-4. **创作前端**：消费已存在的 `/assist/*`，打通“创作 → 游玩”。
-5. **社区 MVP**：发布、浏览、详情、点赞/评论；随后才考虑付费与成就。
+2. ~~**创作前端**：消费 `/assist/*`，打通"创作 → 游玩"~~ ✅ 已完成(MVP)：`/create`·`/edit/:id`·`/mine`，AI 优先 + 结构化属性表；后端补 `world_config` 输入/校验/发布态/assist 转发。剩余打磨：`/assist/polish`·`/assist/branches` 编辑内接入、封面上传。
+3. **Agent 阶段二**（**因备案冻结真机验证而暂缓**，待线上恢复后带真实数据做）：依据数据选择先拆 director、先补 recall/RAG；不要一次完成完整多 Agent。
+4. **社区 MVP**：发布、浏览、详情、点赞/评论；随后才考虑付费与成就。
 
 ## 10. 文档维护规则
 

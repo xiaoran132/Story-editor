@@ -59,6 +59,7 @@ func main() {
 	nodeH := handler.NewNodeHandler(nodeSvc)
 	communityH := handler.NewCommunityHandler()
 	playH := handler.NewPlayHandler(playSvc, guestID)
+	assistH := handler.NewAssistHandler(agentClient)
 
 	r := gin.Default()
 	r.Use(middleware.CORS())
@@ -82,8 +83,10 @@ func main() {
 	{
 		stories.POST("/", middleware.AuthRequired(cfg.JWTSecret), storyH.Create)
 		stories.GET("/", storyH.List)
+		stories.GET("/mine", middleware.AuthRequired(cfg.JWTSecret), storyH.ListMine)
 		stories.GET("/:id", storyH.Get)
 		stories.PUT("/:id", middleware.AuthRequired(cfg.JWTSecret), storyH.Update)
+		stories.PUT("/:id/status", middleware.AuthRequired(cfg.JWTSecret), storyH.SetStatus)
 		stories.DELETE("/:id", middleware.AuthRequired(cfg.JWTSecret), storyH.Delete)
 		stories.POST("/:id/nodes", middleware.AuthRequired(cfg.JWTSecret), nodeH.Create)
 	}
@@ -106,6 +109,15 @@ func main() {
 		play.DELETE("/sessions/:id", playH.Delete)
 		play.POST("/sessions/:id/choice/stream", playH.ChoiceStream)
 		play.POST("/sessions/:id/backtrack", playH.Backtrack)
+	}
+
+	// 创作辅助：转发到 agent /assist/*（需登录；agent 无鉴权/CORS，前端不直连）。
+	assist := api.Group("/assist", middleware.AuthRequired(cfg.JWTSecret))
+	{
+		assist.POST("/world", assistH.World)
+		assist.POST("/opening", assistH.Opening)
+		assist.POST("/polish", assistH.Polish)
+		assist.POST("/branches", assistH.Branches)
 	}
 
 	community := api.Group("/community")

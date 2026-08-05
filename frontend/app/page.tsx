@@ -55,7 +55,19 @@ export default function HomePage() {
     <div className="wrap">
       <div className="topbar">
         <span className="eyebrow">Story Editor</span>
-        <AuthWidget />
+        <div className="topbar-actions">
+          {user && (
+            <>
+              <button className="ghost-btn" onClick={() => router.push("/mine")}>
+                我的作品
+              </button>
+              <button className="ghost-btn" onClick={() => router.push("/create")}>
+                + 创作
+              </button>
+            </>
+          )}
+          <AuthWidget />
+        </div>
       </div>
 
       <header className="hero">

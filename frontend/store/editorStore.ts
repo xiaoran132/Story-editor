@@ -1,0 +1,356 @@
+import { create } from "zustand";
+import { api } from "@/lib/api";
+import type {
+  AttrRowData,
+  AttrType,
+  Character,
+  OpeningDraft,
+  Option,
+  Story,
+  WorldDraft,
+} from "@/lib/types";
+
+// 编辑器表单态（对象形态；存盘时序列化为 world_config JSON 字符串）。
+interface EditorForm {
+  title: string;
+  description: string;
+  coverUrl: string;
+  background: string;
+  style: string;
+  rules: string;
+  outline: string;
+  characters: Character[];
+  attributes: AttrRowData[]; // 有序、可改键；存盘时派生 attributes 对象 + initial_state
+  openingContent: string;
+  openingOptions: Option[]; // 仅预览，不入库（开场 options 游玩时由后端重生成）
+}
+
+interface EditorState extends EditorForm {
+  storyId: string | null; // null = 新建
+  status: string; // draft | published
+  loading: boolean;
+  saving: boolean;
+  aiBusy: "world" | "opening" | null; // 分区 loading，避免整页禁用
+  error: string | null;
+  toast: string | null;
+
+  reset: () => void;
+  loadStory: (id: string) => Promise<void>;
+  setField: <K extends keyof EditorForm>(key: K, value: EditorForm[K]) => void;
+  // 角色
+  addCharacter: () => void;
+  updateCharacter: (i: number, patch: Partial<Character>) => void;
+  removeCharacter: (i: number) => void;
+  // 属性
+  addAttr: () => void;
+  updateAttr: (i: number, patch: Partial<AttrRowData>) => void;
+  removeAttr: (i: number) => void;
+  // AI 辅助
+  genWorld: (idea: string, style: string) => Promise<void>;
+  genOpening: () => Promise<void>;
+  // 持久化
+  save: () => Promise<string | null>; // 返回 storyId
+  publish: () => Promise<void>;
+  unpublish: () => Promise<void>;
+  remove: () => Promise<void>;
+  showToast: (msg: string) => void;
+}
+
+const EMPTY_FORM: EditorForm = {
+  title: "",
+  description: "",
+  coverUrl: "",
+  background: "",
+  style: "",
+  rules: "",
+  outline: "",
+  characters: [],
+  attributes: [],
+  openingContent: "",
+  openingOptions: [],
+};
+
+// 按类型给属性初值一个合理默认（切换 type 时重置，避免残留错型值）。
+function defaultInitial(type: AttrType): number | string | string[] {
+  if (type === "number") return 0;
+  if (type === "set") return [];
+  return "";
+}
+
+// 把某属性行的 initial 规整为其类型对应的 JSON 值（存盘/请求时用）。
+function coerceInitial(a: AttrRowData): number | string | string[] {
+  if (a.type === "number") {
+    const n = typeof a.initial === "number" ? a.initial : Number(a.initial);
+    return Number.isFinite(n) ? n : 0;
+  }
+  if (a.type === "set") {
+    return Array.isArray(a.initial) ? a.initial : [];
+  }
+  return typeof a.initial === "string" ? a.initial : String(a.initial ?? "");
+}
+
+// 由属性行派生 attributes 对象 + initial_state（单一真源在 attributes 行，杜绝双写漂移）。
+function deriveAttrs(rows: AttrRowData[]) {
+  const attributes: Record<string, Record<string, unknown>> = {};
+  const initial_state: Record<string, unknown> = {};
+  for (const a of rows) {
+    const key = a.key.trim();
+    if (!key) continue;
+    const initial = coerceInitial(a);
+    const spec: Record<string, unknown> = { type: a.type, initial };
+    if (a.hidden) spec.hidden = true;
+    if (a.reveal) spec.reveal = true;
+    attributes[key] = spec;
+    initial_state[key] = initial;
+  }
+  return { attributes, initial_state };
+}
+
+// 组装 world_config 的对象形态（供 /assist/opening 请求 + 存盘序列化共用）。
+function worldObject(f: EditorForm) {
+  const { attributes, initial_state } = deriveAttrs(f.attributes);
+  return {
+    background: f.background,
+    style: f.style,
+    rules: f.rules,
+    outline: f.outline,
+    characters: f.characters,
+    initial_state,
+    attributes,
+  };
+}
+
+// 把 AI/存量的 attributes 对象 + initial_state 摊平成编辑用的有序行。
+function attrsToRows(
+  attributes: Record<string, Record<string, unknown>>,
+  initialState: Record<string, unknown>
+): AttrRowData[] {
+  return Object.entries(attributes || {}).map(([key, spec]) => {
+    const type = (["number", "scalar", "set"].includes(String(spec?.type))
+      ? spec.type
+      : "scalar") as AttrType;
+    // initial 优先取 attributes.initial，缺失回落 initial_state[key]
+    const rawInit = spec?.initial !== undefined ? spec.initial : initialState?.[key];
+    let initial: number | string | string[];
+    if (type === "number") initial = Number(rawInit) || 0;
+    else if (type === "set") initial = Array.isArray(rawInit) ? (rawInit as string[]) : [];
+    else initial = rawInit === undefined || rawInit === null ? "" : String(rawInit);
+    return {
+      key,
+      type,
+      initial,
+      hidden: spec?.hidden === true,
+      reveal: spec?.reveal === true,
+    };
+  });
+}
+
+// 把 AI 返回的 characters（任意结构）规整为 {name,role,desc}。
+function coerceCharacters(raw: unknown[]): Character[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((c) => {
+    const o = (c || {}) as Record<string, unknown>;
+    return {
+      name: String(o.name ?? ""),
+      role: String(o.role ?? ""),
+      desc: String(o.desc ?? o.personality ?? o.description ?? ""),
+    };
+  });
+}
+
+export const useEditorStore = create<EditorState>((set, get) => ({
+  ...EMPTY_FORM,
+  storyId: null,
+  status: "draft",
+  loading: false,
+  saving: false,
+  aiBusy: null,
+  error: null,
+  toast: null,
+
+  reset: () =>
+    set({
+      ...EMPTY_FORM,
+      storyId: null,
+      status: "draft",
+      loading: false,
+      saving: false,
+      aiBusy: null,
+      error: null,
+      toast: null,
+    }),
+
+  loadStory: async (id) => {
+    set({ loading: true, error: null });
+    try {
+      const s = await api.get<Story>(`/stories/${id}`);
+      let w: Record<string, unknown> = {};
+      try {
+        w = JSON.parse(s.world_config || "{}");
+      } catch {
+        /* 坏 JSON 当空处理 */
+      }
+      set({
+        storyId: s.id,
+        status: s.status,
+        title: s.title,
+        description: s.description,
+        coverUrl: s.cover_url,
+        background: String(w.background ?? ""),
+        style: String(w.style ?? ""),
+        rules: String(w.rules ?? ""),
+        outline: String(w.outline ?? ""),
+        characters: coerceCharacters((w.characters as unknown[]) ?? []),
+        attributes: attrsToRows(
+          (w.attributes as Record<string, Record<string, unknown>>) ?? {},
+          (w.initial_state as Record<string, unknown>) ?? {}
+        ),
+        openingContent: s.opening_content || "",
+        openingOptions: [],
+        loading: false,
+      });
+    } catch (e) {
+      set({ loading: false, error: (e as Error).message });
+    }
+  },
+
+  setField: (key, value) => set({ [key]: value } as Partial<EditorState>),
+
+  addCharacter: () =>
+    set((s) => ({ characters: [...s.characters, { name: "", role: "", desc: "" }] })),
+  updateCharacter: (i, patch) =>
+    set((s) => ({
+      characters: s.characters.map((c, idx) => (idx === i ? { ...c, ...patch } : c)),
+    })),
+  removeCharacter: (i) =>
+    set((s) => ({ characters: s.characters.filter((_, idx) => idx !== i) })),
+
+  addAttr: () =>
+    set((s) => ({
+      attributes: [
+        ...s.attributes,
+        { key: "", type: "number", initial: 0, hidden: false, reveal: false },
+      ],
+    })),
+  updateAttr: (i, patch) =>
+    set((s) => ({
+      attributes: s.attributes.map((a, idx) => {
+        if (idx !== i) return a;
+        const next = { ...a, ...patch };
+        // 改类型时重置初值为该类型默认，避免残留错型值
+        if (patch.type && patch.type !== a.type) next.initial = defaultInitial(patch.type);
+        return next;
+      }),
+    })),
+  removeAttr: (i) => set((s) => ({ attributes: s.attributes.filter((_, idx) => idx !== i) })),
+
+  genWorld: async (idea, style) => {
+    if (!idea.trim()) {
+      set({ error: "请先写一句灵感" });
+      return;
+    }
+    set({ aiBusy: "world", error: null });
+    try {
+      const d = await api.post<WorldDraft>("/assist/world", {
+        idea: idea.trim(),
+        style: style.trim(),
+      });
+      set({
+        background: d.background || "",
+        style: d.style || "",
+        rules: d.rules || "",
+        outline: d.outline || "",
+        characters: coerceCharacters(d.characters || []),
+        attributes: attrsToRows(d.attributes || {}, d.initial_state || {}),
+        aiBusy: null,
+        toast: "已生成世界观草稿，请审阅微调",
+      });
+    } catch (e) {
+      set({ aiBusy: null, error: (e as Error).message });
+    }
+  },
+
+  genOpening: async () => {
+    set({ aiBusy: "opening", error: null });
+    try {
+      const d = await api.post<OpeningDraft>("/assist/opening", {
+        world: worldObject(get()),
+      });
+      set({
+        openingContent: d.content || "",
+        openingOptions: d.options || [],
+        aiBusy: null,
+        toast: "已生成开场草稿",
+      });
+    } catch (e) {
+      set({ aiBusy: null, error: (e as Error).message });
+    }
+  },
+
+  save: async () => {
+    const f = get();
+    set({ saving: true, error: null });
+    try {
+      const payload = {
+        title: f.title,
+        description: f.description,
+        cover_url: f.coverUrl,
+        world_config: JSON.stringify(worldObject(f)),
+        opening_content: f.openingContent,
+      };
+      let id = f.storyId;
+      if (id) {
+        await api.put<Story>(`/stories/${id}`, payload);
+      } else {
+        const created = await api.post<Story>("/stories/", payload);
+        id = created.id;
+        set({ storyId: id });
+      }
+      set({ saving: false, toast: "已保存草稿" });
+      return id;
+    } catch (e) {
+      set({ saving: false, error: (e as Error).message });
+      return null;
+    }
+  },
+
+  publish: async () => {
+    // 先存盘再发布：发布端点对 world_config 做严格校验
+    const id = await get().save();
+    if (!id) return;
+    set({ saving: true, error: null });
+    try {
+      const s = await api.put<Story>(`/stories/${id}/status`, { status: "published" });
+      set({ status: s.status, saving: false, toast: "已发布，作品已在首页可玩" });
+    } catch (e) {
+      set({ saving: false, error: (e as Error).message });
+    }
+  },
+
+  unpublish: async () => {
+    const { storyId } = get();
+    if (!storyId) return;
+    set({ saving: true, error: null });
+    try {
+      const s = await api.put<Story>(`/stories/${storyId}/status`, { status: "draft" });
+      set({ status: s.status, saving: false, toast: "已转为草稿" });
+    } catch (e) {
+      set({ saving: false, error: (e as Error).message });
+    }
+  },
+
+  remove: async () => {
+    const { storyId } = get();
+    if (!storyId) return;
+    set({ saving: true, error: null });
+    try {
+      await api.del(`/stories/${storyId}`);
+      set({ saving: false });
+    } catch (e) {
+      set({ saving: false, error: (e as Error).message });
+      throw e;
+    }
+  },
+
+  showToast: (msg) => set({ toast: msg }),
+}));

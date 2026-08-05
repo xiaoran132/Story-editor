@@ -21,6 +21,9 @@ type AgentClient struct {
 	// streamClient 无整请求超时：SSE 流生命周期由调用方 ctx 控制，
 	// 复用 httpClient 的 90s Timeout 会在流中途截断。
 	streamClient *http.Client
+	// assistClient 用于创作辅助（/assist/*）：world（temp 0.9）与 opening（走完整 run_start）
+	// 可能超过 90s，给更长超时；但仍设上限，避免 agent 卡死时 Go 侧永挂。
+	assistClient *http.Client
 }
 
 // NewAgentClient 以 agent 服务地址（cfg.AgentURL，默认 http://localhost:8001）构造。
@@ -30,7 +33,8 @@ func NewAgentClient(serviceURL string) *AgentClient {
 		httpClient: &http.Client{
 			Timeout: 90 * time.Second,
 		},
-		streamClient: &http.Client{}, // 无 Timeout，靠 ctx 控时
+		streamClient: &http.Client{},                        // 无 Timeout，靠 ctx 控时
+		assistClient: &http.Client{Timeout: 180 * time.Second}, // 创作辅助更长超时
 	}
 }
 
@@ -319,6 +323,11 @@ func (c *AgentClient) post(ctx context.Context, path string, payload any) (*AIRe
 
 // postInto 向 AI 服务发送 JSON 请求，并把响应体解码进 out（通用于不同响应结构）。
 func (c *AgentClient) postInto(ctx context.Context, path string, payload, out any) error {
+	return c.postIntoWith(ctx, c.httpClient, path, payload, out)
+}
+
+// postIntoWith 同 postInto，但可指定 http.Client（如创作辅助用更长超时的 assistClient）。
+func (c *AgentClient) postIntoWith(ctx context.Context, client *http.Client, path string, payload, out any) error {
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshal request: %w", err)
@@ -330,7 +339,7 @@ func (c *AgentClient) postInto(ctx context.Context, path string, payload, out an
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := client.Do(httpReq)
 	if err != nil {
 		return fmt.Errorf("call ai service: %w", err)
 	}
@@ -345,4 +354,93 @@ func (c *AgentClient) postInto(ctx context.Context, path string, payload, out an
 		return fmt.Errorf("decode ai result: %w (raw: %s)", err, string(body))
 	}
 	return nil
+}
+
+// ===== 创作辅助（/assist/*）：Go 转发，前端不直连 agent（agent 无鉴权/CORS）。=====
+// 请求/响应字段对齐 agent/app/schemas.py（snake_case），复用 WorldConfig / Option。
+
+type AssistWorldRequest struct {
+	Idea  string `json:"idea"`
+	Style string `json:"style,omitempty"`
+}
+
+// WorldDraft 是 /assist/world 产出的世界观草稿，字段全集与 WorldConfig 对齐。
+type WorldDraft struct {
+	Background   string         `json:"background"`
+	Style        string         `json:"style"`
+	Rules        string         `json:"rules"`
+	Outline      string         `json:"outline"`
+	Characters   []any          `json:"characters"`
+	InitialState map[string]any `json:"initial_state"`
+	Attributes   map[string]any `json:"attributes"`
+}
+
+type AssistOpeningRequest struct {
+	World WorldConfig `json:"world"`
+}
+
+// OpeningDraft 是 /assist/opening 产出的开场草稿（options 仅供预览，不入库）。
+type OpeningDraft struct {
+	Content string   `json:"content"`
+	Options []Option `json:"options"`
+}
+
+type AssistPolishRequest struct {
+	Text        string `json:"text"`
+	Instruction string `json:"instruction,omitempty"`
+}
+
+type PolishDraft struct {
+	Text string `json:"text"`
+}
+
+type AssistBranchesRequest struct {
+	World   WorldConfig `json:"world"`
+	Content string      `json:"content"`
+	Count   int         `json:"count,omitempty"`
+}
+
+type BranchSuggestion struct {
+	Title   string `json:"title"`
+	Summary string `json:"summary"`
+}
+
+type BranchesResponse struct {
+	Branches []BranchSuggestion `json:"branches"`
+}
+
+// AssistWorld 从一句话灵感生成完整世界观草稿。
+func (c *AgentClient) AssistWorld(ctx context.Context, req AssistWorldRequest) (*WorldDraft, error) {
+	var out WorldDraft
+	if err := c.postIntoWith(ctx, c.assistClient, "/assist/world", req, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// AssistOpening 基于世界观生成开场草稿。
+func (c *AgentClient) AssistOpening(ctx context.Context, req AssistOpeningRequest) (*OpeningDraft, error) {
+	var out OpeningDraft
+	if err := c.postIntoWith(ctx, c.assistClient, "/assist/opening", req, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// AssistPolish 润色文本。
+func (c *AgentClient) AssistPolish(ctx context.Context, req AssistPolishRequest) (*PolishDraft, error) {
+	var out PolishDraft
+	if err := c.postIntoWith(ctx, c.assistClient, "/assist/polish", req, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// AssistBranches 为当前节点建议后续分支。
+func (c *AgentClient) AssistBranches(ctx context.Context, req AssistBranchesRequest) (*BranchesResponse, error) {
+	var out BranchesResponse
+	if err := c.postIntoWith(ctx, c.assistClient, "/assist/branches", req, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }

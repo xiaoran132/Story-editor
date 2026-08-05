@@ -61,7 +61,7 @@ func (h *StoryHandler) Update(c *gin.Context) {
 		return
 	}
 
-	var input service.StoryCreateInput
+	var input service.StoryUpdateInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		pkg.Error(c, pkg.BadRequest(err.Error()))
 		return
@@ -79,6 +79,47 @@ func (h *StoryHandler) Update(c *gin.Context) {
 	}
 
 	pkg.Success(c, story)
+}
+
+// SetStatus 切换作品发布状态（draft/published）。body: {"status": "..."}。
+func (h *StoryHandler) SetStatus(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		pkg.Error(c, pkg.BadRequest("invalid story id"))
+		return
+	}
+
+	var body struct {
+		Status string `json:"status"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		pkg.Error(c, pkg.BadRequest(err.Error()))
+		return
+	}
+
+	userID := middleware.GetUserID(c)
+	story, err := h.svc.SetStatus(id, userID, body.Status)
+	if err != nil {
+		pkg.Error(c, err)
+		return
+	}
+	if story == nil {
+		pkg.Error(c, pkg.NotFound("story not found"))
+		return
+	}
+
+	pkg.Success(c, story)
+}
+
+// ListMine 返回当前登录创作者的全部作品（含草稿）。
+func (h *StoryHandler) ListMine(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	stories, err := h.svc.ListMine(userID, 0, 100)
+	if err != nil {
+		pkg.Error(c, err)
+		return
+	}
+	pkg.SuccessWithMeta(c, stories.Stories, gin.H{"total": stories.Total})
 }
 
 func (h *StoryHandler) Delete(c *gin.Context) {

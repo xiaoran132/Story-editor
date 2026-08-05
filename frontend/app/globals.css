@@ -1038,3 +1038,224 @@ h2 {
     width: 100vw;
   }
 }
+
+/* ============================================================
+   创作编辑器（沿用星图主题变量，不引组件库）
+   ============================================================ */
+.ed-wrap {
+  position: relative;
+}
+.ed-h1 {
+  font-family: var(--font-display);
+  font-size: 26px;
+  letter-spacing: 0.01em;
+  margin: 8px 0 20px;
+}
+.ed-section {
+  margin: 0 0 30px;
+  padding: 20px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.ed-section .eyebrow {
+  display: block;
+  margin-bottom: 14px;
+}
+.ed-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+.ed-field:last-child {
+  margin-bottom: 0;
+}
+.ed-label {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-family: var(--font-display);
+  font-size: 13px;
+  color: var(--ink);
+}
+.ed-hint {
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: var(--muted);
+}
+.ed-textarea,
+.ed-input {
+  width: 100%;
+  padding: 9px 11px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.7;
+  outline: none;
+  resize: vertical;
+}
+.ed-textarea:focus,
+.ed-input:focus {
+  border-color: var(--glow);
+}
+.ed-select {
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 12px;
+}
+.ed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ed-add {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+/* 灵感区 */
+.ed-idea {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+.ed-idea .ed-textarea,
+.ed-idea .ed-input {
+  width: 100%;
+}
+/* 角色行 */
+.ed-char-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.4fr auto;
+  gap: 8px;
+  align-items: center;
+}
+/* 属性表 */
+.ed-attr-head,
+.ed-attr-row {
+  display: grid;
+  grid-template-columns: 1.4fr 0.9fr 1.2fr 44px 44px 28px;
+  gap: 8px;
+  align-items: center;
+}
+.ed-attr-head {
+  font-family: var(--font-display);
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+  padding: 0 2px;
+}
+.ed-attr-head span:first-child,
+.ed-attr-head span:nth-child(3) {
+  text-align: left;
+}
+.ed-check {
+  display: grid;
+  place-items: center;
+}
+.ed-check input {
+  accent-color: var(--star);
+  cursor: pointer;
+}
+.ed-row-del {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.ed-row-del:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: rgba(255, 128, 149, 0.08);
+}
+/* 开场选项预览 */
+.ed-opts-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+/* 发布栏 */
+.ed-publishbar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 18px 0 8px;
+  border-top: 1px solid var(--line);
+}
+.ed-del {
+  margin-left: auto;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-display);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.ed-del:hover,
+.ed-del.confirm {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+/* 我的作品卡片操作 */
+.ed-card-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+.ed-card-actions .ed-del {
+  margin-left: auto;
+}
+/* AI 生成中：轻微降透明 + 复用 pulse 呼吸 */
+.ai-generating {
+  animation: pulse 1.4s ease-in-out infinite;
+}
+/* Toast */
+.ed-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 32px;
+  transform: translateX(-50%);
+  padding: 10px 20px;
+  background: var(--surface-2);
+  border: 1px solid var(--glow);
+  border-radius: 999px;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 13px;
+  box-shadow: 0 6px 24px rgba(110, 168, 255, 0.18);
+  z-index: 60;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-generating {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+@media (max-width: 720px) {
+  .ed-char-row,
+  .ed-attr-head,
+  .ed-attr-row {
+    grid-template-columns: 1fr;
+  }
+  .ed-attr-head {
+    display: none;
+  }
+}

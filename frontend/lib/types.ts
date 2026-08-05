@@ -75,3 +75,50 @@ export interface SessionResult {
   current_node: StoryNode | null;
   nodes?: StoryNode[]; // 仅 GET /play/sessions/:id 返回，用于重建时间线
 }
+
+// ===== 创作编辑器：world_config 的对象形态与草稿类型 =====
+
+export type AttrType = "number" | "scalar" | "set";
+
+// 编辑器里属性以「有序行」编辑（便于改键名/排序）；存盘时派生成 attributes 对象 + initial_state。
+export interface AttrRowData {
+  key: string;
+  type: AttrType;
+  initial: number | string | string[]; // number→数值、scalar→字符串、set→字符串数组
+  hidden: boolean;
+  reveal: boolean;
+}
+
+export interface Character {
+  name: string;
+  role: string;
+  desc: string;
+}
+
+// world_config 的对象形态（对齐后端 WorldConfig；attributes/initial_state 存盘时由 AttrRowData[] 派生）。
+export interface WorldConfigObj {
+  background: string;
+  style: string;
+  rules: string;
+  outline: string;
+  characters: Character[];
+  initial_state: Record<string, unknown>;
+  attributes: Record<string, Record<string, unknown>>;
+}
+
+// /assist/world 响应
+export interface WorldDraft {
+  background: string;
+  style: string;
+  rules: string;
+  outline: string;
+  characters: unknown[];
+  initial_state: Record<string, unknown>;
+  attributes: Record<string, Record<string, unknown>>;
+}
+
+// /assist/opening 响应
+export interface OpeningDraft {
+  content: string;
+  options: Option[];
+}

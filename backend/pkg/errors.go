@@ -36,7 +36,9 @@ func Internal(msg string) *AppError {
 	return &AppError{StatusCode: http.StatusInternalServerError, BizCode: 500, Message: msg}
 }
 
-// NewBusinessError 业务错误码 10001-10011
+// 业务错误码：10001-10011 见 handoff 错误码表；创作系统新增
+//   10012 world_config 结构校验失败（见 pkg/worldvalidate.go）
+//   10013 AI 服务不可用（assist 转发失败，见 handler/assist.go）
 func NewBusinessError(code int) *AppError {
 	return &AppError{StatusCode: http.StatusBadRequest, BizCode: code, Message: "business error"}
 }
