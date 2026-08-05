@@ -4,9 +4,10 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/store/authStore";
-import type { UserProfile, UserSettings } from "@/lib/types";
+import LLMSettings from "@/components/LLMSettings";
+import type { UserProfile } from "@/lib/types";
 
-// 个人主页：资料展示 + 编辑昵称/简介 + 设置区（安全存自带 LLM key）。
+// 个人主页：资料展示 + 编辑昵称/简介 + BYOK 设置（多连接 + 环节绑定，见 LLMSettings）。
 export default function MePage() {
   const router = useRouter();
   const initAuth = useAuthStore((s) => s.init);
@@ -15,12 +16,8 @@ export default function MePage() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [nickname, setNickname] = useState("");
   const [bio, setBio] = useState("");
-  const [settings, setSettings] = useState<UserSettings | null>(null);
-  const [keyInput, setKeyInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
-  const [savingKey, setSavingKey] = useState(false);
-  const [testing, setTesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -33,15 +30,12 @@ export default function MePage() {
       router.replace("/");
       return;
     }
-    Promise.all([
-      api.get<UserProfile>("/auth/profile"),
-      api.get<UserSettings>("/auth/settings"),
-    ])
-      .then(([p, s]) => {
+    api
+      .get<UserProfile>("/auth/profile")
+      .then((p) => {
         setProfile(p);
         setNickname(p.nickname);
         setBio(p.bio);
-        setSettings(s);
       })
       .catch((e) => setError((e as Error).message))
       .finally(() => setLoading(false));
@@ -73,54 +67,7 @@ export default function MePage() {
     }
   };
 
-  const saveKey = async () => {
-    setSavingKey(true);
-    setError(null);
-    try {
-      const s = await api.put<UserSettings>("/auth/settings", { llm_api_key: keyInput.trim() });
-      setSettings(s);
-      setKeyInput("");
-      flash(s.has_llm_key ? "API Key 已保存" : "API Key 已清除");
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setSavingKey(false);
-    }
-  };
-
-  const clearKey = async () => {
-    setKeyInput("");
-    setSavingKey(true);
-    setError(null);
-    try {
-      const s = await api.put<UserSettings>("/auth/settings", { llm_api_key: "" });
-      setSettings(s);
-      flash("API Key 已清除");
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setSavingKey(false);
-    }
-  };
-
-  const testKey = async () => {
-    if (!keyInput.trim()) {
-      setError("请先填入要测试的 Key");
-      return;
-    }
-    setTesting(true);
-    setError(null);
-    try {
-      const r = await api.post<{ ok: boolean; detail: string }>("/assist/validate-key", {
-        llm_api_key: keyInput.trim(),
-      });
-      flash(r.ok ? "连接成功，Key 可用" : `不可用：${r.detail || "鉴权失败"}`);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setTesting(false);
-    }
-  };
+  const isAdmin = useAuthStore((s) => s.user?.role === "admin");
 
   return (
     <div className="wrap">
@@ -128,9 +75,16 @@ export default function MePage() {
         <span className="back" onClick={() => router.push("/")}>
           ← 返回首页
         </span>
-        <button className="ghost-btn" onClick={() => router.push("/mine")}>
-          我的作品
-        </button>
+        <div className="topbar-actions">
+          {isAdmin && (
+            <button className="ghost-btn" onClick={() => router.push("/admin")}>
+              平台设置
+            </button>
+          )}
+          <button className="ghost-btn" onClick={() => router.push("/mine")}>
+            我的作品
+          </button>
+        </div>
       </div>
 
       <h1 className="ed-h1">个人主页</h1>
@@ -168,46 +122,8 @@ export default function MePage() {
             </button>
           </section>
 
-          {/* 设置：自带 LLM key */}
-          <section className="ed-section">
-            <span className="eyebrow">AI 设置</span>
-            <p className="me-desc">
-              填入你自己的 DeepSeek API Key（加密存储）。配置后将用于你的 AI 生成
-              <span className="ed-hint">（生成接入即将上线；未配置时使用平台额度）</span>
-            </p>
-            <div className="me-key-status">
-              当前：
-              {settings?.has_llm_key ? (
-                <span className="badge active">已配置 {settings.llm_key_hint || ""}</span>
-              ) : (
-                <span className="badge ended">未配置</span>
-              )}
-            </div>
-            <label className="ed-field">
-              <span className="ed-label">DeepSeek API Key</span>
-              <input
-                className="ed-input"
-                type="password"
-                placeholder="sk-..."
-                value={keyInput}
-                autoComplete="off"
-                onChange={(e) => setKeyInput(e.target.value)}
-              />
-            </label>
-            <div className="me-key-actions">
-              <button className="primary-btn" disabled={savingKey || !keyInput.trim()} onClick={saveKey}>
-                {savingKey ? "保存中…" : "保存 Key"}
-              </button>
-              <button className="ghost-btn" disabled={testing || !keyInput.trim()} onClick={testKey}>
-                {testing ? "测试中…" : "测试连接"}
-              </button>
-              {settings?.has_llm_key && (
-                <button className="ed-del" onClick={clearKey}>
-                  清除已存 Key
-                </button>
-              )}
-            </div>
-          </section>
+          {/* AI 连接（BYOK）：多连接 + 环节绑定 */}
+          <LLMSettings flash={flash} />
         </>
       )}
 

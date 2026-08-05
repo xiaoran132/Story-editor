@@ -23,6 +23,8 @@ interface EditorForm {
   attributes: AttrRowData[]; // 有序、可改键；存盘时派生 attributes 对象 + initial_state
   openingContent: string;
   openingOptions: Option[]; // 仅预览，不入库（开场 options 游玩时由后端重生成）
+  recWriteModel: string; // 作者推荐的续写模型（仅标注展示给玩家，不自动套用）
+  recReviewModel: string; // 作者推荐的审校模型
 }
 
 interface EditorState extends EditorForm {
@@ -33,8 +35,10 @@ interface EditorState extends EditorForm {
   aiBusy: "world" | "opening" | null; // 分区 loading，避免整页禁用
   error: string | null;
   toast: string | null;
+  connectionId: string; // BYOK：编辑器选用的连接 id（覆盖 world 环节绑定）；空=按绑定/平台
 
   reset: () => void;
+  setConnectionId: (id: string) => void;
   loadStory: (id: string) => Promise<void>;
   setField: <K extends keyof EditorForm>(key: K, value: EditorForm[K]) => void;
   // 角色
@@ -68,6 +72,8 @@ const EMPTY_FORM: EditorForm = {
   attributes: [],
   openingContent: "",
   openingOptions: [],
+  recWriteModel: "",
+  recReviewModel: "",
 };
 
 // 按类型给属性初值一个合理默认（切换 type 时重置，避免残留错型值）。
@@ -107,8 +113,12 @@ function deriveAttrs(rows: AttrRowData[]) {
 }
 
 // 组装 world_config 的对象形态（供 /assist/opening 请求 + 存盘序列化共用）。
+// recommended_models 只在填了时写入（作者推荐，仅标注展示、不自动套用）。
 function worldObject(f: EditorForm) {
   const { attributes, initial_state } = deriveAttrs(f.attributes);
+  const rec: Record<string, { model: string }> = {};
+  if (f.recWriteModel.trim()) rec.write = { model: f.recWriteModel.trim() };
+  if (f.recReviewModel.trim()) rec.review = { model: f.recReviewModel.trim() };
   return {
     background: f.background,
     style: f.style,
@@ -117,6 +127,7 @@ function worldObject(f: EditorForm) {
     characters: f.characters,
     initial_state,
     attributes,
+    ...(Object.keys(rec).length ? { recommended_models: rec } : {}),
   };
 }
 
@@ -167,6 +178,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   aiBusy: null,
   error: null,
   toast: null,
+  connectionId: "",
 
   reset: () =>
     set({
@@ -178,7 +190,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       aiBusy: null,
       error: null,
       toast: null,
+      connectionId: "",
     }),
+
+  setConnectionId: (id) => set({ connectionId: id }),
 
   loadStory: async (id) => {
     set({ loading: true, error: null });
@@ -207,6 +222,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         ),
         openingContent: s.opening_content || "",
         openingOptions: [],
+        recWriteModel: String(
+          ((w.recommended_models as Record<string, { model?: string }>)?.write?.model) ?? ""
+        ),
+        recReviewModel: String(
+          ((w.recommended_models as Record<string, { model?: string }>)?.review?.model) ?? ""
+        ),
         loading: false,
       });
     } catch (e) {
@@ -254,6 +275,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const d = await api.post<WorldDraft>("/assist/world", {
         idea: idea.trim(),
         style: style.trim(),
+        connection_id: get().connectionId || undefined,
       });
       set({
         background: d.background || "",
@@ -275,6 +297,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     try {
       const d = await api.post<OpeningDraft>("/assist/opening", {
         world: worldObject(get()),
+        connection_id: get().connectionId || undefined,
       });
       set({
         openingContent: d.content || "",

@@ -17,7 +17,7 @@ def make_stream(calls_chunks):
     """
     counter = {"n": 0}
 
-    async def fake(messages):
+    async def fake(messages, **_kw):  # 收 llm_cfg 等关键字参数（BYOK 后 chat_stream 新签名）
         i = counter["n"]
         counter["n"] += 1
         for c in calls_chunks[min(i, len(calls_chunks) - 1)]:

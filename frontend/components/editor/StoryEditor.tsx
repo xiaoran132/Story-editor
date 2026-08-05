@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useEditorStore } from "@/store/editorStore";
+import { api } from "@/lib/api";
+import type { LLMConnection } from "@/lib/types";
 import Textarea from "./Textarea";
 import CharacterList from "./CharacterList";
 import AttrTable from "./AttrTable";
@@ -15,6 +17,12 @@ export default function StoryEditor() {
   const [idea, setIdea] = useState("");
   const [ideaStyle, setIdeaStyle] = useState("");
   const [confirmDel, setConfirmDel] = useState(false);
+  const [conns, setConns] = useState<LLMConnection[]>([]);
+
+  // 拉取用户的 LLM 连接，供「使用连接」下拉（覆盖 world 环节绑定）。未登录/无连接则下拉只有默认项。
+  useEffect(() => {
+    api.get<LLMConnection[]>("/llm/connections").then((c) => setConns(c || [])).catch(() => {});
+  }, []);
 
   // toast 自动消隐
   useEffect(() => {
@@ -72,6 +80,23 @@ export default function StoryEditor() {
             value={ideaStyle}
             onChange={(e) => setIdeaStyle(e.target.value)}
           />
+          {conns.length > 0 && (
+            <label className="ed-field">
+              <span className="ed-label">使用连接 <span className="ed-hint">（AI 生成用哪套 key，默认按设置）</span></span>
+              <select
+                className="ed-input ed-select"
+                value={s.connectionId}
+                onChange={(e) => s.setConnectionId(e.target.value)}
+              >
+                <option value="">默认（按环节绑定 / 平台）</option>
+                {conns.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}（{c.default_model}）
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <button
             className="primary-btn"
             disabled={anyBusy}
@@ -132,7 +157,18 @@ export default function StoryEditor() {
         )}
       </section>
 
-      {/* 4. 发布栏 */}
+      {/* 4. 推荐模型（可选，仅标注给玩家） */}
+      <section className="ed-section">
+        <span className="eyebrow">④ 推荐模型（可选）</span>
+        <p className="me-desc">
+          标注你创作/调试这部作品时各环节用的模型。
+          <span className="ed-hint">仅作推荐展示——玩家用自己的连接游玩，不会自动套用你的配置。</span>
+        </p>
+        <Textarea label="推荐续写模型" value={s.recWriteModel} onChange={(v) => s.setField("recWriteModel", v)} rows={1} hint="如 deepseek-reasoner" />
+        <Textarea label="推荐审校模型" value={s.recReviewModel} onChange={(v) => s.setField("recReviewModel", v)} rows={1} hint="如 deepseek-chat" />
+      </section>
+
+      {/* 5. 发布栏 */}
       <div className="ed-publishbar">
         <button className="ghost-btn" disabled={anyBusy} onClick={() => s.save()}>
           {s.saving ? "保存中…" : "存草稿"}

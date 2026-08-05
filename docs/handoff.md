@@ -15,11 +15,11 @@ Story Editor 的长期愿景是“AI 驱动的互动剧情共创社区”：用�
 
 | 域 | 已完成 | 未完成或限制 |
 |---|---|---|
-| 用户 | 后端注册/登录/JWT/资料、凭证分表；**前端登录接入完成**（可选登录，未登录仍匿名 guest；登录后迁移本浏览器 guest 会话到账号）；**个人主页 `/me`（资料 + 编辑昵称/简介）+ 设置（自带 DeepSeek key，AES-256-GCM 加密存 `User.LLMKeyCipher`，`ENCRYPTION_KEY` 独立于 JWT_SECRET；读接口只回打码 hint）** | OAuth/密码找回未做；**BYOK：存了 key 但未接入生成（仍用平台 key）**；平台 key 额度限制未做 |
+| 用户 | 后端注册/登录/JWT/资料、凭证分表；**前端登录接入完成**（可选登录，未登录仍匿名 guest；登录后迁移本浏览器 guest 会话到账号）；**个人主页 `/me`（资料 + 编辑昵称/简介 + BYOK 连接管理）**；**BYOK 已接入生成**（连接=账号级、模型=作品级，见 §12） | OAuth/密码找回未做；平台 key 额度限制未做；旧 `User.LLMKeyCipher`（单 key）已废弃、列留孤儿 |
 | 作品 | Story CRUD、作品列表、世界观/初始状态 JSON；**创作编辑器(MVP)**：`world_config`/`opening_content` 可写入、运行时校验(`pkg.ValidateWorldConfig`，草稿宽松/发布严格)、发布态切换、我的作品列表、assist Go 转发 | 封面上传、`/assist/polish`·`/assist/branches` 编辑内接入未做 |
 | 游玩 | 开局、续写、自由输入、回溯、读档、删档、剧情树、状态合并 | 真实环境下的多回合质量/延迟指标尚未沉淀 |
 | Agent | **流式生成(SSE)**、属性类型规整（含 hidden）、故事大纲导演、滚动摘要、审校分级 + 有记忆修订 + 超限降级交付 | RAG、多 Agent fan-out、独立 director/recall/write 子图未做 |
-| 前端 | 作品选择、**作品详情/过渡页**、游玩(顶栏剧本名 + **左侧状态台 + 正文居中 + 星图树右抽屉**布局)、历史会话、正文逐字流式、属性揭示门控可见性、**登录/注册 + 会话迁移**、**创作编辑器**(`/create`·`/edit/:id`·`/mine`，AI 优先 + 结构化属性表)、**个人主页 `/me`**(资料编辑 + AI 设置存/测/清 key) | 社区、移动端/无障碍/自动化测试未做 |
+| 前端 | 作品选择、**作品详情/过渡页**、游玩(顶栏剧本名 + **左侧状态台 + 正文居中 + 星图树右抽屉**布局)、历史会话、正文逐字流式、属性揭示门控可见性、**登录/注册 + 会话迁移**、**创作编辑器**(`/create`·`/edit/:id`·`/mine`，AI 优先 + 结构化属性表)、**个人主页 `/me`**(资料编辑 + BYOK 连接管理)、**作品详情页按作品配模型 + admin `/admin` 平台设置** | 社区、移动端/无障碍/自动化测试未做 |
 | 社区 | API 路由与 handler 占位 | 浏览、详情、点赞、评论、搜索、排行榜均未实现 |
 | 商业化 | SQL 蓝本中有概念 | 付费、打赏、分成、成就未做 |
 
@@ -180,9 +180,12 @@ prepare
 
 | 域 | 接口 |
 |---|---|
-| 鉴权 | `POST /auth/register`、`POST /auth/login`、`GET/PUT /auth/profile` |
+| 鉴权 | `POST /auth/register`、`POST /auth/login`、`GET/PUT /auth/profile`（登录签发的 JWT 现携带 `role` 快照） |
 | 作品/节点 | `POST/GET /stories`、`GET/PUT/DELETE /stories/:id`、`POST /stories/:id/nodes`、`GET /nodes/:id/children`、`PUT/DELETE /nodes/:id` |
 | 游玩 | `POST /play/sessions`（建空会话）、`POST /play/sessions/:id/opening/stream`（SSE 流式开局，幂等）、`GET /play/sessions`、`GET/DELETE /play/sessions/:id`、`POST /play/sessions/:id/choice/stream`（SSE 流式续写）、`POST /play/sessions/:id/backtrack` |
+| 创作辅助 | `POST /assist/world`、`/opening`、`/polish`、`/branches`（AuthRequired；Go 转发 agent；请求可带 `connection_id` 覆盖 world 环节连接） |
+| BYOK（AuthRequired） | `GET/POST /llm/connections`、`PUT/DELETE /llm/connections/:id`、`POST /llm/connections/test`、`GET /llm/connections/:id/models`（拉端点模型列表）、`GET/PUT /llm/story-config/:storyId`（玩家在某作品的模型配置） |
+| 平台设置（AuthRequired+RequireAdmin） | `GET/PUT /admin/llm/platform`、`POST /admin/llm/platform/test` |
 | 社区（未实现） | `GET /community/stories`、`GET /community/stories/:id`、`POST /community/stories/:id/like`、`POST /community/stories/:id/comments` |
 
 游玩组挂 `middleware.AuthOptional`：带有效 JWT 则归属登录用户，否则回退 guest（匿名可玩）。前端 `api.ts` 每请求带 `Authorization: Bearer`（token 存 localStorage）；匿名建的会话 id 记在 `guestSessions`，登录时 `POST /play/sessions/migrate` 领取到账号（`MigrateGuestSessions` 只迁 guest 名下且 id 命中的，偷不走他人会话）。注意共享 guest 下 `GET /play/sessions`（匿名）返回的是全体 guest 会话——0 用户阶段无碍，多用户前需改为每浏览器独立匿名身份。
@@ -195,8 +198,10 @@ prepare
 | `POST /opening/complete` | 为已写定的开场正文补起始选项 + summary（预设 opening_content 的作品） |
 | `POST /merge-check` | 在 Go 的 `state_delta` 硬过滤之后判断同层候选是否语义等价 |
 | `POST /assist/world`、`/opening`、`/polish`、`/branches` | 创作辅助；**经 Go `/api/v1/assist/*` 转发**给创作编辑器消费（agent 无鉴权/CORS，前端不直连；Go 侧用 180s `assistClient`） |
-| `POST /assist/validate-key` | 校验用户自带 LLM key 是否可用（一次性 ping，**独立于 `_build_llm` 缓存与生成管线**，不落库）；经 Go `/api/v1/assist/validate-key` 供个人设置页「测试连接」 |
+| `POST /assist/validate-key` | 校验某 LLM key 是否可用（一次性 ping，**独立于 `_build_llm` 缓存与生成管线**，不落库）；经 Go 的 `/llm/connections/test`、`/admin/llm/platform/test` 复用 |
 | `GET /health` | 检查模型配置状态 |
+
+**BYOK（LLMConfig 下发）**：`/generate/stream`、`/continue/stream`、`/opening/complete` 及 `/assist/*` 请求体可携带 `llm_write`/`llm_review`（play）或 `llm`（assist 单次），字段 `{provider,base_url,api_key,model}`。Go 侧按环节解密解析后下发；agent 用它构造**临时** `ChatOpenAI`（`_build_ephemeral`，不进全局缓存），缺字段/未下发时回退 `.env` 默认。写手用 `llm_write`、审校用 `llm_review`。**agent 不碰数据库**，所有 key/策略在 Go。
 
 Agent 的开场和续写响应统一包含：`content`、`options`、`state_delta`、`summary`、`is_ending`、`ending_type`。详见 [`../agent/README.md`](../agent/README.md)。
 
@@ -335,3 +340,25 @@ cd agent
 - [ ] 跑 Go 测试与 Agent 离线测试。
 - [ ] 用 `scripts/dev.ps1` 启动三进程，完成一次开局、续写、回溯、读档的人工冒烟。
 - [ ] 开始新功能前，先确认它属于“当前游玩留存优先级”还是未来愿景，避免跳过关键验证。
+
+## 12. BYOK 多供应商 / 分环节模型 / 平台设置 / admin 门槛
+
+**目标**：支持任意 OpenAI 兼容 key；平台 key 入库由管理员管理；游玩烧**玩家自己**的 key，未配回退平台。
+**分层**：连接（key/base_url）是**用户级**（账号里管一次）；「用哪个模型」是**作品级**（每玩家在每作品各配各的）。作者的推荐模型只作标注、不自动套用（作者与玩家配置大概率不同，复刻也用不了）。
+
+**数据模型**
+- `llm_connections`（每用户多条）：`name / provider(标签) / base_url / api_key_cipher(AES-GCM) / default_model`。
+- `user_story_llm_configs`（复合主键 user_id+story_id）：`bindings` TEXT/JSON = `{"write":{"conn":"<uuid>","model":""},"review":{...}}`；`model` 空→回退连接 `default_model`。仅 write/review。
+- `platform_llm_settings`（全局，admin 管，每环节一行）：`stage PK / provider / base_url / api_key_cipher / model`。
+- 作者推荐模型：`stories.world_config.recommended_models = {"write":{"model":"..."},"review":{...}}`（前端编辑器写、作品详情页只读展示；后端透传，不参与解析）。
+- 旧 `User.LLMKeyCipher`（单 key）**废弃**，列留孤儿（GORM 不删列，0 用户未迁移）。
+
+**解析优先级**（`service.LLMResolver`，单测见 `llm_resolver_test.go`）：
+- 游玩（`play.go` 调 `ResolveForPlay(userID, storyID, stage)`，stage∈{write,review}）：**作品级配置 → 平台该环节 → nil**（agent 回退 `.env`）。
+- 创作（`assist.go` 调 `ResolveForAssist(userID, overrideConnID)`）：**编辑器覆盖连接 → 平台 world → nil**。
+- 命中连接/平台时解密 key；连接失效/解密失败**跳到下一档**不硬报错。
+
+**下发链路**：Go 解析出 `AgentLLMConfig{provider,base_url,api_key,model}` → 塞进 agent 请求体（`llm_write`/`llm_review`/`llm`）→ agent `_build_ephemeral` 构造临时 ChatOpenAI（不进缓存）。**agent 不碰库**，key/策略全在 Go。
+
+**admin 门槛（最小）**：JWT 携带 `role` 快照（`pkg.GenerateToken(userID, role, secret)`）；`middleware.RequireAdmin()` 校验；`/admin/llm/*` 挂 `AuthRequired+RequireAdmin`。
+- **产生第一个 admin**：手动改库 `UPDATE users SET role='admin' WHERE username='<你的用户名>';`，然后该用户**重新登录**（role 是 JWT 签发时快照，旧 token 不含新角色）。前端 `/admin` 与 `/me` 的「平台设置」入口按 `user.role==='admin'` 显示；后端才是硬防线。

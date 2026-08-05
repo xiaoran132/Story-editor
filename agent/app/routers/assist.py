@@ -24,6 +24,13 @@ from ..schemas import (
 router = APIRouter(prefix="/assist", tags=["assist"])
 
 
+def _cfg(x) -> dict | None:
+    """把请求里的 LLMConfig 转成下发字典；无 api_key 时返回 None（agent 回退 .env 默认）。"""
+    if x is not None and getattr(x, "api_key", ""):
+        return x.model_dump()
+    return None
+
+
 def _fail(what: str, e: Exception) -> HTTPException:
     return HTTPException(status_code=502, detail=f"ai {what} failed: {e}")
 
@@ -38,7 +45,7 @@ def generate_world(req: GenerateWorldRequest) -> WorldDraft:
         user += f"期望风格：{req.style}\n"
     user += "\n请据此生成完整世界观设定。"
     try:
-        data = chat_json(WORLD_SYSTEM, user, temperature=0.9)
+        data = chat_json(WORLD_SYSTEM, user, temperature=0.9, llm_cfg=_cfg(req.llm))
     except Exception as e:  # noqa: BLE001
         raise _fail("generate world", e) from e
     return WorldDraft(**data)
@@ -48,7 +55,10 @@ def generate_world(req: GenerateWorldRequest) -> WorldDraft:
 def generate_opening(req: GenerateOpeningRequest) -> OpeningDraft:
     """基于世界观生成开场剧情草稿（复用游玩侧生成图）。"""
     try:
-        result = run_start(req.world.model_dump(), req.world.initial_state or {})
+        result = run_start(
+            req.world.model_dump(), req.world.initial_state or {},
+            _cfg(req.llm_write), _cfg(req.llm_review),
+        )
     except Exception as e:  # noqa: BLE001
         raise _fail("generate opening", e) from e
     return OpeningDraft(
@@ -67,7 +77,7 @@ def polish(req: PolishRequest) -> PolishDraft:
         user += f"润色要求：{req.instruction}\n\n"
     user += f"原文：\n{req.text}"
     try:
-        data = chat_json(POLISH_SYSTEM, user, temperature=0.7)
+        data = chat_json(POLISH_SYSTEM, user, temperature=0.7, llm_cfg=_cfg(req.llm))
     except Exception as e:  # noqa: BLE001
         raise _fail("polish", e) from e
     return PolishDraft(text=str(data.get("text", "")))
@@ -92,7 +102,7 @@ def suggest_branches(req: SuggestBranchesRequest) -> BranchesResponse:
     lines.append(f"\n请给出 {count} 条后续分支走向。")
 
     try:
-        data = chat_json(BRANCH_SYSTEM, "\n".join(lines), temperature=0.9)
+        data = chat_json(BRANCH_SYSTEM, "\n".join(lines), temperature=0.9, llm_cfg=_cfg(req.llm))
     except Exception as e:  # noqa: BLE001
         raise _fail("suggest branches", e) from e
     branches = [BranchSuggestion(**b) for b in (data.get("branches") or []) if isinstance(b, dict)]

@@ -269,7 +269,7 @@ def review(state: StoryState) -> dict[str, Any]:
         f"{candidate}\n"
         "\n请仅按系统要求返回审校 JSON。"
     )
-    verdict = chat_json(REVIEW_SYSTEM, prompt, temperature=0.2)
+    verdict = chat_json(REVIEW_SYSTEM, prompt, temperature=0.2, llm_cfg=state.get("llm_cfg"))
     passed = verdict.get("passed") is True
     issues = verdict.get("issues") or []
     if isinstance(issues, list):
@@ -346,7 +346,7 @@ def normalize(state: StoryState) -> dict[str, Any]:
 # STRUCTURE_SYSTEM 兜底；再 normalize + review，拒绝则有记忆修订、超限则降级交付。
 # prepare/normalize/review 为共享纯函数；complete_opening 走非流式。
 
-def _structure_fallback(state: dict[str, Any], prose: str) -> dict[str, Any]:
+def _structure_fallback(state: dict[str, Any], prose: str, llm_cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     """哨兵后的 JSON 尾缺失/非法时，据已写好的正文补出结构化元数据（保住正文不重来）。"""
     prompt = (
         state["user_prompt"]
@@ -354,7 +354,7 @@ def _structure_fallback(state: dict[str, Any], prose: str) -> dict[str, Any]:
         + prose
         + "\n请只为上面这段正文输出结构化元数据 JSON（不要重写正文）。"
     )
-    return chat_json(STRUCTURE_SYSTEM, prompt)
+    return chat_json(STRUCTURE_SYSTEM, prompt, llm_cfg=llm_cfg)
 
 
 def _split_sentinel(buf: str) -> tuple[str, str]:
@@ -371,6 +371,9 @@ async def _stream_pipeline(mode: str, base_state: dict[str, Any]) -> AsyncIterat
     异常（LLMParseError/ReviewExhaustedError/其它）打点后原样抛出，由路由转 SSE error 帧。"""
     prep = prepare(base_state)
     state = {**base_state, **prep}
+    # BYOK：写手（正文/结构化兜底）用 llm_write，审校用 llm_review；缺则 agent 回退 .env 默认。
+    llm_write = base_state.get("llm_write")
+    llm_review = base_state.get("llm_review")
     max_retries = max(0, get_settings().ai_review_max_retries)
     start = time.perf_counter()
     ttfb_ms: int | None = None
@@ -389,7 +392,7 @@ async def _stream_pipeline(mode: str, base_state: dict[str, Any]) -> AsyncIterat
             buf = ""
             emitted = 0
             hold = len(_SENTINEL) - 1  # 末尾暂留，避免把半个哨兵当正文发出
-            async for chunk in chat_stream(writer_msgs):
+            async for chunk in chat_stream(writer_msgs, llm_cfg=llm_write):
                 if ttfb_ms is None:
                     ttfb_ms = round((time.perf_counter() - start) * 1000)
                 buf += chunk
@@ -411,14 +414,15 @@ async def _stream_pipeline(mode: str, base_state: dict[str, Any]) -> AsyncIterat
                 except json.JSONDecodeError:
                     tail = None
             if not isinstance(tail, dict):
-                tail = _structure_fallback(state, prose)  # 兜底：保住正文，补结构化尾
+                tail = _structure_fallback(state, prose, llm_write)  # 兜底：保住正文，补结构化尾
 
             raw = {"content": prose, **tail}
             result = normalize(
                 {"raw": raw, "known_keys": state["known_keys"], "attr_types": state["attr_types"]}
             )["result"]
 
-            rv = review({"user_prompt": state["user_prompt"], "raw": raw, "review_failures": failures})
+            rv = review({"user_prompt": state["user_prompt"], "raw": raw,
+                         "review_failures": failures, "llm_cfg": llm_review})
             failures = rv["review_failures"]
             feedback = rv["review_feedback"]
             # 通过 或 重写耗尽 → 都交付本稿（耗尽为降级交付，不硬失败）。
@@ -463,22 +467,28 @@ def run_continue_stream(
     current_state: dict[str, Any],
     choice: str,
     revealed_attrs: list[str] | None = None,
+    llm_write: dict[str, Any] | None = None,
+    llm_review: dict[str, Any] | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     return _stream_pipeline(
         "continue",
         {"mode": "continue", "world": world, "history": history,
          "current_state": current_state, "choice": choice,
-         "revealed_attrs": revealed_attrs or []},
+         "revealed_attrs": revealed_attrs or [],
+         "llm_write": llm_write, "llm_review": llm_review},
     )
 
 
 def run_start_stream(
     world: dict[str, Any], initial_state: dict[str, Any],
     revealed_attrs: list[str] | None = None,
+    llm_write: dict[str, Any] | None = None,
+    llm_review: dict[str, Any] | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     return _stream_pipeline(
         "start", {"mode": "start", "world": world, "initial_state": initial_state,
-                  "revealed_attrs": revealed_attrs or []},
+                  "revealed_attrs": revealed_attrs or [],
+                  "llm_write": llm_write, "llm_review": llm_review},
     )
 
 
@@ -497,21 +507,26 @@ def _drain(agen: AsyncIterator[dict[str, Any]]) -> dict[str, Any]:
     return asyncio.run(collect())
 
 
-def run_start(world: dict[str, Any], initial_state: dict[str, Any]) -> dict[str, Any]:
+def run_start(
+    world: dict[str, Any], initial_state: dict[str, Any],
+    llm_write: dict[str, Any] | None = None, llm_review: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """同步开场（drain 流式管线取最终结果）。"""
-    return _drain(run_start_stream(world, initial_state))
+    return _drain(run_start_stream(world, initial_state, None, llm_write, llm_review))
 
 
 def run_continue(
     world: dict[str, Any], history: list[dict[str, Any]],
     current_state: dict[str, Any], choice: str,
+    llm_write: dict[str, Any] | None = None, llm_review: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """同步续写（drain 流式管线取最终结果）。"""
-    return _drain(run_continue_stream(world, history, current_state, choice))
+    return _drain(run_continue_stream(world, history, current_state, choice, None, llm_write, llm_review))
 
 
 def complete_opening(
-    world: dict[str, Any], initial_state: dict[str, Any], content: str
+    world: dict[str, Any], initial_state: dict[str, Any], content: str,
+    llm_write: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """为已写定的开场正文补生成起始选项 + 前情提要（预设 opening_content 的作品，非流式）。"""
     known = list((initial_state or {}).keys())
@@ -522,6 +537,6 @@ def complete_opening(
     _write_attr_types(lines, attr_types)
     lines.append("\n已写定的开场正文：\n" + content)
     lines.append("\n请为这段开场补出玩家的起始选项与前情提要（不要改写正文）。")
-    raw = chat_json(OPENING_COMPLETE_SYSTEM, "\n".join(lines))
+    raw = chat_json(OPENING_COMPLETE_SYSTEM, "\n".join(lines), llm_cfg=llm_write)
     raw["content"] = content
     return normalize({"raw": raw, "known_keys": known, "attr_types": attr_types})["result"]

@@ -10,12 +10,15 @@ import (
 
 type JWTClaims struct {
 	UserID uuid.UUID `json:"user_id"`
+	// Role 是签发时刻的角色快照（user/admin）。提权后需重新登录才能拿到带新 role 的 token。
+	Role string `json:"role"`
 	jwtlib.RegisteredClaims
 }
 
-func GenerateToken(userID uuid.UUID, secret string) (string, error) {
+func GenerateToken(userID uuid.UUID, role, secret string) (string, error) {
 	claims := JWTClaims{
 		UserID: userID,
+		Role:   role,
 		RegisteredClaims: jwtlib.RegisteredClaims{
 			ExpiresAt: jwtlib.NewNumericDate(time.Now().Add(72 * time.Hour)),
 			IssuedAt:  jwtlib.NewNumericDate(time.Now()),

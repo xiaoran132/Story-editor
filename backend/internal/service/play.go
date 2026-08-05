@@ -21,6 +21,7 @@ type PlayService struct {
 	nodes    *repository.NodeRepository
 	stories  *repository.StoryRepository
 	ai       *AgentClient
+	resolver *LLMResolver // BYOK：按玩家 write/review 环节解析下发配置
 }
 
 func NewPlayService(
@@ -28,8 +29,20 @@ func NewPlayService(
 	nodes *repository.NodeRepository,
 	stories *repository.StoryRepository,
 	ai *AgentClient,
+	resolver *LLMResolver,
 ) *PlayService {
-	return &PlayService{sessions: sessions, nodes: nodes, stories: stories, ai: ai}
+	return &PlayService{sessions: sessions, nodes: nodes, stories: stories, ai: ai, resolver: resolver}
+}
+
+// resolvePlay 解析某玩家在某作品下的 write + review 下发配置（用于开场/续写）。
+// 按作品级配置解析（每玩家在每作品各配各的模型）；resolver 缺省或出错时回退 nil。
+func (s *PlayService) resolvePlay(ctx context.Context, playerID, storyID uuid.UUID) (write, review *AgentLLMConfig) {
+	if s.resolver == nil {
+		return nil, nil
+	}
+	write, _ = s.resolver.ResolveForPlay(ctx, playerID, storyID, StageWrite)
+	review, _ = s.resolver.ResolveForPlay(ctx, playerID, storyID, StageReview)
+	return write, review
 }
 
 // SessionResult 是游玩接口返回的组合 DTO：会话 + 当前节点（+ 可选整局节点列表）。
@@ -96,7 +109,7 @@ func streamFixedText(text string, onDelta func(string)) {
 // StartOpeningStream 为空会话流式生成开场并落根节点：正文增量经 onDelta 外发，结束落库。
 // 幂等：若根节点已存在（刷新/重复触发），直接返回既有开场，不重复生成。
 func (s *PlayService) StartOpeningStream(
-	sessionID uuid.UUID, onDelta func(string), onRevise func(),
+	sessionID, playerID uuid.UUID, onDelta func(string), onRevise func(),
 ) (*SessionResult, error) {
 	ctx := context.Background()
 
@@ -120,6 +133,7 @@ func (s *PlayService) StartOpeningStream(
 	}
 	world := parseWorld(story.WorldConfig)
 	initialState := parseState(session.CurrentState)
+	write, review := s.resolvePlay(ctx, playerID, session.StoryID) // BYOK：玩家在本作品的配置（未配回退平台/.env）
 
 	// 生成开场：预设 opening_content 的作品正文固定（直接作为一帧 delta 外发，再补选项/摘要）；
 	// 否则走 agent 流式真生成。
@@ -128,14 +142,14 @@ func (s *PlayService) StartOpeningStream(
 		// 预设正文固定、无 LLM token 流：按小块 + 微延时模拟打字机，
 		// 给出与续写一致的逐字流式观感（否则整段瞬显，等于没流式）。
 		streamFixedText(story.OpeningContent, onDelta)
-		opening, err = s.ai.CompleteOpening(ctx, world, initialState, story.OpeningContent)
+		opening, err = s.ai.CompleteOpening(ctx, world, initialState, story.OpeningContent, write)
 		if err != nil {
 			opening = &AIResult{Content: story.OpeningContent, Options: []Option{}, StateDelta: map[string]any{}}
 		} else {
 			opening.Content = story.OpeningContent
 		}
 	} else {
-		opening, err = s.ai.StartStoryStream(ctx, world, initialState, parseStrList(session.RevealedAttrs), onDelta, onRevise)
+		opening, err = s.ai.StartStoryStream(ctx, world, initialState, parseStrList(session.RevealedAttrs), write, review, onDelta, onRevise)
 		if err != nil {
 			return nil, pkg.Internal("ai start story stream: " + err.Error())
 		}
@@ -287,7 +301,7 @@ func (s *PlayService) applyContinueResult(
 // MakeChoiceStream 提交一次选择（流式）：回溯历史 → AI 流式生成（正文增量经 onDelta 外发、
 // 审校拒绝经 onRevise 通知）→ 流结束拿到完整结果后合并属性/去重/写子节点/更新会话。
 func (s *PlayService) MakeChoiceStream(
-	sessionID uuid.UUID, choice string, onDelta func(string), onRevise func(),
+	sessionID, playerID uuid.UUID, choice string, onDelta func(string), onRevise func(),
 ) (*SessionResult, error) {
 	ctx := context.Background()
 	session, world, pathNodes, history, err := s.loadChoiceContext(ctx, sessionID)
@@ -295,7 +309,8 @@ func (s *PlayService) MakeChoiceStream(
 		return nil, err
 	}
 	currentState := parseState(session.CurrentState)
-	result, err := s.ai.ContinueStream(ctx, world, history, currentState, choice, parseStrList(session.RevealedAttrs), onDelta, onRevise)
+	write, review := s.resolvePlay(ctx, playerID, session.StoryID) // BYOK：玩家在本作品的配置
+	result, err := s.ai.ContinueStream(ctx, world, history, currentState, choice, parseStrList(session.RevealedAttrs), write, review, onDelta, onRevise)
 	if err != nil {
 		return nil, pkg.Internal("ai continue stream: " + err.Error())
 	}

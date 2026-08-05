@@ -23,10 +23,68 @@ export interface UserProfile {
   created_at: string;
 }
 
-// GET/PUT /auth/settings：绝不含明文 key，只回是否已配置 + 打码提示。
-export interface UserSettings {
-  has_llm_key: boolean;
-  llm_key_hint: string;
+// ===== BYOK：LLM 连接 / 环节绑定 / 平台设置 =====
+
+// 生成环节：write=续写/开场，review=质量审校，world=创作侧世界观/润色/分支。
+export type LLMStage = "write" | "review" | "world";
+// 平台设置（admin）用全部三个环节。
+export const LLM_STAGES: { key: LLMStage; label: string; desc: string }[] = [
+  { key: "write", label: "续写 / 开场", desc: "正文生成，玩家体验的主文本" },
+  { key: "review", label: "质量审校", desc: "低温校验承接/属性，可用更便宜的模型" },
+  { key: "world", label: "创作辅助", desc: "世界观 / 开场 / 润色 / 分支生成" },
+];
+// 玩家「作品级」配置只覆盖游玩相关环节（world 属创作侧，走编辑器临时连接）。
+export const PLAY_STAGES: { key: "write" | "review"; label: string; desc: string }[] = [
+  { key: "write", label: "续写 / 开场", desc: "正文生成，玩家体验的主文本" },
+  { key: "review", label: "质量审校", desc: "低温校验，可用更便宜的模型" },
+];
+
+// 供应商预设：选中自动回填 base_url（custom 留空自填）。皆 OpenAI 兼容端点。
+export const LLM_PROVIDERS: { key: string; label: string; baseURL: string; model: string }[] = [
+  { key: "deepseek", label: "DeepSeek", baseURL: "https://api.deepseek.com", model: "deepseek-chat" },
+  { key: "openai", label: "OpenAI", baseURL: "https://api.openai.com/v1", model: "gpt-4o-mini" },
+  { key: "moonshot", label: "Moonshot", baseURL: "https://api.moonshot.cn/v1", model: "moonshot-v1-8k" },
+  { key: "custom", label: "自定义", baseURL: "", model: "" },
+];
+
+// GET /llm/connections 列表项：绝不含 key，只回是否已配置 + 打码提示。
+export interface LLMConnection {
+  id: string;
+  name: string;
+  provider: string;
+  base_url: string;
+  default_model: string;
+  has_key: boolean;
+  key_hint: string;
+  created_at: string;
+}
+
+export interface StageBinding {
+  conn: string; // 连接 id；空=未绑定
+  model: string; // 可空→回退连接 default_model
+}
+// 玩家在某作品的配置：环节→{conn,model}（作品级，GET/PUT /llm/story-config/:storyId）。
+export type StoryLLMConfig = Partial<Record<"write" | "review", StageBinding>>;
+
+// 作者推荐模型（存于 world_config.recommended_models，仅标注展示、不自动套用）。
+export interface RecommendedModels {
+  write?: { provider?: string; model?: string };
+  review?: { provider?: string; model?: string };
+}
+
+// GET /admin/llm/platform 列表项（每环节一行，缺的环节以空壳补齐）。
+export interface PlatformSetting {
+  stage: LLMStage;
+  provider: string;
+  base_url: string;
+  model: string;
+  has_key: boolean;
+  key_hint: string;
+}
+
+export interface TestResult {
+  ok: boolean;
+  detail: string;
 }
 
 export interface LoginResult {

@@ -5,13 +5,15 @@ import { useParams, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { trackGuestSession } from "@/lib/guestSessions";
 import { useAuthStore } from "@/store/authStore";
-import type { SessionResult, Story } from "@/lib/types";
+import StoryLLMConfigPanel from "@/components/StoryLLMConfigPanel";
+import type { RecommendedModels, SessionResult, Story } from "@/lib/types";
 
 // 从 world_config JSON 字符串里安全提取展示用字段。
 function parseWorld(worldConfig: string): {
   background?: string;
   style?: string;
   characters?: Array<{ name?: string; role?: string; personality?: string }>;
+  recommended_models?: RecommendedModels;
 } {
   try {
     return JSON.parse(worldConfig || "{}");
@@ -102,6 +104,12 @@ export default function StoryDetailPage() {
               </ul>
             </section>
           )}
+
+          <StoryLLMConfigPanel
+            storyId={story.id}
+            recommended={world.recommended_models || {}}
+            loggedIn={!!user}
+          />
 
           {error && <div className="status err">出错：{error}</div>}
 

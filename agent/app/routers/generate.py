@@ -23,6 +23,13 @@ from ..schemas import (
 router = APIRouter(tags=["play"])
 
 
+def _cfg(x) -> dict | None:
+    """把请求里的 LLMConfig 转成下发字典；无 api_key 时返回 None（让 agent 回退 .env 默认）。"""
+    if x is not None and getattr(x, "api_key", ""):
+        return x.model_dump()
+    return None
+
+
 def _sse(event: str, data: dict) -> str:
     """编码一帧 SSE。"""
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
@@ -47,7 +54,10 @@ async def _sse_stream(events: AsyncIterator[dict]) -> AsyncIterator[str]:
 def generate_stream(req: GenerateRequest) -> StreamingResponse:
     """流式开场：正文逐字（delta），结束后 done 携带结构化结果。"""
     initial = req.initial_state or req.world.initial_state or {}
-    events = run_start_stream(req.world.model_dump(), initial, req.revealed_attrs)
+    events = run_start_stream(
+        req.world.model_dump(), initial, req.revealed_attrs,
+        _cfg(req.llm_write), _cfg(req.llm_review),
+    )
     return StreamingResponse(_sse_stream(events), media_type="text/event-stream")
 
 
@@ -60,6 +70,8 @@ def continue_stream(req: ContinueRequest) -> StreamingResponse:
         req.current_state,
         req.choice,
         req.revealed_attrs,
+        _cfg(req.llm_write),
+        _cfg(req.llm_review),
     )
     return StreamingResponse(_sse_stream(events), media_type="text/event-stream")
 
@@ -68,7 +80,7 @@ def continue_stream(req: ContinueRequest) -> StreamingResponse:
 def opening_complete(req: OpeningCompleteRequest) -> AIResult:
     """为已写定的开场正文补生成起始选项 + 前情提要（非流式）。"""
     try:
-        result = complete_opening(req.world.model_dump(), req.initial_state, req.content)
+        result = complete_opening(req.world.model_dump(), req.initial_state, req.content, _cfg(req.llm_write))
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"ai opening complete failed: {e}") from e
     return AIResult(**result)

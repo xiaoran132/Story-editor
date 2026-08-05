@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // AgentClient 调用独立的 Python agent 服务（FastAPI + LangGraph）。
@@ -36,6 +38,16 @@ func NewAgentClient(serviceURL string) *AgentClient {
 		streamClient: &http.Client{},                        // 无 Timeout，靠 ctx 控时
 		assistClient: &http.Client{Timeout: 180 * time.Second}, // 创作辅助更长超时
 	}
+}
+
+// AgentLLMConfig 是 Go 侧按环节解析出的有效 LLM 配置，随请求体下发给 agent。
+// agent 用它构造临时 ChatOpenAI（不进全局缓存）；字段全空/未下发时 agent 回退自己 .env 默认。
+// Provider 仅作标签（OpenAI 兼容端点只需 base_url+api_key+model）。
+type AgentLLMConfig struct {
+	Provider string `json:"provider,omitempty"`
+	BaseURL  string `json:"base_url,omitempty"`
+	APIKey   string `json:"api_key,omitempty"`
+	Model    string `json:"model,omitempty"`
 }
 
 // ----- 对外的输入/输出类型 -----
@@ -114,6 +126,8 @@ type generateRequest struct {
 	World        WorldConfig    `json:"world"`
 	InitialState map[string]any `json:"initial_state,omitempty"`
 	RevealedAttrs []string      `json:"revealed_attrs,omitempty"` // 已揭示的门控属性（开局通常为空）
+	LLMWrite     *AgentLLMConfig `json:"llm_write,omitempty"`     // BYOK：写手配置（nil→agent 回退 .env）
+	LLMReview    *AgentLLMConfig `json:"llm_review,omitempty"`    // BYOK：审校配置
 }
 
 type continueRequest struct {
@@ -122,12 +136,15 @@ type continueRequest struct {
 	CurrentState  map[string]any `json:"current_state,omitempty"`
 	Choice        string         `json:"choice"`
 	RevealedAttrs []string       `json:"revealed_attrs,omitempty"` // 已揭示的门控属性，供 agent 知道还剩哪些未揭示
+	LLMWrite      *AgentLLMConfig `json:"llm_write,omitempty"`
+	LLMReview     *AgentLLMConfig `json:"llm_review,omitempty"`
 }
 
 type openingCompleteRequest struct {
 	World        WorldConfig    `json:"world"`
 	InitialState map[string]any `json:"initial_state,omitempty"`
 	Content      string         `json:"content"`
+	LLMWrite     *AgentLLMConfig `json:"llm_write,omitempty"`
 }
 
 // MergeCandidate 是新选择的一个合并候选（已有同层子节点），由 Go 侧按 state_delta 相等预筛。
@@ -148,11 +165,12 @@ type mergeCheckResponse struct {
 }
 
 // CompleteOpening 为已写定的开场正文补生成起始选项 + 前情提要（预设 opening_content 的作品）。
-func (c *AgentClient) CompleteOpening(ctx context.Context, world WorldConfig, initialState map[string]any, content string) (*AIResult, error) {
+func (c *AgentClient) CompleteOpening(ctx context.Context, world WorldConfig, initialState map[string]any, content string, write *AgentLLMConfig) (*AIResult, error) {
 	return c.post(ctx, "/opening/complete", openingCompleteRequest{
 		World:        world,
 		InitialState: initialState,
 		Content:      content,
+		LLMWrite:     write,
 	})
 }
 
@@ -161,23 +179,24 @@ func (c *AgentClient) CompleteOpening(ctx context.Context, world WorldConfig, in
 func (c *AgentClient) ContinueStream(
 	ctx context.Context,
 	world WorldConfig, history []PathStep, currentState map[string]any, choice string,
-	revealedAttrs []string,
+	revealedAttrs []string, write, review *AgentLLMConfig,
 	onDelta func(string), onRevise func(),
 ) (*AIResult, error) {
 	return c.streamInto(ctx, "/continue/stream", continueRequest{
 		World: world, History: history, CurrentState: currentState, Choice: choice,
-		RevealedAttrs: revealedAttrs,
+		RevealedAttrs: revealedAttrs, LLMWrite: write, LLMReview: review,
 	}, onDelta, onRevise)
 }
 
 // StartStoryStream 流式生成开场（无预设 opening_content 的作品）。语义同 ContinueStream。
 func (c *AgentClient) StartStoryStream(
 	ctx context.Context, world WorldConfig, initialState map[string]any,
-	revealedAttrs []string,
+	revealedAttrs []string, write, review *AgentLLMConfig,
 	onDelta func(string), onRevise func(),
 ) (*AIResult, error) {
 	return c.streamInto(ctx, "/generate/stream", generateRequest{
 		World: world, InitialState: initialState, RevealedAttrs: revealedAttrs,
+		LLMWrite: write, LLMReview: review,
 	}, onDelta, onRevise)
 }
 
@@ -359,9 +378,15 @@ func (c *AgentClient) postIntoWith(ctx context.Context, client *http.Client, pat
 // ===== 创作辅助（/assist/*）：Go 转发，前端不直连 agent（agent 无鉴权/CORS）。=====
 // 请求/响应字段对齐 agent/app/schemas.py（snake_case），复用 WorldConfig / Option。
 
+// 说明：assist 请求结构既承接前端入参、又是发往 agent 的请求体。
+// ConnectionID 是前端可选的「编辑器覆盖连接」(json:connection_id)，由 handler 读取用于解析、
+// agent 端 pydantic 无此字段会自动忽略；LLM/LLMWrite/LLMReview 由 handler **服务端**填充
+// （客户端即便传入也被覆盖，杜绝客户端注入 key）。
 type AssistWorldRequest struct {
-	Idea  string `json:"idea"`
-	Style string `json:"style,omitempty"`
+	Idea         string          `json:"idea"`
+	Style        string          `json:"style,omitempty"`
+	ConnectionID *uuid.UUID      `json:"connection_id,omitempty"` // 前端覆盖连接（world 环节）
+	LLM          *AgentLLMConfig `json:"llm,omitempty"`           // 服务端填充
 }
 
 // WorldDraft 是 /assist/world 产出的世界观草稿，字段全集与 WorldConfig 对齐。
@@ -376,7 +401,10 @@ type WorldDraft struct {
 }
 
 type AssistOpeningRequest struct {
-	World WorldConfig `json:"world"`
+	World        WorldConfig     `json:"world"`
+	ConnectionID *uuid.UUID      `json:"connection_id,omitempty"` // 前端覆盖连接（开场走 write+review）
+	LLMWrite     *AgentLLMConfig `json:"llm_write,omitempty"`     // 服务端填充
+	LLMReview    *AgentLLMConfig `json:"llm_review,omitempty"`    // 服务端填充
 }
 
 // OpeningDraft 是 /assist/opening 产出的开场草稿（options 仅供预览，不入库）。
@@ -386,8 +414,10 @@ type OpeningDraft struct {
 }
 
 type AssistPolishRequest struct {
-	Text        string `json:"text"`
-	Instruction string `json:"instruction,omitempty"`
+	Text         string          `json:"text"`
+	Instruction  string          `json:"instruction,omitempty"`
+	ConnectionID *uuid.UUID      `json:"connection_id,omitempty"`
+	LLM          *AgentLLMConfig `json:"llm,omitempty"`
 }
 
 type PolishDraft struct {
@@ -395,9 +425,11 @@ type PolishDraft struct {
 }
 
 type AssistBranchesRequest struct {
-	World   WorldConfig `json:"world"`
-	Content string      `json:"content"`
-	Count   int         `json:"count,omitempty"`
+	World        WorldConfig     `json:"world"`
+	Content      string          `json:"content"`
+	Count        int             `json:"count,omitempty"`
+	ConnectionID *uuid.UUID      `json:"connection_id,omitempty"`
+	LLM          *AgentLLMConfig `json:"llm,omitempty"`
 }
 
 type BranchSuggestion struct {

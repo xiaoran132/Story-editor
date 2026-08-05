@@ -21,6 +21,19 @@ class NoneTolerantModel(BaseModel):
         return data
 
 
+# ----- BYOK：随请求下发的 LLM 配置 -----
+
+class LLMConfig(NoneTolerantModel):
+    """Go 侧按环节解析出的有效 LLM 配置，随请求体下发。字段全可空——缺字段时 agent 回退 .env 默认。
+
+    provider 仅作标签（OpenAI 兼容端点只需 base_url+api_key+model）。与 Go 的 AgentLLMConfig 对齐。
+    """
+    provider: str = ""
+    base_url: str = ""
+    api_key: str = ""
+    model: str = ""
+
+
 # ----- 通用剧情结构 -----
 
 class Option(BaseModel):
@@ -67,6 +80,8 @@ class GenerateRequest(NoneTolerantModel):
     world: WorldConfig = Field(default_factory=WorldConfig)
     initial_state: dict[str, Any] = Field(default_factory=dict)
     revealed_attrs: list[str] = Field(default_factory=list)  # 已揭示的门控属性（开局通常为空）
+    llm_write: LLMConfig | None = None   # BYOK：写手配置（Go 按玩家 write 环节解析）
+    llm_review: LLMConfig | None = None  # BYOK：审校配置（Go 按玩家 review 环节解析）
 
 
 class ContinueRequest(NoneTolerantModel):
@@ -76,6 +91,8 @@ class ContinueRequest(NoneTolerantModel):
     current_state: dict[str, Any] = Field(default_factory=dict)
     choice: str = ""
     revealed_attrs: list[str] = Field(default_factory=list)  # 已揭示的门控属性，供 agent 知道还剩哪些未揭示
+    llm_write: LLMConfig | None = None
+    llm_review: LLMConfig | None = None
 
 
 class OpeningCompleteRequest(NoneTolerantModel):
@@ -83,6 +100,7 @@ class OpeningCompleteRequest(NoneTolerantModel):
     world: WorldConfig = Field(default_factory=WorldConfig)
     initial_state: dict[str, Any] = Field(default_factory=dict)
     content: str = ""
+    llm_write: LLMConfig | None = None  # BYOK：补全用写手配置
 
 
 # ----- 创作辅助请求/响应 -----
@@ -98,9 +116,10 @@ class WorldDraft(BaseModel):
     attributes: dict[str, Any] = Field(default_factory=dict)
 
 
-class GenerateWorldRequest(BaseModel):
+class GenerateWorldRequest(NoneTolerantModel):
     idea: str
     style: str = ""
+    llm: LLMConfig | None = None  # BYOK：world 环节配置（Go 按创作者 world 环节解析）
 
 
 class OpeningDraft(BaseModel):
@@ -108,13 +127,16 @@ class OpeningDraft(BaseModel):
     options: list[Option] = Field(default_factory=list)
 
 
-class GenerateOpeningRequest(BaseModel):
+class GenerateOpeningRequest(NoneTolerantModel):
     world: WorldConfig = Field(default_factory=WorldConfig)
+    llm_write: LLMConfig | None = None   # BYOK：开场走完整 play 管线，写手 + 审校分别下发
+    llm_review: LLMConfig | None = None
 
 
-class PolishRequest(BaseModel):
+class PolishRequest(NoneTolerantModel):
     text: str
     instruction: str = ""
+    llm: LLMConfig | None = None  # BYOK：world 环节配置
 
 
 class PolishDraft(BaseModel):
@@ -126,10 +148,11 @@ class BranchSuggestion(BaseModel):
     summary: str = ""
 
 
-class SuggestBranchesRequest(BaseModel):
+class SuggestBranchesRequest(NoneTolerantModel):
     world: WorldConfig = Field(default_factory=WorldConfig)
     content: str
     count: int = 3
+    llm: LLMConfig | None = None  # BYOK：world 环节配置
 
 
 class BranchesResponse(BaseModel):

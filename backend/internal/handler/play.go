@@ -80,7 +80,7 @@ func (h *PlayHandler) ChoiceStream(c *gin.Context) {
 	}
 	send := sseStart(c)
 	result, err := h.svc.MakeChoiceStream(
-		sessionID, req.Choice,
+		sessionID, h.player(c), req.Choice,
 		func(t string) { send("delta", gin.H{"text": t}) },
 		func() { send("revise", gin.H{}) },
 	)
@@ -101,7 +101,7 @@ func (h *PlayHandler) OpeningStream(c *gin.Context) {
 	}
 	send := sseStart(c)
 	result, err := h.svc.StartOpeningStream(
-		sessionID,
+		sessionID, h.player(c),
 		func(t string) { send("delta", gin.H{"text": t}) },
 		func() { send("revise", gin.H{}) },
 	)

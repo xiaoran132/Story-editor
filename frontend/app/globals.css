@@ -1275,6 +1275,98 @@ h2 {
   margin-left: auto;
 }
 
+/* BYOK：连接列表 / 表单 / 环节绑定 */
+.llm-conn-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.llm-conn-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.llm-conn-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.llm-conn-name {
+  font-family: var(--font-display);
+  font-size: 14px;
+  color: var(--ink);
+}
+.llm-conn-ops {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.llm-conn-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  background: var(--bg);
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+.llm-bindings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.llm-bind-row {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr 1fr;
+  gap: 10px;
+  align-items: center;
+}
+.llm-bind-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+@media (max-width: 640px) {
+  .llm-bind-row {
+    grid-template-columns: 1fr;
+  }
+}
+/* 作品详情页「本作品 AI 配置」折叠面板 */
+.llm-panel-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--muted);
+  font-family: var(--font-display);
+  font-size: 13px;
+  cursor: pointer;
+}
+.llm-panel-toggle:hover {
+  color: var(--ink);
+}
+.llm-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
 /* Toast */
 .ed-toast {
   position: fixed;

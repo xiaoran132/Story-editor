@@ -56,14 +56,48 @@ def get_stream_llm() -> ChatOpenAI:
     return _build_llm(False)
 
 
-async def chat_stream(messages: list[BaseMessage]) -> AsyncIterator[str]:
+def _build_ephemeral(cfg: dict[str, Any], json_mode: bool) -> ChatOpenAI:
+    """按请求下发的 LLM 配置构造**临时** ChatOpenAI（BYOK：不进 _build_llm 全局缓存）。
+
+    cfg 为 Go 侧解析出的 {provider,base_url,api_key,model}；缺字段回退 .env 默认。
+    provider 仅作标签（OpenAI 兼容端点只需 base_url+api_key+model）。
+    """
+    s = get_settings()
+    kwargs: dict[str, Any] = {
+        "model": cfg.get("model") or s.deepseek_model,
+        "api_key": cfg.get("api_key") or s.deepseek_api_key,
+        "base_url": cfg.get("base_url") or s.deepseek_base_url,
+        "temperature": s.ai_temperature,
+        "timeout": s.ai_timeout,
+    }
+    if json_mode:
+        kwargs["model_kwargs"] = {"response_format": {"type": "json_object"}}
+    return ChatOpenAI(**kwargs)
+
+
+def _pick(llm_cfg: dict[str, Any] | None, json_mode: bool) -> ChatOpenAI:
+    """有下发配置用临时实例（BYOK），否则走全局缓存实例（平台 .env 默认）。
+
+    缓存路径特意经 get_llm()/get_stream_llm()（而非直接 _build_llm），以保留既有测试的
+    patch 挂载点（tests 通过 patch 这两个函数注入 fake LLM）。
+    """
+    if llm_cfg:
+        return _build_ephemeral(llm_cfg, json_mode)
+    return get_llm() if json_mode else get_stream_llm()
+
+
+async def chat_stream(
+    messages: list[BaseMessage], *, llm_cfg: dict[str, Any] | None = None
+) -> AsyncIterator[str]:
     """流式多轮对话，逐块产出增量文本（可能为空块，调用方需容忍）。
 
     收完整消息列表（而非单轮 system+user），以支持"有记忆的写手"：
     重写时把上一稿(AIMessage) + 审校反馈(HumanMessage) 追加进列表，让模型在自己
     上一稿基础上修订，而非从头重写——减少来回震荡、更快收敛。
+
+    llm_cfg 非空时用其构造临时实例（BYOK）；否则用全局缓存的平台默认。
     """
-    llm = get_stream_llm()
+    llm = _pick(llm_cfg, False)
     async for chunk in llm.astream(messages):
         text = chunk.content if isinstance(chunk.content, str) else str(chunk.content)
         if text:
@@ -94,12 +128,16 @@ def validate_key(api_key: str, base_url: str = "", model: str = "") -> tuple[boo
         return False, type(e).__name__
 
 
-def chat_json(system: str, user: str, *, temperature: float | None = None) -> dict[str, Any]:
+def chat_json(
+    system: str, user: str, *, temperature: float | None = None,
+    llm_cfg: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """单轮对话，返回解析后的 JSON 对象。
 
     temperature 可临时覆盖（如润色用低温、生成用高温）。
+    llm_cfg 非空时用其构造临时实例（BYOK）；否则用全局缓存的平台默认。
     """
-    llm = get_llm()
+    llm = _pick(llm_cfg, True)
     if temperature is not None:
         llm = llm.bind(temperature=temperature)
 

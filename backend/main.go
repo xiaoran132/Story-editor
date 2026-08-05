@@ -30,7 +30,7 @@ func main() {
 	// 先启用 pgcrypto 扩展
 	db.Exec("CREATE EXTENSION IF NOT EXISTS pgcrypto")
 
-	if err := db.AutoMigrate(&model.User{}, &model.UserCredential{}, &model.Story{}, &model.StoryNode{}, &model.PlaySession{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.UserCredential{}, &model.Story{}, &model.StoryNode{}, &model.PlaySession{}, &model.LLMConnection{}, &model.PlatformLLMSetting{}, &model.UserStoryLLMConfig{}); err != nil {
 		log.Fatalf("failed to migrate: %v", err)
 	}
 
@@ -45,13 +45,16 @@ func main() {
 	storyRepo := repository.NewStoryRepository(db)
 	nodeRepo := repository.NewNodeRepository(db)
 	sessionRepo := repository.NewPlaySessionRepository(db)
+	llmRepo := repository.NewLLMRepository(db)
 
 	// Services
+	agentClient := service.NewAgentClient(cfg.AgentURL)
+	llmResolver := service.NewLLMResolver(llmRepo, cfg.EncryptionKey) // BYOK：按环节解析下发配置
 	userSvc := service.NewUserService(userRepo, cfg.JWTSecret, cfg.EncryptionKey)
 	storySvc := service.NewStoryService(storyRepo)
 	nodeSvc := service.NewNodeService(nodeRepo)
-	agentClient := service.NewAgentClient(cfg.AgentURL)
-	playSvc := service.NewPlayService(sessionRepo, nodeRepo, storyRepo, agentClient)
+	llmSvc := service.NewLLMService(llmRepo, agentClient, cfg.EncryptionKey)
+	playSvc := service.NewPlayService(sessionRepo, nodeRepo, storyRepo, agentClient, llmResolver)
 
 	// Handlers
 	userH := handler.NewUserHandler(userSvc)
@@ -59,7 +62,8 @@ func main() {
 	nodeH := handler.NewNodeHandler(nodeSvc)
 	communityH := handler.NewCommunityHandler()
 	playH := handler.NewPlayHandler(playSvc, guestID)
-	assistH := handler.NewAssistHandler(agentClient)
+	assistH := handler.NewAssistHandler(agentClient, llmResolver)
+	llmH := handler.NewLLMHandler(llmSvc)
 
 	r := gin.Default()
 	r.Use(middleware.CORS())
@@ -77,8 +81,6 @@ func main() {
 		auth.POST("/login", userH.Login)
 		auth.GET("/profile", middleware.AuthRequired(cfg.JWTSecret), userH.GetProfile)
 		auth.PUT("/profile", middleware.AuthRequired(cfg.JWTSecret), userH.UpdateProfile)
-		auth.GET("/settings", middleware.AuthRequired(cfg.JWTSecret), userH.GetSettings)
-		auth.PUT("/settings", middleware.AuthRequired(cfg.JWTSecret), userH.UpdateSettings)
 	}
 
 	stories := api.Group("/stories")
@@ -120,7 +122,27 @@ func main() {
 		assist.POST("/opening", assistH.Opening)
 		assist.POST("/polish", assistH.Polish)
 		assist.POST("/branches", assistH.Branches)
-		assist.POST("/validate-key", assistH.ValidateKey) // 个人设置页「测试连接」
+	}
+
+	// BYOK：用户 LLM 连接（CRUD + 测试）与环节绑定（需登录）。
+	llm := api.Group("/llm", middleware.AuthRequired(cfg.JWTSecret))
+	{
+		llm.GET("/connections", llmH.ListConnections)
+		llm.POST("/connections", llmH.CreateConnection)
+		llm.PUT("/connections/:id", llmH.UpdateConnection)
+		llm.DELETE("/connections/:id", llmH.DeleteConnection)
+		llm.POST("/connections/test", llmH.TestConnection)
+		llm.GET("/connections/:id/models", llmH.ListModels)        // 拉取该连接可用模型
+		llm.GET("/story-config/:storyId", llmH.GetStoryConfig)     // 玩家在某作品的模型配置
+		llm.PUT("/story-config/:storyId", llmH.SetStoryConfig)
+	}
+
+	// 平台 LLM 设置（仅管理员：AuthRequired + RequireAdmin）。第一个 admin 靠手动改库提权。
+	adminLLM := api.Group("/admin/llm", middleware.AuthRequired(cfg.JWTSecret), middleware.RequireAdmin())
+	{
+		adminLLM.GET("/platform", llmH.ListPlatform)
+		adminLLM.PUT("/platform", llmH.UpsertPlatform)
+		adminLLM.POST("/platform/test", llmH.TestPlatform)
 	}
 
 	community := api.Group("/community")

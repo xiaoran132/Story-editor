@@ -16,6 +16,10 @@ class StoryState(TypedDict, total=False):
     current_state: dict[str, Any]
     history: list[dict[str, Any]]
     choice: str
+    # BYOK：Go 侧按环节解析下发的 LLM 配置（{provider,base_url,api_key,model}）；缺则回退 .env。
+    llm_write: dict[str, Any]   # 写手（正文/结构化兜底）用
+    llm_review: dict[str, Any]  # 审校用
+    llm_cfg: dict[str, Any]     # review() 内部读取的当次配置（= llm_review）
 
     # 中间产物
     known_keys: list[str]        # 允许出现在 state_delta 中的属性键
