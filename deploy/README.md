@@ -31,7 +31,7 @@ Internet → :80/:443 Nginx(宿主机, 域名)
 ```bash
 cd deploy/docker
 cp agent.env.example   agent.env     # 填 DEEPSEEK_API_KEY
-cp backend.env.example backend.env   # 填 DB_PASSWORD/JWT_SECRET 等（DB_HOST=127.0.0.1）
+cp backend.env.example backend.env   # 填 DB_PASSWORD/JWT_SECRET/ENCRYPTION_KEY 等（DB_HOST=127.0.0.1）
 ```
 > `deploy/docker/*.env` 已被 .gitignore 忽略(含密钥),只提交 `*.example`。
 
@@ -111,3 +111,4 @@ python agent/tools/aggregate_log.py agent.log   # 见 handoff §8.4
 - **共享 guest 身份**:未登录访客互相看到彼此存档(handoff §7.1)。公网多人前至少默认要求登录,或改每浏览器独立匿名身份。
 - **DeepSeek 额度**:公网任何人都能触发生成、烧你的 key——加登录门槛/速率限制。
 - 无速率限制/审计;`community` 未实现。**建议先小范围/加访问控制,别长期公网裸放。**
+- **`JWT_SECRET` 与 `ENCRYPTION_KEY` 必须改成各自独立的随机长串**:前者签发登录 token,后者加密用户自带的 LLM key(`users.llm_key_cipher`)。用默认值 = 密文可被任何人用默认密钥解开。

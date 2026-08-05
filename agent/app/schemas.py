@@ -155,3 +155,17 @@ class MergeCheckResponse(BaseModel):
     """matched_index 为命中的候选下标；-1 表示都不等价、应新建节点。"""
     matched_index: int = -1
     reason: str = ""
+
+
+# ----- 校验用户自带 LLM key 是否可用 -----
+
+class ValidateKeyRequest(BaseModel):
+    """校验一个 LLM API key 是否可用（不落库，仅一次性 ping）。"""
+    api_key: str = ""
+    base_url: str = ""  # 可选：覆盖端点（兼容其他 OpenAI 兼容供应商）
+    model: str = ""     # 可选：覆盖模型
+
+
+class ValidateKeyResponse(BaseModel):
+    ok: bool = False
+    detail: str = ""  # 失败原因（如鉴权失败/超时），成功为空

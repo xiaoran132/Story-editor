@@ -5,6 +5,7 @@ import (
 	"backend/internal/repository"
 	"backend/pkg"
 	"context"
+	"strings"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
@@ -13,10 +14,11 @@ import (
 type UserService struct {
 	repo      *repository.UserRepository
 	jwtSecret string
+	encKey    string // 加密用户敏感数据（自带 LLM key）的密钥，来自 cfg.EncryptionKey
 }
 
-func NewUserService(repo *repository.UserRepository, jwtSecret string) *UserService {
-	return &UserService{repo: repo, jwtSecret: jwtSecret}
+func NewUserService(repo *repository.UserRepository, jwtSecret, encKey string) *UserService {
+	return &UserService{repo: repo, jwtSecret: jwtSecret, encKey: encKey}
 }
 
 type RegisterInput struct {
@@ -157,4 +159,79 @@ func (s *UserService) UpdateProfile(userID uuid.UUID, input *UpdateProfileInput)
 	}
 
 	return user.ToResponse(), nil
+}
+
+// SettingsResponse 是用户设置的外发 DTO：绝不含明文 key，只回是否已配置 + 打码提示。
+type SettingsResponse struct {
+	HasLLMKey  bool   `json:"has_llm_key"`
+	LLMKeyHint string `json:"llm_key_hint"` // 形如 sk-••••后4位；未配置为空
+}
+
+// maskKey 把明文 key 打码成 "前缀••••后4位"，用于安全回显（不泄露完整 key）。
+func maskKey(key string) string {
+	if key == "" {
+		return ""
+	}
+	tail := key
+	if len(key) > 4 {
+		tail = key[len(key)-4:]
+	}
+	prefix := ""
+	if len(key) >= 3 && strings.HasPrefix(key, "sk-") {
+		prefix = "sk-"
+	}
+	return prefix + "••••" + tail
+}
+
+// GetSettings 返回用户设置（是否配置了 LLM key + 打码提示）。
+func (s *UserService) GetSettings(userID uuid.UUID) (*SettingsResponse, error) {
+	ctx := context.Background()
+	user, err := s.repo.FindByID(ctx, userID)
+	if err != nil {
+		return nil, pkg.Internal("database error")
+	}
+	if user == nil {
+		return nil, pkg.NotFound("user not found")
+	}
+
+	res := &SettingsResponse{}
+	if user.LLMKeyCipher != nil && *user.LLMKeyCipher != "" {
+		plain, err := pkg.Decrypt(*user.LLMKeyCipher, s.encKey)
+		if err != nil {
+			// 密文无法解开（多为 ENCRYPTION_KEY 变更）：视为已配置但无法回显 hint，
+			// 不报错以免锁死设置页；用户可重新填写覆盖。
+			return &SettingsResponse{HasLLMKey: true, LLMKeyHint: ""}, nil
+		}
+		res.HasLLMKey = plain != ""
+		res.LLMKeyHint = maskKey(plain)
+	}
+	return res, nil
+}
+
+// UpdateLLMKey 设置或清除用户的 LLM API key。key 为空串即清除；否则加密落库。
+func (s *UserService) UpdateLLMKey(userID uuid.UUID, key string) error {
+	ctx := context.Background()
+	user, err := s.repo.FindByID(ctx, userID)
+	if err != nil {
+		return pkg.Internal("database error")
+	}
+	if user == nil {
+		return pkg.NotFound("user not found")
+	}
+
+	key = strings.TrimSpace(key)
+	if key == "" {
+		user.LLMKeyCipher = nil // 清除
+	} else {
+		cipher, err := pkg.Encrypt(key, s.encKey)
+		if err != nil {
+			return pkg.Internal("failed to encrypt key")
+		}
+		user.LLMKeyCipher = &cipher
+	}
+
+	if err := s.repo.Update(ctx, user); err != nil {
+		return pkg.Internal("failed to update settings")
+	}
+	return nil
 }

@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 
 from ..graph.story_graph import run_start
-from ..llm import chat_json
+from ..llm import chat_json, validate_key
 from ..prompts import BRANCH_SYSTEM, POLISH_SYSTEM, WORLD_SYSTEM
 from ..schemas import (
     BranchesResponse,
@@ -16,6 +16,8 @@ from ..schemas import (
     PolishDraft,
     PolishRequest,
     SuggestBranchesRequest,
+    ValidateKeyRequest,
+    ValidateKeyResponse,
     WorldDraft,
 )
 
@@ -95,3 +97,10 @@ def suggest_branches(req: SuggestBranchesRequest) -> BranchesResponse:
         raise _fail("suggest branches", e) from e
     branches = [BranchSuggestion(**b) for b in (data.get("branches") or []) if isinstance(b, dict)]
     return BranchesResponse(branches=branches)
+
+
+@router.post("/validate-key", response_model=ValidateKeyResponse)
+def validate_llm_key(req: ValidateKeyRequest) -> ValidateKeyResponse:
+    """校验用户自带的 LLM key 是否可用（一次性 ping，不落库、不进生成管线）。"""
+    ok, detail = validate_key(req.api_key, req.base_url, req.model)
+    return ValidateKeyResponse(ok=ok, detail=detail)

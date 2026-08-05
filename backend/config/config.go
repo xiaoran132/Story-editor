@@ -14,8 +14,11 @@ type Config struct {
 	DBPassword string `mapstructure:"DB_PASSWORD"`
 	DBName     string `mapstructure:"DB_NAME"`
 	JWTSecret  string `mapstructure:"JWT_SECRET"`
-	ServerPort string `mapstructure:"SERVER_PORT"`
-	AgentURL   string `mapstructure:"AGENT_URL"`
+	// EncryptionKey 用于对称加密用户级敏感数据（如自带的 LLM API key）。
+	// 与 JWTSecret 分离：签发 token 与加密数据用不同密钥。生产必须改默认值。
+	EncryptionKey string `mapstructure:"ENCRYPTION_KEY"`
+	ServerPort    string `mapstructure:"SERVER_PORT"`
+	AgentURL      string `mapstructure:"AGENT_URL"`
 }
 
 func (c *Config) DSN() string {
@@ -46,6 +49,7 @@ func Load(configPath string) (*Config, error) {
 	_ = v.BindEnv("DB_PASSWORD")
 	_ = v.BindEnv("DB_NAME")
 	_ = v.BindEnv("JWT_SECRET")
+	_ = v.BindEnv("ENCRYPTION_KEY")
 	_ = v.BindEnv("SERVER_PORT")
 	_ = v.BindEnv("AGENT_URL")
 
@@ -72,6 +76,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("DB_PASSWORD", "postgres")
 	v.SetDefault("DB_NAME", "story_editor")
 	v.SetDefault("JWT_SECRET", "change-me-in-production")
+	v.SetDefault("ENCRYPTION_KEY", "change-me-encryption-key")
 	v.SetDefault("SERVER_PORT", ":8080")
 	v.SetDefault("AGENT_URL", "http://localhost:8001")
 }

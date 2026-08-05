@@ -444,3 +444,23 @@ func (c *AgentClient) AssistBranches(ctx context.Context, req AssistBranchesRequ
 	}
 	return &out, nil
 }
+
+type ValidateKeyRequest struct {
+	APIKey  string `json:"api_key"`
+	BaseURL string `json:"base_url,omitempty"`
+	Model   string `json:"model,omitempty"`
+}
+
+type ValidateKeyResponse struct {
+	OK     bool   `json:"ok"`
+	Detail string `json:"detail"`
+}
+
+// ValidateKey 让 agent 用给定 key 做一次性 ping，判断是否可用（不落库、不进生成管线）。
+func (c *AgentClient) ValidateKey(ctx context.Context, req ValidateKeyRequest) (*ValidateKeyResponse, error) {
+	var out ValidateKeyResponse
+	if err := c.postIntoWith(ctx, c.assistClient, "/assist/validate-key", req, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}

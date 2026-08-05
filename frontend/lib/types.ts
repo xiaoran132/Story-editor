@@ -10,6 +10,25 @@ export interface AuthUser {
   role?: string;
 }
 
+// GET /auth/profile 完整资料（对齐后端 UserResponse）。
+export interface UserProfile {
+  id: string;
+  username: string;
+  nickname: string;
+  bio: string;
+  role: string;
+  follower_count: number;
+  following_count: number;
+  work_count: number;
+  created_at: string;
+}
+
+// GET/PUT /auth/settings：绝不含明文 key，只回是否已配置 + 打码提示。
+export interface UserSettings {
+  has_llm_key: boolean;
+  llm_key_hint: string;
+}
+
 export interface LoginResult {
   token: string;
   user: AuthUser;

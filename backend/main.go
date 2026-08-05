@@ -47,7 +47,7 @@ func main() {
 	sessionRepo := repository.NewPlaySessionRepository(db)
 
 	// Services
-	userSvc := service.NewUserService(userRepo, cfg.JWTSecret)
+	userSvc := service.NewUserService(userRepo, cfg.JWTSecret, cfg.EncryptionKey)
 	storySvc := service.NewStoryService(storyRepo)
 	nodeSvc := service.NewNodeService(nodeRepo)
 	agentClient := service.NewAgentClient(cfg.AgentURL)
@@ -77,6 +77,8 @@ func main() {
 		auth.POST("/login", userH.Login)
 		auth.GET("/profile", middleware.AuthRequired(cfg.JWTSecret), userH.GetProfile)
 		auth.PUT("/profile", middleware.AuthRequired(cfg.JWTSecret), userH.UpdateProfile)
+		auth.GET("/settings", middleware.AuthRequired(cfg.JWTSecret), userH.GetSettings)
+		auth.PUT("/settings", middleware.AuthRequired(cfg.JWTSecret), userH.UpdateSettings)
 	}
 
 	stories := api.Group("/stories")
@@ -118,6 +120,7 @@ func main() {
 		assist.POST("/opening", assistH.Opening)
 		assist.POST("/polish", assistH.Polish)
 		assist.POST("/branches", assistH.Branches)
+		assist.POST("/validate-key", assistH.ValidateKey) // 个人设置页「测试连接」
 	}
 
 	community := api.Group("/community")

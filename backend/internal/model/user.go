@@ -17,8 +17,11 @@ type User struct {
 	FollowerCount  int       `gorm:"not null;default:0" json:"follower_count"`
 	FollowingCount int       `gorm:"not null;default:0" json:"following_count"`
 	WorkCount      int       `gorm:"not null;default:0" json:"work_count"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	// LLMKeyCipher 存用户自带 LLM API key 的 AES-GCM 密文（base64）；nil=未配置。
+	// json:"-" 杜绝随任何 DTO 外泄；读接口只回 has_llm_key + 打码 hint（见 SettingsResponse）。
+	LLMKeyCipher *string   `gorm:"type:text" json:"-"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 func (u *User) BeforeCreate(tx *gorm.DB) error {

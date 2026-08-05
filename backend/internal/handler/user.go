@@ -89,3 +89,44 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 
 	pkg.Success(c, user)
 }
+
+// GetSettings 返回当前用户设置（是否配置了自带 LLM key + 打码提示，绝不回明文）。
+func (h *UserHandler) GetSettings(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	if userID == uuid.Nil {
+		pkg.Error(c, pkg.Unauthorized("invalid user"))
+		return
+	}
+	settings, err := h.svc.GetSettings(userID)
+	if err != nil {
+		pkg.Error(c, err)
+		return
+	}
+	pkg.Success(c, settings)
+}
+
+// UpdateSettings 设置/清除自带 LLM key。body: {"llm_api_key": "..."}，空串即清除。
+func (h *UserHandler) UpdateSettings(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	if userID == uuid.Nil {
+		pkg.Error(c, pkg.Unauthorized("invalid user"))
+		return
+	}
+	var body struct {
+		LLMAPIKey string `json:"llm_api_key"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		pkg.Error(c, pkg.BadRequest(err.Error()))
+		return
+	}
+	if err := h.svc.UpdateLLMKey(userID, body.LLMAPIKey); err != nil {
+		pkg.Error(c, err)
+		return
+	}
+	settings, err := h.svc.GetSettings(userID)
+	if err != nil {
+		pkg.Error(c, err)
+		return
+	}
+	pkg.Success(c, settings)
+}

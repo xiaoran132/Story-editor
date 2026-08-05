@@ -70,6 +70,30 @@ async def chat_stream(messages: list[BaseMessage]) -> AsyncIterator[str]:
             yield text
 
 
+def validate_key(api_key: str, base_url: str = "", model: str = "") -> tuple[bool, str]:
+    """一次性校验某个 LLM API key 是否可用：用它新建一个**独立**的 ChatOpenAI（不进
+    _build_llm 的全局缓存、不影响生成管线），发一个极小的 ping，成功返回 (True, "")。
+
+    仅用于个人设置页的「测试连接」。失败返回 (False, 简短原因)。"""
+    if not api_key.strip():
+        return False, "api_key 为空"
+    s = get_settings()
+    try:
+        llm = ChatOpenAI(
+            model=model or s.deepseek_model,
+            api_key=api_key,
+            base_url=base_url or s.deepseek_base_url,
+            temperature=0,
+            timeout=15,
+            max_tokens=1,
+            max_retries=0,
+        )
+        llm.invoke([HumanMessage(content="ping")])
+        return True, ""
+    except Exception as e:  # noqa: BLE001 —— 鉴权失败/网络/超时都算不可用
+        return False, type(e).__name__
+
+
 def chat_json(system: str, user: str, *, temperature: float | None = None) -> dict[str, Any]:
     """单轮对话，返回解析后的 JSON 对象。
 

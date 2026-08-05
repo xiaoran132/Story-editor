@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
 
-// 顶栏登录/注册小组件：未登录展开内联表单；登录后显示昵称 + 退出。
+// 顶栏登录/注册小组件：未登录展开内联表单；登录后显示昵称（点进个人主页）+ 退出。
 export default function AuthWidget() {
+  const router = useRouter();
   const { user, login, register, logout } = useAuthStore();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<"login" | "register">("login");
@@ -18,7 +20,9 @@ export default function AuthWidget() {
   if (user) {
     return (
       <div className="auth">
-        <span className="auth-user">你好，{user.nickname || user.username}</span>
+        <button className="auth-user" onClick={() => router.push("/me")} title="个人主页">
+          你好，{user.nickname || user.username}
+        </button>
         <button className="auth-link" onClick={logout}>
           退出
         </button>

@@ -133,6 +133,16 @@ h2 {
 }
 .auth-user {
   color: var(--star);
+  background: none;
+  border: none;
+  font-family: var(--font-display);
+  font-size: 13px;
+  padding: 0;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.auth-user:hover {
+  opacity: 0.8;
 }
 .auth-link {
   background: none;
@@ -1227,6 +1237,44 @@ h2 {
 .ai-generating {
   animation: pulse 1.4s ease-in-out infinite;
 }
+/* 个人主页 */
+.me-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin-bottom: 16px;
+  font-family: var(--font-display);
+  font-size: 13px;
+  color: var(--muted);
+}
+.me-desc {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+.me-desc .ed-hint {
+  display: block;
+  margin-top: 2px;
+}
+.me-key-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.me-key-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.me-key-actions .ed-del {
+  margin-left: auto;
+}
+
 /* Toast */
 .ed-toast {
   position: fixed;

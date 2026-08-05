@@ -78,6 +78,27 @@ func (h *AssistHandler) Polish(c *gin.Context) {
 	pkg.Success(c, draft)
 }
 
+// ValidateKey 校验用户填写的 LLM key 是否可用（不落库，仅用于个人设置页「测试连接」）。
+func (h *AssistHandler) ValidateKey(c *gin.Context) {
+	var body struct {
+		LLMAPIKey string `json:"llm_api_key"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		pkg.Error(c, pkg.BadRequest(err.Error()))
+		return
+	}
+	if body.LLMAPIKey == "" {
+		pkg.Error(c, pkg.BadRequest("llm_api_key 不能为空"))
+		return
+	}
+	res, err := h.agent.ValidateKey(c.Request.Context(), service.ValidateKeyRequest{APIKey: body.LLMAPIKey})
+	if err != nil {
+		pkg.Error(c, aiErr())
+		return
+	}
+	pkg.Success(c, res)
+}
+
 // Branches 为当前节点建议后续分支。
 func (h *AssistHandler) Branches(c *gin.Context) {
 	var req service.AssistBranchesRequest
