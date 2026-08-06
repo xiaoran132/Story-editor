@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"backend/internal/middleware"
 	"backend/internal/service"
 	"backend/pkg"
 
@@ -68,7 +69,7 @@ func (h *NodeHandler) Update(c *gin.Context) {
 		return
 	}
 
-	node, err := h.svc.Update(nodeID, &input)
+	node, err := h.svc.Update(middleware.GetUserID(c), nodeID, &input)
 	if err != nil {
 		pkg.Error(c, err)
 		return
@@ -88,7 +89,7 @@ func (h *NodeHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	if err := h.svc.Delete(nodeID); err != nil {
+	if err := h.svc.Delete(middleware.GetUserID(c), nodeID); err != nil {
 		pkg.Error(c, err)
 		return
 	}

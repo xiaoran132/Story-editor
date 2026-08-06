@@ -3,17 +3,31 @@ package service
 import (
 	"backend/internal/model"
 	"backend/internal/repository"
+	"backend/pkg"
 	"context"
 
 	"github.com/google/uuid"
 )
 
 type NodeService struct {
-	repo *repository.NodeRepository
+	repo    *repository.NodeRepository
+	stories StoryReader // 经 node.StoryID → Story.CreatorID 做归属校验（跨模块只读走窄接口）
 }
 
-func NewNodeService(repo *repository.NodeRepository) *NodeService {
-	return &NodeService{repo: repo}
+func NewNodeService(repo *repository.NodeRepository, stories StoryReader) *NodeService {
+	return &NodeService{repo: repo, stories: stories}
+}
+
+// checkNodeOwner 校验某节点所属作品的创作者是否为调用者，否则 403 / 资源缺失时 404。
+func (s *NodeService) checkNodeOwner(ctx context.Context, node *model.StoryNode, userID uuid.UUID) error {
+	story, err := s.stories.FindByID(ctx, node.StoryID)
+	if err != nil {
+		return err
+	}
+	if story == nil {
+		return pkg.NotFound("story not found")
+	}
+	return requireOwner(story.CreatorID, userID)
 }
 
 type NodeCreateInput struct {
@@ -70,7 +84,7 @@ func (s *NodeService) GetChildren(nodeID uuid.UUID) ([]model.NodeResponse, error
 	return responses, nil
 }
 
-func (s *NodeService) Update(nodeID uuid.UUID, input *NodeCreateInput) (*model.NodeResponse, error) {
+func (s *NodeService) Update(userID, nodeID uuid.UUID, input *NodeCreateInput) (*model.NodeResponse, error) {
 	ctx := context.Background()
 
 	node, err := s.repo.FindByID(ctx, nodeID)
@@ -79,6 +93,9 @@ func (s *NodeService) Update(nodeID uuid.UUID, input *NodeCreateInput) (*model.N
 	}
 	if node == nil {
 		return nil, nil
+	}
+	if err := s.checkNodeOwner(ctx, node, userID); err != nil {
+		return nil, err
 	}
 
 	if input.ChoiceText != nil {
@@ -96,6 +113,17 @@ func (s *NodeService) Update(nodeID uuid.UUID, input *NodeCreateInput) (*model.N
 	return node.ToResponse(), nil
 }
 
-func (s *NodeService) Delete(nodeID uuid.UUID) error {
-	return s.repo.Delete(context.Background(), nodeID)
+func (s *NodeService) Delete(userID, nodeID uuid.UUID) error {
+	ctx := context.Background()
+	node, err := s.repo.FindByID(ctx, nodeID)
+	if err != nil {
+		return err
+	}
+	if node == nil {
+		return pkg.NotFound("node not found")
+	}
+	if err := s.checkNodeOwner(ctx, node, userID); err != nil {
+		return err
+	}
+	return s.repo.Delete(ctx, nodeID)
 }

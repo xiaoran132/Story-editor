@@ -153,7 +153,7 @@ func (h *PlayHandler) Backtrack(c *gin.Context) {
 		return
 	}
 
-	result, err := h.svc.Backtrack(sessionID, req.NodeID)
+	result, err := h.svc.Backtrack(h.player(c), sessionID, req.NodeID)
 	if err != nil {
 		pkg.Error(c, err)
 		return
@@ -193,7 +193,7 @@ func (h *PlayHandler) Get(c *gin.Context) {
 		return
 	}
 
-	result, err := h.svc.GetSession(sessionID)
+	result, err := h.svc.GetSession(h.player(c), sessionID)
 	if err != nil {
 		pkg.Error(c, err)
 		return

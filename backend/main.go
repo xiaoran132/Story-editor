@@ -52,7 +52,7 @@ func main() {
 	llmResolver := service.NewLLMResolver(llmRepo, cfg.EncryptionKey) // BYOK：按环节解析下发配置
 	userSvc := service.NewUserService(userRepo, cfg.JWTSecret, cfg.EncryptionKey)
 	storySvc := service.NewStoryService(storyRepo)
-	nodeSvc := service.NewNodeService(nodeRepo)
+	nodeSvc := service.NewNodeService(nodeRepo, storyRepo)
 	llmSvc := service.NewLLMService(llmRepo, agentClient, cfg.EncryptionKey)
 	playSvc := service.NewPlayService(sessionRepo, nodeRepo, storyRepo, agentClient, llmResolver)
 

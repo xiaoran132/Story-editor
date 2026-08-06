@@ -53,6 +53,8 @@ handler → service → repository
 
 完整规则在 [`../CLAUDE.md`](../CLAUDE.md)。新增代码不得绕过这条依赖方向。
 
+**模块边界（模块化单体，2026-08-06）**：模块 = 领域（user/story/play/llm/community），**禁止跨模块直接依赖对方 repository**；跨模块只读走 `service/ports.go` 的窄接口（如 `StoryReader`，由 `*repository.StoryRepository` 满足）。这是未来无痛拆分服务的接缝。`PlayService`/`NodeService` 已改为依赖 `StoryReader` 而非具体 story repo。play 的跨表事务（节点+会话）下沉为 `PlaySessionRepository.CreateNodeAndUpdateSession`/`DeleteSessionCascade`，`DB()` 裸连接泄漏已移除。RBAC 与归属校验见 §9.2 及 `CLAUDE.md` Authentication & Authorization 段。
+
 ## 4. 代码地图：从需求找到实现
 
 | 想改什么 | 优先阅读的文件 |
@@ -181,11 +183,11 @@ prepare
 | 域 | 接口 |
 |---|---|
 | 鉴权 | `POST /auth/register`、`POST /auth/login`、`GET/PUT /auth/profile`（登录签发的 JWT 现携带 `role` 快照） |
-| 作品/节点 | `POST/GET /stories`、`GET/PUT/DELETE /stories/:id`、`POST /stories/:id/nodes`、`GET /nodes/:id/children`、`PUT/DELETE /nodes/:id` |
-| 游玩 | `POST /play/sessions`（建空会话）、`POST /play/sessions/:id/opening/stream`（SSE 流式开局，幂等）、`GET /play/sessions`、`GET/DELETE /play/sessions/:id`、`POST /play/sessions/:id/choice/stream`（SSE 流式续写）、`POST /play/sessions/:id/backtrack` |
+| 作品/节点 | `POST/GET /stories`、`GET/PUT/DELETE /stories/:id`、`POST /stories/:id/nodes`、`GET /nodes/:id/children`、`PUT/DELETE /nodes/:id`（node 增改删经 `Story.CreatorID` 校验归属） |
+| 游玩 | `POST /play/sessions`（建空会话）、`POST /play/sessions/:id/opening/stream`（SSE 流式开局，幂等）、`GET /play/sessions`、`GET/DELETE /play/sessions/:id`、`POST /play/sessions/:id/choice/stream`（SSE 流式续写）、`POST /play/sessions/:id/backtrack`（**所有按 sessionID 访问的接口均校验 `session.PlayerID` 归属**，登录用户已堵死越权；匿名 guest 共享弱点见 §9.2） |
 | 创作辅助 | `POST /assist/world`、`/opening`、`/polish`、`/branches`（AuthRequired；Go 转发 agent；请求可带 `connection_id` 覆盖 world 环节连接） |
 | BYOK（AuthRequired） | `GET/POST /llm/connections`、`PUT/DELETE /llm/connections/:id`、`POST /llm/connections/test`、`GET /llm/connections/:id/models`（拉端点模型列表）、`GET/PUT /llm/story-config/:storyId`（玩家在某作品的模型配置） |
-| 平台设置（AuthRequired+RequireAdmin） | `GET/PUT /admin/llm/platform`、`POST /admin/llm/platform/test` |
+| 平台设置（AuthRequired + `RequirePermission(authz.PermPlatformLLMManage)`，`RequireAdmin` 为其别名） | `GET/PUT /admin/llm/platform`、`POST /admin/llm/platform/test` |
 | 社区（未实现） | `GET /community/stories`、`GET /community/stories/:id`、`POST /community/stories/:id/like`、`POST /community/stories/:id/comments` |
 
 游玩组挂 `middleware.AuthOptional`：带有效 JWT 则归属登录用户，否则回退 guest（匿名可玩）。前端 `api.ts` 每请求带 `Authorization: Bearer`（token 存 localStorage）；匿名建的会话 id 记在 `guestSessions`，登录时 `POST /play/sessions/migrate` 领取到账号（`MigrateGuestSessions` 只迁 guest 名下且 id 命中的，偷不走他人会话）。注意共享 guest 下 `GET /play/sessions`（匿名）返回的是全体 guest 会话——0 用户阶段无碍，多用户前需改为每浏览器独立匿名身份。
@@ -307,6 +309,8 @@ cd agent
 - LLM 偶发返回非法 JSON（真实样本约 7%），过去直接冒泡成玩家 502。现 `chat_json` 对 `LLMParseError` 附纠正指令重试 `AI_PARSE_MAX_RETRIES`(默认1) 次并打 `parse_retry` 点；耗尽仍抛。重试后仍高发时再考虑修复 JSON 或换更稳的解析。
 - `summary` 是有损压缩，长剧情仍可能漂移；RAG 是后续补精确细节的方案。
 - 前端没有登录，后端已有的真实用户边界尚未被游玩 UI 验证。
+- **匿名 guest 共享单一 PlayerID（结构性弱点，2026-08-06）**：所有匿名玩家回退同一个 seed `guest` 用户 id 作 PlayerID（`handler/play.go` 的 `player()`），故会话归属校验（`checkSessionOwner`）**对匿名会话之间不生效**——匿名者彼此可见/可删对方存档。登录用户已被完全隔离（PlayerID = 各自 userID）。0 用户 demo 危害趋近零，暂不修。未来方案：前端每端生成 guest UUID 存 localStorage、后端每匿名会话独立 PlayerID、Migrate 按该 UUID 迁移。
+- **创作侧 node CRUD 半残（2026-08-06）**：`POST /stories/:id/nodes` 仍以 `sessionID=uuid.Nil` 建节点（`handler/node.go` 的 TODO），创作侧手工建树未完成。本次仅给 `NodeService.Update/Delete` 补了经 `Story.CreatorID` 的越权校验，未扩建双归属模型。将来要独立编辑节点树时再引入「作者草稿树」或可空 sessionID 语义。
 - `community` 路由已注册但 handler 未实现；不能把它作为可用接口依赖。
 - `AutoMigrate` 适合当前 Demo，不等同于生产级迁移治理。
 - Go 服务的上下文传递、优雅关闭、seed 开关等工程化问题仍在 [prd.md](prd.md) 的开放问题中记录。

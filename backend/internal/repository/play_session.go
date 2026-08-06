@@ -57,7 +57,27 @@ func (r *PlaySessionRepository) MigrateGuestSessions(ctx context.Context, userID
 	return res.RowsAffected, res.Error
 }
 
-// DB 暴露底层连接，供 service 层做跨仓储事务（写节点 + 更新会话）。
-func (r *PlaySessionRepository) DB() *gorm.DB {
-	return r.db
+// CreateNodeAndUpdateSession 在一个事务内落一个新节点并让会话指向它：
+// 先 Create(node)（回填其 ID），再把 session.CurrentNodeID 指向新节点后 Save(session)。
+// 会话的其余字段（NodeCount / CurrentState / RevealedAttrs / Status / LastPlayedAt）
+// 由调用方在调用前设置好；此处只负责“节点落库 + 指针指向”这对必须原子的操作。
+// 跨表事务内聚于此仓储（node 与 session 同属游玩运行时生命周期），service 层不再触碰裸 *gorm.DB。
+func (r *PlaySessionRepository) CreateNodeAndUpdateSession(ctx context.Context, node *model.StoryNode, s *model.PlaySession) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(node).Error; err != nil {
+			return err
+		}
+		s.CurrentNodeID = &node.ID
+		return tx.Save(s).Error
+	})
+}
+
+// DeleteSessionCascade 事务删除一局会话及其全部节点（模型无外键，级联手动处理）。
+func (r *PlaySessionRepository) DeleteSessionCascade(ctx context.Context, sessionID uuid.UUID) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("session_id = ?", sessionID).Delete(&model.StoryNode{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&model.PlaySession{}, "id = ?", sessionID).Error
+	})
 }

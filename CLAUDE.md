@@ -79,13 +79,17 @@ backend/
 │   │   ├── user.go
 │   │   ├── story.go
 │   │   ├── node.go
+│   │   ├── ports.go            # Cross-module narrow interfaces (StoryReader) — the split seam
+│   │   ├── ownership.go        # Unified resource-ownership check (requireOwner / ownerOrNotFound)
 │   │   └── agent_client.go     # HTTP calls to the Python agent service
 │   ├── repository/             # Data access layer (GORM operations)
 │   │   ├── user.go
 │   │   ├── story.go
 │   │   └── node.go
+│   ├── authz/                  # Lightweight RBAC single source of truth (role→permission, stateless, no DB)
+│   │   └── authz.go
 │   └── middleware/
-│       ├── auth.go             # JWT Bearer parsing
+│       ├── auth.go             # JWT Bearer parsing + RequirePermission (RBAC gate)
 │       └── cors.go             # Cross-origin
 └── pkg/                        # Utility packages with no business dependencies
     ├── jwt.go                  # JWT generation/verification
@@ -100,12 +104,13 @@ backend/
 3. `repository` only does database operations, accepts/returns `model` structs
 4. `model` only defines data structures, forbidden from writing business logic
 5. `pkg` has no business dependencies, may be referenced by any layer
+6. **Module boundaries (modular monolith)**: modules = domains (user/story/play/llm/community). A module must **not** depend directly on another module's `repository`; cross-module reads go through a narrow interface in `service/ports.go` (e.g. `StoryReader`, satisfied by `*repository.StoryRepository`). This is the seam for future extraction. `internal/authz` is a stateless policy layer (role→permission, no DB) referenceable by any layer.
 
 ### Dependency Injection
 
 Assembled manually in `main.go`: config → database → repository → service → handler → route registration.
 
-On startup, `main.go` first executes `CREATE EXTENSION IF NOT EXISTS pgcrypto` (required by `gen_random_uuid()`), then `AutoMigrate` on the current five models: `User`, `UserCredential`, `Story`, `StoryNode`, `PlaySession`, followed by idempotent `seed()` that pre-seeds a guest user + demo works. `aiClient` is injected into `PlayService` (`NewPlayService(sessionRepo, nodeRepo, storyRepo, aiClient)`), mounted at `/api/v1/play/*`.
+On startup, `main.go` first executes `CREATE EXTENSION IF NOT EXISTS pgcrypto` (required by `gen_random_uuid()`), then `AutoMigrate` on the current five models: `User`, `UserCredential`, `Story`, `StoryNode`, `PlaySession`, followed by idempotent `seed()` that pre-seeds a guest user + demo works. `PlayService` takes story access as the `StoryReader` narrow interface (not the concrete story repo): `NewPlayService(sessionRepo, nodeRepo, storyRepo, aiClient, llmResolver)` — `storyRepo` satisfies `StoryReader` by duck typing. `NewNodeService(nodeRepo, storyRepo)` likewise takes `StoryReader` for node ownership checks. Cross-table writes in play (node + session) are done via `PlaySessionRepository.CreateNodeAndUpdateSession` / `DeleteSessionCascade`; the old `PlaySessionRepository.DB()` raw-connection leak was **removed**. Mounted at `/api/v1/play/*`.
 
 ### Route Registration
 
@@ -138,10 +143,16 @@ All JSON responses use `pkg/` helper functions; do not call `c.JSON()` directly:
 ```
 Helper functions: `pkg.Success`, `pkg.Created`, `pkg.SuccessWithMeta`, `pkg.Error`, `pkg.NoContent`.
 
-### Authentication
+### Authentication & Authorization
 
-`middleware.AuthRequired(secret)` — parses Bearer JWT, sets `c.Set("user_id", ...)`.
-In handlers, use `middleware.GetUserID(c)` to retrieve the value.
+`middleware.AuthRequired(secret)` — parses Bearer JWT, sets `c.Set("user_id", ...)` + `c.Set("role", ...)`.
+In handlers, use `middleware.GetUserID(c)` / `middleware.GetRole(c)` to retrieve the values.
+
+**RBAC (lightweight, code-level)** — two distinct concerns, kept separate:
+- **Role → permission** (global actions): declared in `internal/authz` (`authz.Can(role, perm)`, single source of truth, stateless, no DB). Gate routes with `middleware.RequirePermission(perm)`; `RequireAdmin()` is kept as a backward-compatible alias delegating to `RequirePermission(authz.PermPlatformLLMManage)`. Role is a JWT snapshot — promotion (`UPDATE users SET role='admin'`) requires re-login.
+- **Resource ownership** (owner == caller): NOT part of RBAC. Enforced in the service layer via `service.requireOwner(ownerID, callerID)` (→403) or `ownerOrNotFound` (→404, doesn't leak existence). Play sessions use `checkSessionOwner`; node CRUD checks via `node.StoryID → Story.CreatorID`. `GetSession`/`Backtrack`/`ChoiceStream`/`OpeningStream` and `NodeService.Update/Delete` all verify ownership (previously an IDOR/越权 gap).
+
+> **Known limitation**: anonymous players all fall back to the single seeded `guest` PlayerID, so ownership checks don't isolate anonymous sessions from each other (logged-in users are fully protected). See `docs/handoff.md §9.2`.
 
 ## Key Design Conventions
 

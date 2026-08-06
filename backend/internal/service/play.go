@@ -12,14 +12,13 @@ import (
 	"backend/pkg"
 
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 )
 
 // PlayService 编排「剧情游玩」核心链路：开局 → 选择 → 生成 → 更新属性 → 回溯。
 type PlayService struct {
 	sessions *repository.PlaySessionRepository
 	nodes    *repository.NodeRepository
-	stories  *repository.StoryRepository
+	stories  StoryReader // 跨模块只读 story，经窄接口而非直接依赖 story repo（拆分接缝）
 	ai       *AgentClient
 	resolver *LLMResolver // BYOK：按玩家 write/review 环节解析下发配置
 }
@@ -27,7 +26,7 @@ type PlayService struct {
 func NewPlayService(
 	sessions *repository.PlaySessionRepository,
 	nodes *repository.NodeRepository,
-	stories *repository.StoryRepository,
+	stories StoryReader,
 	ai *AgentClient,
 	resolver *LLMResolver,
 ) *PlayService {
@@ -120,8 +119,11 @@ func (s *PlayService) StartOpeningStream(
 	if session == nil {
 		return nil, pkg.NotFound("session not found")
 	}
+	if err := checkSessionOwner(session, playerID); err != nil {
+		return nil, err
+	}
 	if session.CurrentNodeID != nil { // 幂等：开场已生成，直接返回
-		return s.GetSession(sessionID)
+		return s.GetSession(playerID, sessionID)
 	}
 
 	story, err := s.stories.FindByID(ctx, session.StoryID)
@@ -170,17 +172,11 @@ func (s *PlayService) StartOpeningStream(
 		StateSnapshot:    dumpState(initialState),
 		RevealedSnapshot: revealedJSON,
 	}
-	err = s.sessions.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(root).Error; err != nil {
-			return err
-		}
-		session.CurrentNodeID = &root.ID
-		session.NodeCount = 1
-		session.RevealedAttrs = revealedJSON
-		session.LastPlayedAt = time.Now()
-		return tx.Save(session).Error
-	})
-	if err != nil {
+	session.NodeCount = 1
+	session.RevealedAttrs = revealedJSON
+	session.LastPlayedAt = time.Now()
+	// 跨表事务下沉到仓储：Create(root) + 会话指向根节点（CurrentNodeID 由仓储回填后设置）。
+	if err := s.sessions.CreateNodeAndUpdateSession(ctx, root, session); err != nil {
 		return nil, err
 	}
 	return &SessionResult{Session: session.ToResponse(), CurrentNode: root.ToResponse()}, nil
@@ -188,7 +184,7 @@ func (s *PlayService) StartOpeningStream(
 
 // loadChoiceContext 校验会话并回溯出 AI 上下文（当前节点到根的路径 + history）。
 // MakeChoice 与 MakeChoiceStream 的前置阶段一致，抽出复用。
-func (s *PlayService) loadChoiceContext(ctx context.Context, sessionID uuid.UUID) (
+func (s *PlayService) loadChoiceContext(ctx context.Context, sessionID, playerID uuid.UUID) (
 	*model.PlaySession, WorldConfig, []model.StoryNode, []PathStep, error,
 ) {
 	var zero WorldConfig
@@ -198,6 +194,9 @@ func (s *PlayService) loadChoiceContext(ctx context.Context, sessionID uuid.UUID
 	}
 	if session == nil {
 		return nil, zero, nil, nil, pkg.NotFound("session not found")
+	}
+	if err := checkSessionOwner(session, playerID); err != nil {
+		return nil, zero, nil, nil, err
 	}
 	if session.Status != "active" {
 		return nil, zero, nil, nil, pkg.BadRequest("session already ended")
@@ -277,22 +276,15 @@ func (s *PlayService) applyContinueResult(
 		node.EndingType = &result.EndingType
 	}
 
-	// 事务：写子节点 + 更新会话状态（唯一事实来源 current_state）。
-	err := s.sessions.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(node).Error; err != nil {
-			return err
-		}
-		session.CurrentState = dumpState(newState)
-		session.RevealedAttrs = revealedJSON
-		session.CurrentNodeID = &node.ID
-		session.NodeCount++
-		session.LastPlayedAt = time.Now()
-		if result.IsEnding {
-			session.Status = "ended"
-		}
-		return tx.Save(session).Error
-	})
-	if err != nil {
+	// 事务：写子节点 + 更新会话状态（唯一事实来源 current_state）。CurrentNodeID 由仓储回填后设置。
+	session.CurrentState = dumpState(newState)
+	session.RevealedAttrs = revealedJSON
+	session.NodeCount++
+	session.LastPlayedAt = time.Now()
+	if result.IsEnding {
+		session.Status = "ended"
+	}
+	if err := s.sessions.CreateNodeAndUpdateSession(ctx, node, session); err != nil {
 		return nil, err
 	}
 	return &SessionResult{Session: session.ToResponse(), CurrentNode: node.ToResponse()}, nil
@@ -304,7 +296,7 @@ func (s *PlayService) MakeChoiceStream(
 	sessionID, playerID uuid.UUID, choice string, onDelta func(string), onRevise func(),
 ) (*SessionResult, error) {
 	ctx := context.Background()
-	session, world, pathNodes, history, err := s.loadChoiceContext(ctx, sessionID)
+	session, world, pathNodes, history, err := s.loadChoiceContext(ctx, sessionID, playerID)
 	if err != nil {
 		return nil, err
 	}
@@ -372,7 +364,7 @@ func (s *PlayService) MigrateSessions(userID, guestID uuid.UUID, sessionIDs []uu
 }
 
 // Backtrack 回溯到某历史节点：不删数据，恢复该节点的状态快照，从该点继续分叉。
-func (s *PlayService) Backtrack(sessionID, nodeID uuid.UUID) (*SessionResult, error) {
+func (s *PlayService) Backtrack(playerID, sessionID, nodeID uuid.UUID) (*SessionResult, error) {
 	ctx := context.Background()
 
 	session, err := s.sessions.FindByID(ctx, sessionID)
@@ -381,6 +373,9 @@ func (s *PlayService) Backtrack(sessionID, nodeID uuid.UUID) (*SessionResult, er
 	}
 	if session == nil {
 		return nil, pkg.NotFound("session not found")
+	}
+	if err := checkSessionOwner(session, playerID); err != nil {
+		return nil, err
 	}
 
 	node, err := s.nodes.FindByID(ctx, nodeID)
@@ -415,21 +410,21 @@ func (s *PlayService) DeleteSession(playerID, sessionID uuid.UUID) error {
 	if session == nil {
 		return pkg.NotFound("session not found")
 	}
-	if session.PlayerID != playerID {
-		return pkg.Forbidden("cannot delete another player's session")
+	if err := checkSessionOwner(session, playerID); err != nil {
+		return err
 	}
 
-	// 事务：先删该局全部节点，再删会话行（模型无外键，级联手动处理）。
-	return s.sessions.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("session_id = ?", sessionID).Delete(&model.StoryNode{}).Error; err != nil {
-			return err
-		}
-		return tx.Delete(&model.PlaySession{}, "id = ?", sessionID).Error
-	})
+	return s.sessions.DeleteSessionCascade(ctx, sessionID)
+}
+
+// checkSessionOwner 校验会话归属：会话的 PlayerID 必须等于调用者，否则 403。
+// 抽成纯函数便于单测（不依赖 DB）。所有按 sessionID 访问他人会话的入口共用它。
+func checkSessionOwner(session *model.PlaySession, playerID uuid.UUID) error {
+	return requireOwner(session.PlayerID, playerID)
 }
 
 // GetSession 返回会话 + 当前节点 + 该局全部节点（供时间线渲染）。
-func (s *PlayService) GetSession(sessionID uuid.UUID) (*SessionResult, error) {
+func (s *PlayService) GetSession(playerID, sessionID uuid.UUID) (*SessionResult, error) {
 	ctx := context.Background()
 
 	session, err := s.sessions.FindByID(ctx, sessionID)
@@ -438,6 +433,9 @@ func (s *PlayService) GetSession(sessionID uuid.UUID) (*SessionResult, error) {
 	}
 	if session == nil {
 		return nil, pkg.NotFound("session not found")
+	}
+	if err := checkSessionOwner(session, playerID); err != nil {
+		return nil, err
 	}
 
 	var current *model.NodeResponse

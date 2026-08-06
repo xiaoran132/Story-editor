@@ -3,6 +3,7 @@ package middleware
 import (
 	"strings"
 
+	"backend/internal/authz"
 	"backend/pkg"
 
 	"github.com/gin-gonic/gin"
@@ -56,17 +57,23 @@ func AuthOptional(secret string) gin.HandlerFunc {
 	}
 }
 
-// RequireAdmin 必须在 AuthRequired 之后挂载：校验 token 里的角色快照为 admin，否则 403。
-// 提权（手动改库 UPDATE users SET role='admin'）后，用户需重新登录才能拿到 admin token。
-func RequireAdmin() gin.HandlerFunc {
+// RequirePermission 必须在 AuthRequired 之后挂载：按 token 里的角色快照做 RBAC 判定，
+// 角色不具备该权限则 403。权限→角色映射的唯一事实来源是 internal/authz。
+// 提权（手动改库 UPDATE users SET role='admin'）后，用户需重新登录才能拿到带新角色的 token。
+func RequirePermission(perm authz.Permission) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if GetRole(c) != "admin" {
-			pkg.Error(c, pkg.Forbidden("admin privilege required"))
+		if !authz.Can(GetRole(c), perm) {
+			pkg.Error(c, pkg.Forbidden("permission denied"))
 			c.Abort()
 			return
 		}
 		c.Next()
 	}
+}
+
+// RequireAdmin 保留为便捷别名（向后兼容），委托到 RequirePermission。
+func RequireAdmin() gin.HandlerFunc {
+	return RequirePermission(authz.PermPlatformLLMManage)
 }
 
 func GetUserID(c *gin.Context) uuid.UUID {
