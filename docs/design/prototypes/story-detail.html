@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-mode="night">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="description" content="最后的深夜电台 · 作品详情。走进这个世界之前,先看看它的规则。" />
+<title>最后的深夜电台 · 作品详情</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;510;590&family=Noto+Serif+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --sans:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+    --serif:"Noto Serif SC",Georgia,"Songti SC",serif;
+    --ink:#f4ece0; --ink-soft:#b3a996; --scrim:11,13,19; --accent:#e3bd7d;
+    --panel-border:rgba(255,255,255,.09); --r-md:10px; --r-lg:16px; --ring:0 0 0 3px rgba(227,189,125,.4);
+    --ease:cubic-bezier(.2,0,0,1);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{min-height:100vh;font-family:var(--sans);color:var(--ink);-webkit-font-smoothing:antialiased;background:#0a0e18}
+  :focus-visible{outline:none;box-shadow:var(--ring);border-radius:8px}
+  .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+
+  /* 场景背景(该作品主题:末世·电台 靛蓝) */
+  .bg{position:fixed;inset:0;z-index:-3;background-color:#0a0e18;background-repeat:no-repeat;
+    background-image:
+      radial-gradient(58% 42% at 76% 14%, rgba(120,150,220,.22), transparent 60%),
+      radial-gradient(50% 30% at 16% 96%, rgba(94,234,212,.10), transparent 66%),
+      linear-gradient(180deg,#0b1020 0%,#141a2e 55%,#241826 100%)}
+  .grain{position:fixed;inset:0;z-index:-2;pointer-events:none;opacity:.06;mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='150' height='150'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='150' height='150' filter='url(%23n)'/></svg>");background-size:150px 150px}
+  .vignette{position:fixed;inset:0;z-index:-1;pointer-events:none;background:radial-gradient(120% 100% at 50% 30%,transparent 55%,rgba(0,0,0,.5) 100%)}
+
+  .top{position:sticky;top:0;z-index:30;padding:16px 22px}
+  .back{display:inline-flex;align-items:center;gap:7px;color:var(--ink-soft);text-decoration:none;font-size:13px;letter-spacing:.01em;
+    padding:8px 12px;border-radius:9px;background:rgba(var(--scrim),.44);backdrop-filter:blur(8px)}
+  .back:hover{color:var(--ink)}
+
+  .wrap{max-width:680px;margin:0 auto;padding:20px 24px 80px}
+  .panel{background:rgba(var(--scrim),.72);backdrop-filter:blur(4px);border:1px solid var(--panel-border);border-radius:var(--r-lg);
+    padding:36px 40px;box-shadow:0 32px 90px -34px rgba(0,0,0,.7)}
+  .kick{font-size:12px;letter-spacing:.24em;color:var(--accent);font-weight:590;margin-bottom:12px}
+  h1{font-family:var(--serif);font-weight:900;font-size:34px;line-height:1.32;letter-spacing:0}
+  .byline{display:flex;align-items:center;gap:10px;margin-top:16px;color:var(--ink-soft);font-size:13px}
+  .byline .au{width:26px;height:26px;border-radius:50%;background:#f59e0b;flex:none}
+  .byline b{color:var(--ink);font-weight:510}
+  .stats{display:flex;gap:16px;margin-top:16px;color:var(--ink-soft);font-size:12.5px;font-variant-numeric:tabular-nums;flex-wrap:wrap}
+  .stats span{display:inline-flex;align-items:center;gap:5px}
+  .premise{font-family:var(--serif);font-size:16px;line-height:1.9;margin-top:22px;color:var(--ink)}
+  .rule{height:1px;background:var(--panel-border);margin:26px 0}
+  h2{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-soft);font-weight:590;margin-bottom:12px}
+  .intro{font-family:var(--serif);font-size:15px;line-height:1.9;color:#e4dccd}
+  .tags{display:flex;flex-wrap:wrap;gap:7px;margin-top:20px}
+  .tag{font-size:12px;padding:4px 10px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid var(--panel-border);color:var(--ink);letter-spacing:.01em}
+
+  /* 属性预览 */
+  .attrs{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:12px}
+  .attr{border:1px solid var(--panel-border);border-radius:var(--r-md);padding:11px 13px;background:rgba(255,255,255,.03)}
+  .attr .an{font-size:12.5px;color:var(--ink-soft);display:flex;justify-content:space-between;letter-spacing:.01em}
+  .attr .an b{color:var(--ink);font-weight:510}
+  .attr .bar{height:5px;border-radius:3px;background:rgba(179,169,150,.22);margin-top:8px;overflow:hidden}
+  .attr .bar i{display:block;height:100%;border-radius:3px}
+  .attr.locked{display:flex;align-items:center;gap:8px;color:var(--ink-soft);font-size:12.5px}
+  .attr.locked svg{opacity:.7}
+
+  /* 生成设置(BYOK,可折叠) */
+  .settings{margin-top:12px;border:1px solid var(--panel-border);border-radius:var(--r-md);overflow:hidden}
+  .stog{width:100%;display:flex;align-items:center;gap:10px;padding:13px 15px;background:rgba(255,255,255,.03);border:0;color:var(--ink);
+    font-family:var(--sans);font-size:13.5px;font-weight:510;cursor:pointer;letter-spacing:.01em}
+  .stog .chev{margin-left:auto;transition:transform .2s var(--ease)}
+  .stog[aria-expanded="true"] .chev{transform:rotate(180deg)}
+  .sbody{display:none;padding:6px 15px 16px;gap:14px;flex-direction:column}
+  .sbody.on{display:flex}
+  .fld label{display:block;font-size:12px;color:var(--ink-soft);margin-bottom:6px;letter-spacing:.01em}
+  .sel{width:100%;height:40px;border:1px solid var(--panel-border);border-radius:9px;background:rgba(var(--scrim),.6);color:var(--ink);
+    padding:0 12px;font-size:13.5px;font-family:var(--sans);outline:none}
+  .sel:focus{border-color:var(--accent)}
+  .note{font-size:11.5px;color:var(--ink-soft);line-height:1.6}
+  .note .rec{color:var(--accent)}
+
+  /* CTA */
+  .cta{display:flex;gap:12px;margin-top:26px}
+  .btn{flex:1;height:52px;border-radius:12px;border:1px solid transparent;font-family:var(--sans);font-size:15px;font-weight:590;
+    cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:9px;text-decoration:none;letter-spacing:.01em;
+    transition:background .15s var(--ease),transform .09s,border-color .15s}
+  .btn:active{transform:translateY(1px)}
+  .btn.primary{background:var(--accent);color:#1a1206}
+  .btn.primary:hover{background:#eecb8f}
+  .btn.ghost{flex:0 0 auto;padding:0 20px;background:rgba(255,255,255,.05);color:var(--ink);border-color:var(--panel-border)}
+  .btn.ghost:hover{border-color:var(--accent)}
+  .btn small{display:block;font-size:11px;font-weight:400;opacity:.7;margin-top:1px}
+  .cont-hint{font-size:12px;color:var(--ink-soft);text-align:center;margin-top:14px;letter-spacing:.01em}
+
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);z-index:70;background:rgba(20,22,30,.96);
+    color:var(--ink);border:1px solid var(--panel-border);padding:11px 18px;border-radius:10px;font-size:13px;opacity:0;transition:.25s var(--ease);pointer-events:none}
+  .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  @media(max-width:560px){.panel{padding:28px 22px}h1{font-size:27px}.attrs{grid-template-columns:1fr}.cta{flex-direction:column-reverse}.btn.ghost{flex:1}}
+  @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="bg"></div><div class="grain"></div><div class="vignette"></div>
+
+<div class="top">
+  <a class="back" href="home-discover.html">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+    书库
+  </a>
+</div>
+
+<div class="wrap">
+  <article class="panel">
+    <div class="kick">末世 · 电台</div>
+    <h1>最后的深夜电台</h1>
+    <div class="byline"><span class="au" aria-hidden="true"></span> 作者 <b>深蓝拾音</b> · 更新于 3 天前</div>
+    <div class="stats">
+      <span><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg> 2.4万 游玩</span>
+      <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 1 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg> 1284 赞</span>
+      <span>分支 ∞ · 平均时长 40 分钟</span>
+    </div>
+
+    <p class="premise">电流杂音里,有人在呼救。你是否回应?</p>
+
+    <div class="rule"></div>
+    <h2>世界观</h2>
+    <p class="intro">末世的第七个雨夜。城市在一场无人能解释的「低语」中崩溃——被声音侵蚀的人不再是人。电力早已中断,唯一还能联通外界的,是老式对讲机在特定频段的微弱回声。<br><br>你是仍保有理智的幸存者之一,躲在城南一栋居民楼里。规则只有一条:<b style="color:var(--ink)">不要在夜里发出声音,它们循声而来。</b></p>
+
+    <div class="rule"></div>
+    <h2>你将背负的状态</h2>
+    <div class="attrs">
+      <div class="attr"><div class="an"><span>理智</span><b>60 / 100</b></div><div class="bar"><i style="width:60%;background:#8b9dff"></i></div></div>
+      <div class="attr"><div class="an"><span>体温</span><b>偏低</b></div><div class="bar"><i style="width:38%;background:#5eead4"></i></div></div>
+      <div class="attr locked"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v4M8 21h8M6 8h12l-1 6H7z"/></svg> 物资 · 需在剧情中清点后显现</div>
+      <div class="attr locked"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg> 警觉 · 隐藏(仅 AI 感知)</div>
+    </div>
+
+    <div class="tags">
+      <span class="tag">末世生存</span><span class="tag">悬疑</span><span class="tag">硬核</span><span class="tag">含隐藏属性</span>
+    </div>
+
+    <div class="rule"></div>
+    <h2>生成设置</h2>
+    <div class="settings">
+      <button class="stog" id="stog" type="button" aria-expanded="false" aria-controls="sbody">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v3M12 18v3M5 12H2m20 0h-3M6 6l2 2m8 8 2 2M6 18l2-2m8-8 2-2"/></svg>
+        选择本次游玩的 AI 模型
+        <span class="note" style="margin-left:2px">当前:平台默认</span>
+        <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <div class="sbody" id="sbody">
+        <div class="fld"><label for="mw">写作模型</label>
+          <select class="sel" id="mw"><option>平台默认</option><option>DeepSeek-V3(作者推荐)</option><option>我的连接 · GPT-4o</option><option>我的连接 · Claude</option></select>
+        </div>
+        <div class="fld"><label for="mr">审校模型</label>
+          <select class="sel" id="mr"><option>平台默认(低温复查)</option><option>DeepSeek-V3</option><option>我的连接 · GPT-4o-mini</option></select>
+        </div>
+        <p class="note"><span class="rec">作者推荐</span>写作用 DeepSeek-V3。未配置时走平台默认额度;在「设置 · 连接」里可绑定自己的 Key(BYOK)。</p>
+      </div>
+    </div>
+
+    <div class="cta">
+      <a class="btn ghost" href="play-reading.html" id="contBtn">继续上次<small>第一夜 · 信号</small></a>
+      <a class="btn primary" href="play-reading.html" id="startBtn">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+        开始新的一夜
+      </a>
+    </div>
+    <p class="cont-hint">上次进度会保留;开新局不会覆盖存档。未登录也能玩,登录后可跨设备续玩。</p>
+  </article>
+</div>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+  const $=s=>document.querySelector(s);
+  const stog=$('#stog'),sbody=$('#sbody');
+  stog.addEventListener('click',()=>{const on=stog.getAttribute('aria-expanded')!=='true';
+    stog.setAttribute('aria-expanded',on);sbody.classList.toggle('on',on);});
+  let tt;const toast=m=>{const el=$('#toast');el.textContent=m;el.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>el.classList.remove('on'),2000);};
+  $('#mw').addEventListener('change',e=>{stog.querySelector('.note').textContent='当前:'+e.target.value;toast('写作模型已设为 '+e.target.value);});
+  $('#mr').addEventListener('change',e=>toast('审校模型已设为 '+e.target.value));
+  // 演示:开始/继续给一个即时反馈再跳转
+  $('#startBtn').addEventListener('click',()=>toast('正在生成开场…'));
+  $('#contBtn').addEventListener('click',()=>toast('读取存档 · 第一夜'));
+</script>
+</body>
+</html>

@@ -260,3 +260,17 @@ Startup: `cd agent && pip install -r requirements.txt && uvicorn app.main:app --
 7. **achievement** — achievement system
 
 `templates/index.html` is a Gin template placeholder, to be replaced once the frontend is formally built.
+
+## 前端设计规范（UI 事实源）
+
+新增或改造任何前端界面前，**必须先读**：
+- `docs/design/DESIGN.md` —— 可执行设计铁律 + 双态（管理态/阅读态）决策 + 组件约定 + 加新页面清单；
+- `docs/design/tokens.css` —— 全部设计变量的唯一事实源（颜色/字阶/间距/圆角/动效/阴影/阅读态/作品主题色）；只引用变量，不写死数值。
+
+`docs/design/prototypes/*.html` 是各屏静态高保真参考（视觉参照，非要照抄的代码）：
+index(总览) · home-discover(书库) · story-detail(作品详情) · play-reading(游玩) ·
+create-editor(创作) · my-space(我的空间) · settings(设置/BYOK) · community(社区) ·
+login(登录) · design-system(可视规范)。
+
+落地方式：把 tokens 合并进 `frontend` 的 `globals.css` 主题体系（阅读态映射到现有 `data-theme`），
+用 Next.js/React 逐屏实现；交互逻辑以后端契约为准，原型里的假数据/定时器仅为演示。

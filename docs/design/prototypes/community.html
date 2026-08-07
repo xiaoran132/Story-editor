@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="description" content="Story Editor 社区 · 发现别人写的世界,点赞、评论、关注创作者。" />
+<title>社区 · Story Editor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;510;590;700&family=Noto+Serif+SC:wght@500;700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#ffffff; --surface:#f7f8fa; --surface-2:#eef1f5; --fg:#111111; --muted:#5b626e; --border:#e7e9ef;
+    --accent:#1677ff; --accent-ink:#0b5fd0; --danger:#c81e4f; --r-sm:8px; --r-md:10px; --r-lg:14px; --r-pill:999px;
+    --ring:0 0 0 3px rgba(22,119,255,.35); --ease:cubic-bezier(.2,0,0,1);
+    --sans:"Inter",system-ui,-apple-system,"Segoe UI","Helvetica Neue",Arial,sans-serif;
+    --serif:"Noto Serif SC",Georgia,"Songti SC",serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--surface);color:var(--fg);font-family:var(--sans);-webkit-font-smoothing:antialiased;line-height:1.5}
+  .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+  :focus-visible{outline:none;box-shadow:var(--ring);border-radius:var(--r-sm)}
+  button{font-family:inherit;cursor:pointer}
+
+  header{position:sticky;top:0;z-index:40;background:rgba(255,255,255,.86);backdrop-filter:saturate(180%) blur(14px);border-bottom:1px solid var(--border)}
+  .hd{max-width:1120px;margin:0 auto;padding:0 24px;height:60px;display:flex;align-items:center;gap:22px}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:15px;text-decoration:none;color:inherit;flex:none}
+  .brand .g{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;background:var(--fg)}
+  .nav{display:flex;gap:4px}
+  .nav a{padding:7px 12px;border-radius:8px;color:var(--muted);text-decoration:none;font-size:14px;font-weight:510;letter-spacing:.01em}
+  .nav a[aria-current="page"],.nav a:hover{color:var(--fg);background:var(--surface)}
+  .hd .sp{margin-left:auto;display:flex;align-items:center;gap:12px}
+  .btn{height:38px;padding:0 16px;border:1px solid transparent;border-radius:var(--r-md);font-size:13.5px;font-weight:590;letter-spacing:.01em;
+    display:inline-flex;align-items:center;gap:7px;transition:background var(--ease) .15s,border-color var(--ease) .15s,transform .09s}
+  .btn:active{transform:translateY(1px)}
+  .btn.primary{background:var(--fg);color:#fff}.btn.primary:hover{background:#000}
+  .btn.secondary{background:var(--bg);color:var(--fg);border-color:var(--border)}.btn.secondary:hover{border-color:#c7ccd6;background:var(--surface)}
+  .btn.sm{height:32px;padding:0 12px;font-size:13px}
+  .avatar{width:34px;height:34px;border-radius:50%;flex:none}
+
+  .shell{max-width:1120px;margin:0 auto;padding:24px 24px 80px;display:grid;grid-template-columns:1fr 300px;gap:28px;align-items:start}
+
+  /* tabs */
+  .tabs{display:flex;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:var(--r-md);padding:4px;margin-bottom:18px;position:sticky;top:72px;z-index:20}
+  .tabs button{flex:1;height:36px;border:0;background:transparent;color:var(--muted);font-size:14px;font-weight:510;border-radius:7px;letter-spacing:.01em}
+  .tabs button[aria-selected="true"]{background:var(--fg);color:#fff;font-weight:590}
+
+  .feed{display:flex;flex-direction:column;gap:16px}
+  .post{background:var(--bg);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;
+    box-shadow:0 1px 2px rgba(17,17,17,.04),0 10px 30px -24px rgba(17,17,17,.18)}
+  .phd{display:flex;align-items:center;gap:11px;padding:14px 18px 0}
+  .phd .who{font-size:13.5px;font-weight:590}
+  .phd .meta{font-size:12px;color:var(--muted);letter-spacing:.01em}
+  .follow{margin-left:auto;height:30px;padding:0 13px;border-radius:var(--r-pill);border:1px solid var(--accent);background:transparent;
+    color:var(--accent-ink);font-size:12.5px;font-weight:590}
+  .follow[aria-pressed="true"]{background:var(--surface);border-color:var(--border);color:var(--muted)}
+  .pbody{display:flex;gap:16px;padding:14px 18px 16px}
+  .cov{width:104px;height:104px;flex:none;border-radius:var(--r-md);color:#fff;padding:11px;display:flex;flex-direction:column;justify-content:space-between;overflow:hidden;position:relative;cursor:pointer}
+  .cov .k{font-size:10px;font-weight:700;letter-spacing:.1em;opacity:.9}
+  .cov .ct{font-family:var(--serif);font-weight:900;font-size:16px;line-height:1.3;text-shadow:0 1px 8px rgba(0,0,0,.3)}
+  .ptext{min-width:0}
+  .ptext .ht{display:block;font-family:var(--serif);font-weight:700;font-size:17px;line-height:1.4;margin-bottom:6px;
+    border:0;background:transparent;color:inherit;padding:0;text-align:left;cursor:pointer}
+  .ptext .ht:hover{color:var(--accent-ink)}
+  .skb{display:block;height:12px;border-radius:6px;background:linear-gradient(100deg,#eef0f4 30%,#f6f7f9 50%,#eef0f4 70%);background-size:200% 100%;animation:sh 1.3s linear infinite}
+  @keyframes sh{to{background-position:-200% 0}}
+  .ptext p{font-size:13.5px;color:#374151;line-height:1.7;font-family:var(--serif)}
+  .ptags{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+  .tag{font-size:11px;padding:3px 8px;border-radius:6px;background:var(--surface);color:#4b5563;font-weight:510;letter-spacing:.01em}
+  .pfoot{display:flex;align-items:center;gap:6px;padding:6px 12px 10px;border-top:1px solid var(--border)}
+  .act{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 12px;border:0;background:transparent;color:var(--muted);
+    font-size:13px;border-radius:8px;font-variant-numeric:tabular-nums;letter-spacing:.01em;transition:.15s}
+  .act:hover{background:var(--surface);color:var(--fg)}
+  .act.like[aria-pressed="true"]{color:var(--danger)}
+  .act.save[aria-pressed="true"]{color:var(--accent-ink)}
+  .act svg{transition:transform .12s var(--ease)}
+  .act:active svg{transform:scale(.86)}
+  .act .play{margin-left:auto}
+
+  /* right rail */
+  .rail{position:sticky;top:72px;display:flex;flex-direction:column;gap:16px}
+  .card{background:var(--bg);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px 18px}
+  .card h4{font-size:12px;font-weight:590;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+  .rank{display:flex;align-items:center;gap:11px;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer}
+  .rank:last-child{border-bottom:0}
+  .rank .no{width:20px;font-family:var(--serif);font-weight:900;font-size:16px;color:var(--border);text-align:center;flex:none}
+  .rank:nth-child(1) .no,.rank:nth-child(2) .no,.rank:nth-child(3) .no{color:var(--accent)}
+  .rank .rt{font-size:13px;font-weight:510;line-height:1.4}
+  .rank .rt small{display:block;color:var(--muted);font-weight:400;font-size:11.5px;margin-top:1px}
+  .creator{display:flex;align-items:center;gap:10px;padding:8px 0}
+  .creator .who{font-size:13px;font-weight:510}.creator .who small{display:block;color:var(--muted);font-size:11.5px;font-weight:400}
+  .creator .follow{margin-left:auto;height:28px;font-size:12px}
+  .topics{display:flex;flex-wrap:wrap;gap:8px}
+  .topic{font-size:12.5px;padding:5px 11px;border-radius:var(--r-pill);background:var(--surface);color:#374151;text-decoration:none;font-weight:510}
+  .topic:hover{background:var(--surface-2)}
+
+  /* empty */
+  .empty{background:var(--bg);border:1px dashed var(--border);border-radius:var(--r-lg);padding:56px 24px;text-align:center}
+  .empty .ic{width:52px;height:52px;border-radius:50%;background:var(--surface);color:var(--muted);display:grid;place-items:center;margin:0 auto 14px}
+  .empty h3{font-family:var(--serif);font-size:18px;font-weight:700;margin-bottom:6px}
+  .empty p{color:var(--muted);font-size:14px;line-height:1.7;margin-bottom:18px}
+
+  /* detail dialog */
+  .ov{position:fixed;inset:0;background:rgba(17,17,17,.44);z-index:60;display:grid;place-items:center;padding:24px;opacity:0;visibility:hidden;transition:.25s}
+  .ov.on{opacity:1;visibility:visible}
+  .dlg{width:min(560px,100%);max-height:88vh;overflow:auto;background:var(--bg);border-radius:var(--r-lg);transform:translateY(10px);transition:.25s var(--ease)}
+  .ov.on .dlg{transform:none}
+  .dcov{padding:22px 24px;color:#fff}
+  .dcov .k{font-size:11px;font-weight:700;letter-spacing:.12em;opacity:.9}
+  .dcov h2{font-family:var(--serif);font-weight:900;font-size:24px;line-height:1.35;margin-top:8px}
+  .dcov .by{font-size:12.5px;opacity:.92;margin-top:8px}
+  .dbody{padding:20px 24px}
+  .dbody .intro{font-family:var(--serif);font-size:14.5px;line-height:1.9;color:#2b3038}
+  .dbody .stats{display:flex;gap:18px;margin:16px 0;padding:14px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);color:var(--muted);font-size:13px}
+  .cmt-in{display:flex;gap:10px;margin:16px 0}
+  .cmt-in input{flex:1;height:40px;border:1px solid var(--border);border-radius:var(--r-md);padding:0 12px;font-size:14px;outline:none;font-family:var(--sans)}
+  .cmt-in input:focus{border-color:var(--accent);box-shadow:var(--ring)}
+  .cmts{display:flex;flex-direction:column;gap:14px;margin-top:6px}
+  .cmt{display:flex;gap:10px}
+  .cmt .av{width:30px;height:30px;border-radius:50%;flex:none}
+  .cmt .cb{min-width:0}
+  .cmt .cw{font-size:12.5px;font-weight:590}.cmt .cw span{color:var(--muted);font-weight:400;margin-left:6px;font-size:11.5px}
+  .cmt .cx{font-size:13.5px;line-height:1.6;margin-top:3px;color:#2b3038}
+  .close{position:absolute;top:16px;right:16px;width:32px;height:32px;border-radius:8px;border:0;background:rgba(255,255,255,.2);color:#fff;display:grid;place-items:center}
+  .dlg{position:relative}
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);z-index:70;background:var(--fg);color:#fff;
+    padding:11px 18px;border-radius:var(--r-md);font-size:13px;opacity:0;transition:.25s var(--ease);pointer-events:none}
+  .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  @media(max-width:840px){.shell{grid-template-columns:1fr}.rail{display:none}.cov{width:84px;height:84px}}
+  @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <div class="hd">
+    <a class="brand" href="home-discover.html"><span class="g" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19.5v-6M12 13.5 7.7 8.9M12 13.5l4.3-4.6"/><circle cx="12" cy="20" r="1.4" fill="#fff" stroke="none"/><circle cx="7.4" cy="8.3" r="2.3" fill="#1677ff" stroke="none"/><circle cx="16.6" cy="8.3" r="2.3" fill="#fff" stroke="none"/></svg></span> Story&nbsp;Editor</a>
+    <nav class="nav" aria-label="主导航">
+      <a href="home-discover.html">发现</a><a href="my-space.html#reading">我在读</a><a href="my-space.html">我的创作</a><a href="#" aria-current="page">社区</a>
+    </nav>
+    <div class="sp">
+      <a class="btn primary sm" href="create-editor.html"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg> 发布作品</a>
+      <button class="avatar" style="background:linear-gradient(135deg,#6d28d9,#e11d48)" type="button" aria-label="我的账户"></button>
+    </div>
+  </div>
+</header>
+
+<div class="shell">
+  <main>
+    <h1 class="sr-only">社区</h1>
+    <div class="tabs" role="tablist" aria-label="社区排序">
+      <button role="tab" aria-selected="true" data-tab="hot">热门</button>
+      <button role="tab" aria-selected="false" data-tab="new">最新</button>
+      <button role="tab" aria-selected="false" data-tab="following">关注</button>
+    </div>
+    <div class="feed" id="feed"></div>
+  </main>
+
+  <aside class="rail">
+    <div class="card">
+      <h4>本周热门榜</h4>
+      <div id="rankList"></div>
+    </div>
+    <div class="card">
+      <h4>活跃创作者</h4>
+      <div id="creatorList"></div>
+    </div>
+    <div class="card">
+      <h4>热门话题</h4>
+      <div class="topics">
+        <a class="topic" href="#">#末世生存</a><a class="topic" href="#">#隐藏结局</a><a class="topic" href="#">#一句话开局</a>
+        <a class="topic" href="#">#细思极恐</a><a class="topic" href="#">#治愈向</a>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<!-- 详情对话框 -->
+<div class="ov" id="ov"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dTitle">
+  <button class="close" id="dClose" type="button" aria-label="关闭">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+  </button>
+  <div class="dcov" id="dCov"><div class="k" id="dKick"></div><h2 id="dTitle"></h2><div class="by" id="dBy"></div></div>
+  <div class="dbody">
+    <p class="intro" id="dIntro"></p>
+    <div class="stats" id="dStats"></div>
+    <div class="cmt-in">
+      <label class="sr-only" for="cmtInput">写评论</label>
+      <input id="cmtInput" placeholder="说点什么…" />
+      <button class="btn primary sm" id="cmtSend" type="button">发送</button>
+    </div>
+    <div class="cmts" id="cmts"></div>
+  </div>
+</div></div>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+  const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+  const posts=[
+    {id:'p1',who:'深蓝拾音',av:'#f59e0b',time:'2 小时前',k:'末世·电台',title:'最后的深夜电台',g:['#1a1c2b','#0e1730'],acc:'#7fc4f2',
+     ex:'电流杂音里,有人在呼救。你是否回应?一个关于「要不要相信陌生声音」的生存故事。',tags:['末世生存','悬疑'],plays:'2.4万',likes:1284,comments:2,liked:false,followed:false,hot:98,
+     intro:'末世的第七个雨夜,城市在一场无人能解释的「低语」中崩溃。你躲在城南居民楼里,唯一能联通外界的是一台旧对讲机。今夜,它响了。'},
+    {id:'p2',who:'三更',av:'#e11d48',time:'5 小时前',k:'民国·怪谈',title:'戏楼夜半开锣',g:['#3b0a12','#7f1d1d'],acc:'#fca5a5',
+     ex:'戏还没散,台下的人却一个都没走。民国怪谈,含隐藏「惊惧」属性,越怕看得越多。',tags:['恐怖惊悚','民国'],plays:'1.1万',likes:876,comments:1,liked:true,followed:false,hot:81,
+     intro:'城南的老戏楼荒废了三十年。可每逢十五的夜里,总有人听见楼里传出锣鼓声。今夜你推开了那扇门。'},
+    {id:'p3',who:'Kuro',av:'#6d28d9',time:'昨天',k:'星海·软科幻',title:'把太阳寄给你',g:['#111827','#312e81'],acc:'#a5b4fc',
+     ex:'末班星舰起航前,我想把一整个夏天寄出去。一封写给平行时空恋人的信。',tags:['科幻','言情','治愈'],plays:'8632',likes:2103,comments:1,liked:false,followed:true,hot:76,
+     intro:'星舰将在黎明起航,一去不返。你是留守站的最后一名信使,而收件人在另一条时间线里,从未与你相遇。'},
+    {id:'p4',who:'停云',av:'#0f766e',time:'昨天',k:'江湖·武侠',title:'雪满刀锋',g:['#0b1a1a','#134e4a'],acc:'#5eead4',
+     ex:'你握刀的手在抖——是冷,还是怕?权谋与快意之间,每一步都算数。',tags:['武侠','权谋'],plays:'1.9万',likes:1542,comments:0,liked:false,followed:false,hot:69,
+     intro:'大雪封城的除夕,你奉命护送一具棺材出关。棺中之人,是仇家,也是故人。'},
+    {id:'p5',who:'面粉',av:'#65a30d',time:'2 天前',k:'温情·日常',title:'街角面包店的第七年',g:['#1a2417','#3f6212'],acc:'#bef264',
+     ex:'今天也有人推门进来,说「和往常一样」。一个没有反派的、慢慢变好的故事。',tags:['治愈日常','慢生活'],plays:'9014',likes:658,comments:0,liked:false,followed:false,hot:52,
+     intro:'你接手了外婆留下的面包店。没有惊天动地的剧情,只有每天推门进来的人,和他们各自的一小段人生。'},
+  ];
+  const seedCmts={
+    p1:[{av:'#0891b2',who:'夜航',t:'3 小时前',x:'第一次玩到会因为「不敢出声」而真的不敢点选项的作品,氛围绝了。'},
+        {av:'#db2777',who:'林','t':'1 小时前',x:'隐藏的「理智」属性设计太妙,读到后面才发现自己一直在被影响。'}],
+    p2:[{av:'#ca8a04',who:'青崖',t:'4 小时前',x:'惊惧越高剧情越诡,这个正反馈让人停不下来……但我真的怕。'}],
+    p3:[{av:'#475569',who:'灰',t:'昨天',x:'结尾那封信我看哭了。'}],
+    p4:[],p5:[]
+  };
+  const cmtStore=JSON.parse(JSON.stringify(seedCmts));
+  const creators=[['深蓝拾音','#f59e0b','12 部作品'],['Kuro','#6d28d9','8 部 · 已关注'],['三更','#e11d48','5 部作品']];
+
+  let tab='hot',current=null;
+  const feed=$('#feed');
+  const fmt=n=>n>=10000?(n/10000).toFixed(1)+'万':n.toLocaleString('en-US');
+  const heart=f=>`<svg width="17" height="17" viewBox="0 0 24 24" fill="${f?'currentColor':'none'}" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 1 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg>`;
+  const chat=`<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`;
+  const book=f=>`<svg width="17" height="17" viewBox="0 0 24 24" fill="${f?'currentColor':'none'}" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>`;
+  const play=`<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>`;
+
+  function list(){
+    let a=[...posts];
+    if(tab==='new')a=[...posts].reverse();
+    if(tab==='hot')a.sort((x,y)=>y.hot-x.hot);
+    if(tab==='following')a=posts.filter(p=>p.followed);
+    return a;
+  }
+  function render(){
+    const a=list();
+    if(!a.length){feed.innerHTML=`<div class="empty" role="status"><div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></svg></div><h3>还没有关注的创作者</h3><p>去热门榜发现合你口味的作者,关注后 TA 的新作会出现在这里。</p><button class="btn secondary sm" type="button" onclick="switchTab('hot')">逛逛热门</button></div>`;return;}
+    feed.innerHTML=a.map(p=>`<article class="post" data-id="${p.id}">
+      <div class="phd">
+        <span class="avatar" style="width:38px;height:38px;background:${p.av}" aria-hidden="true"></span>
+        <div><div class="who">${p.who}</div><div class="meta">${p.time} · 发布了新作品</div></div>
+        <button class="follow" type="button" data-follow="${p.id}" aria-pressed="${p.followed}">${p.followed?'已关注':'+ 关注'}</button>
+      </div>
+      <div class="pbody">
+        <div class="cov" data-open="${p.id}" role="button" tabindex="-1" aria-hidden="true" style="background:linear-gradient(150deg,${p.g[0]},${p.g[1]})"><span class="k" style="color:${p.acc}">${p.k}</span><span class="ct">${p.title}</span></div>
+        <div class="ptext"><button class="ht" type="button" data-open="${p.id}">${p.title}</button><p>${p.ex}</p><div class="ptags">${p.tags.map(t=>`<span class="tag">${t}</span>`).join('')}</div></div>
+      </div>
+      <div class="pfoot">
+        <button class="act like" type="button" data-like="${p.id}" aria-pressed="${p.liked}" aria-label="点赞">${heart(p.liked)} <span>${fmt(p.likes)}</span></button>
+        <button class="act" type="button" data-open="${p.id}" aria-label="评论">${chat} <span>${p.comments+ (cmtStore[p.id].length-seedCmts[p.id].length)}</span></button>
+        <button class="act save" type="button" data-save="${p.id}" aria-pressed="false" aria-label="收藏">${book(false)} 收藏</button>
+        <span class="act play" aria-label="游玩 ${p.plays} 次">${play} ${p.plays}</span>
+      </div>
+    </article>`).join('');
+  }
+  function renderRail(){
+    $('#rankList').innerHTML=[...posts].sort((a,b)=>b.hot-a.hot).map((p,i)=>`<div class="rank" data-open="${p.id}"><span class="no">${i+1}</span><div class="rt">${p.title}<small>${p.who} · ${fmt(p.likes)} 赞</small></div></div>`).join('');
+    $('#creatorList').innerHTML=creators.map(([n,c,s],i)=>`<div class="creator"><span class="avatar" style="width:34px;height:34px;background:${c}" aria-hidden="true"></span><div class="who">${n}<small>${s}</small></div><button class="follow" type="button" aria-pressed="${i===1}">${i===1?'已关注':'+ 关注'}</button></div>`).join('');
+  }
+
+  /* 事件委托 */
+  document.addEventListener('click',e=>{
+    const like=e.target.closest('[data-like]'),fol=e.target.closest('[data-follow]'),sav=e.target.closest('[data-save]'),
+      op=e.target.closest('[data-open]'),cf=e.target.closest('.creator .follow');
+    if(like){const p=posts.find(x=>x.id===like.dataset.like);p.liked=!p.liked;p.likes+=p.liked?1:-1;
+      like.setAttribute('aria-pressed',p.liked);like.querySelector('svg').outerHTML=heart(p.liked);like.querySelector('span').textContent=fmt(p.likes);return;}
+    if(fol){const p=posts.find(x=>x.id===fol.dataset.follow);p.followed=!p.followed;fol.setAttribute('aria-pressed',p.followed);
+      fol.textContent=p.followed?'已关注':'+ 关注';toast(p.followed?'已关注 '+p.who:'已取消关注');return;}
+    if(sav){const on=sav.getAttribute('aria-pressed')!=='true';sav.setAttribute('aria-pressed',on);
+      sav.innerHTML=book(on)+' '+(on?'已收藏':'收藏');toast(on?'已加入收藏':'已移出收藏');return;}
+    if(cf){const on=cf.getAttribute('aria-pressed')!=='true';cf.setAttribute('aria-pressed',on);cf.textContent=on?'已关注':'+ 关注';return;}
+    if(op){openDetail(op.dataset.open);return;}
+  });
+
+  /* tabs */
+  window.switchTab=t=>{tab=t;$$('.tabs button').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.tab===t)));render();};
+  $$('.tabs button').forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.tab)));
+
+  /* 详情 */
+  const ov=$('#ov');
+  function openDetail(id){
+    const p=posts.find(x=>x.id===id);current=p;
+    $('#dCov').style.background=`linear-gradient(150deg,${p.g[0]},${p.g[1]})`;
+    $('#dKick').textContent=p.k;$('#dKick').style.color=p.acc;$('#dTitle').textContent=p.title;$('#dBy').textContent='作者 · '+p.who+' · '+p.time;
+    $('#dIntro').textContent=p.intro;
+    $('#dStats').innerHTML=`${play} ${p.plays} 游玩 &nbsp;·&nbsp; ${fmt(p.likes)} 赞 &nbsp;·&nbsp; ${cmtStore[id].length} 评论`;
+    renderCmts(id);ov.classList.add('on');$('#cmtInput').value='';
+  }
+  function renderCmts(id){
+    const c=cmtStore[id];
+    $('#cmts').innerHTML=c.length?c.map(m=>`<div class="cmt"><span class="av" style="background:${m.av}" aria-hidden="true"></span><div class="cb"><div class="cw">${m.who}<span>${m.t}</span></div><div class="cx">${m.x}</div></div></div>`).join(''):'<p style="color:var(--muted);font-size:13.5px">还没有评论,来说第一句。</p>';
+  }
+  function addCmt(){
+    const v=$('#cmtInput').value.trim();if(!v||!current)return;
+    cmtStore[current.id].unshift({av:'linear-gradient(135deg,#6d28d9,#e11d48)',who:'我',t:'刚刚',x:v});
+    $('#cmtInput').value='';renderCmts(current.id);
+    $('#dStats').innerHTML=`${play} ${current.plays} 游玩 &nbsp;·&nbsp; ${fmt(current.likes)} 赞 &nbsp;·&nbsp; ${cmtStore[current.id].length} 评论`;
+    render();toast('评论已发布');
+  }
+  $('#cmtSend').addEventListener('click',addCmt);
+  $('#cmtInput').addEventListener('keydown',e=>{if(e.key==='Enter')addCmt();});
+  $('#dClose').addEventListener('click',()=>ov.classList.remove('on'));
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.classList.remove('on');});
+  document.addEventListener('keydown',e=>{if(e.key==='Escape')ov.classList.remove('on');});
+
+  let tt;function toast(m){const el=$('#toast');el.textContent=m;el.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>el.classList.remove('on'),2000);}
+
+  function skeleton(){
+    feed.setAttribute('aria-busy','true');
+    feed.innerHTML=Array.from({length:3},()=>`<div class="post" aria-hidden="true"><div style="display:flex;gap:16px;padding:18px"><span class="skb" style="width:104px;height:104px;border-radius:10px;flex:none"></span><div style="flex:1"><span class="skb" style="width:110px"></span><span class="skb" style="width:66%;height:16px;margin-top:12px"></span><span class="skb" style="width:100%;margin-top:12px"></span><span class="skb" style="width:82%;margin-top:6px"></span></div></div></div>`).join('');
+  }
+  renderRail();
+  const RMc=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(RMc){render();}
+  else{skeleton();setTimeout(()=>{feed.setAttribute('aria-busy','false');render();},650);}
+</script>
+</body>
+</html>
