@@ -12,34 +12,36 @@ import { useEditorStore } from "@/store/editorStore";
 export interface CheckItem {
   ok: boolean;
   label: string;
-  fix: string; // 没通过时告诉作者去哪补
+  step: number; // 缺这项该去第几步补（驱动「去补 →」回跳与左侧步骤的完成态）
 }
 
 export function usePublishChecks(): CheckItem[] {
   const s = useEditorStore();
   const attrs = s.attributes.filter((a) => a.key.trim());
   return [
-    { ok: s.title.trim() !== "", label: "作品标题", fix: "② 世界观 · 标题" },
-    { ok: s.background.trim() !== "", label: "世界观背景", fix: "② 世界观 · 背景" },
-    { ok: s.style.trim() !== "", label: "风格基调", fix: "② 世界观 · 风格" },
-    { ok: s.rules.trim() !== "", label: "玩法规则", fix: "② 世界观 · 规则" },
-    { ok: s.outline.trim() !== "", label: "故事大纲", fix: "② 世界观 · 大纲" },
-    {
-      ok: s.characters.some((c) => c.name.trim()),
-      label: "至少一个角色",
-      fix: "② 世界观 · 角色",
-    },
+    { ok: s.title.trim() !== "", label: "作品标题", step: 1 },
+    { ok: s.background.trim() !== "", label: "世界观背景", step: 1 },
+    { ok: s.style.trim() !== "", label: "风格基调", step: 1 },
+    { ok: s.rules.trim() !== "", label: "玩法规则", step: 1 },
+    { ok: s.outline.trim() !== "", label: "故事大纲", step: 1 },
+    { ok: s.characters.some((c) => c.name.trim()), label: "至少一个角色", step: 1 },
     {
       // 属性可以一个都不要；但只要写了，键名就不能空——空键在后端会被判定为
       // 「initial_state 与 attributes 不对应」，报错信息作者很难看懂。
       ok: attrs.length === s.attributes.length,
       label: "属性键名均已填写",
-      fix: "② 世界观 · 属性表",
+      step: 2,
     },
   ];
 }
 
-export default function PublishCheck({ checks }: { checks: CheckItem[] }) {
+export default function PublishCheck({
+  checks,
+  onJump,
+}: {
+  checks: CheckItem[];
+  onJump: (step: number) => void;
+}) {
   const failed = checks.filter((c) => !c.ok);
   return (
     <div className="ed-field">
@@ -64,7 +66,11 @@ export default function PublishCheck({ checks }: { checks: CheckItem[] }) {
               )}
             </span>
             {c.label}
-            {!c.ok && <em>去 {c.fix} 补</em>}
+            {!c.ok && (
+              <button type="button" className="btn ghost sm fix" onClick={() => onJump(c.step)}>
+                去补
+              </button>
+            )}
           </li>
         ))}
       </ul>

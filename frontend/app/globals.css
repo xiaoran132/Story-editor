@@ -432,6 +432,40 @@ html[data-motion="off"] .cover.alive { animation: none; background-size: 100% 10
   box-shadow: var(--shadow-card-hover);
 }
 
+/* ---- 创作编辑器：左侧步骤导航 + 右侧单步面板（原型 create-editor.html 的 .shell/.steps） ---- */
+.ed-shell { display: grid; grid-template-columns: 200px 1fr; gap: 26px; align-items: start; }
+.ed-panels { min-width: 0; }
+.steps { position: sticky; top: 76px; display: flex; flex-direction: column; gap: 4px; }
+.step {
+  display: flex; align-items: center; gap: 12px; padding: 11px 12px; border-radius: var(--r-md);
+  border: var(--border-w) solid transparent; background: transparent; color: var(--fg); text-align: left;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.step:hover { background: var(--surface); }
+.step[aria-current="true"] { background: var(--surface); border-color: var(--border); box-shadow: var(--shadow-card); }
+.step .n {
+  width: 24px; height: 24px; flex: none; border-radius: 50%;
+  border: 1.5px solid var(--border); color: var(--muted);
+  display: grid; place-items: center; font-size: 12px; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+/* 当前步用 accent 描一圈——这是本屏 accent 的第二处（第一处是 eyebrow.lead），刚好用满配额 */
+.step[aria-current="true"] .n { border-color: var(--accent); color: var(--accent-ink); }
+.step.done .n { background: var(--success); border-color: var(--success); color: var(--bg); }
+.step .t { font-size: 13.5px; font-weight: 500; }
+.step .t small { display: block; color: var(--muted); font-weight: 400; font-size: 11.5px; margin-top: 1px; letter-spacing: 0.01em; }
+
+.navbtns { display: flex; justify-content: space-between; gap: 10px; margin-top: 22px; }
+
+@media (max-width: 860px) {
+  .ed-shell { grid-template-columns: 1fr; gap: 14px; }
+  /* 窄屏转横向滚动条：竖排步骤会把首屏全部占满，作者还没看到任何输入框 */
+  .steps { position: static; flex-direction: row; overflow-x: auto; gap: 8px; padding-bottom: 2px; }
+  .step { flex: none; }
+  .step .t small { display: none; }
+}
+
 /* ---- 发布检查清单（原型 create-editor.html:292-302） ---- */
 .check { list-style: none; display: flex; flex-direction: column; gap: 2px; }
 .check li {
@@ -443,7 +477,7 @@ html[data-motion="off"] .cover.alive { animation: none; background-size: 100% 10
 .check li.ok .mk { background: var(--success-bg); color: var(--success-ink); }
 .check li.no .mk { background: var(--danger-bg); color: var(--danger); }
 .check li.no { color: var(--muted); }
-.check li em { margin-left: auto; font-style: normal; font-size: 12px; color: var(--danger); }
+.check li .fix { margin-left: auto; flex: none; color: var(--danger); }
 
 /* ---- 设置页（对齐原型 settings.html：左侧分区导航 + prefrow + 开关） ---- */
 .settings-shell { display: grid; grid-template-columns: 180px 1fr; gap: 26px; align-items: start; margin-top: 8px; }
