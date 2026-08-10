@@ -31,7 +31,8 @@ type worldConfigShape struct {
 //  4. 每属性 type ∈ {number, scalar, set}；
 //  5. 每属性有 initial，且 == initial_state[key]（DeepEqual）；
 //  6. 类型-取值匹配：number→float64、scalar→string、set→[]any；
-//  7. hidden/reveal 若存在必须为布尔。
+//  7. hidden/reveal 若存在必须为布尔；
+//  8. max 若存在必须是正数，且只允许出现在 number 属性上（玩家端据此画进度条）。
 //
 // strict=false（存草稿）：跳过规则 2，允许保存字段未填全的半成品；其余照校。
 // strict=true（发布）：全部规则，挡住不完整作品上线。
@@ -126,6 +127,21 @@ func ValidateWorldConfig(raw []byte, strict bool) *AppError {
 			if _, isBool := v.(bool); !isBool {
 				return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig,
 					fmt.Sprintf("属性 %q 的 reveal 应为布尔", k))
+			}
+		}
+
+		// 规则 8：max 可选，仅 number 属性可有，且须为正数。
+		// 它只影响玩家端「要不要画进度条」——没有上限就没有「满」的概念，
+		// 前端据此决定画条还是只显示数字，不参与任何 delta 合并。
+		if v, ok := spec["max"]; ok {
+			if typ != "number" {
+				return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig,
+					fmt.Sprintf("属性 %q 不是 number 类型，不能声明 max", k))
+			}
+			f, isNum := v.(float64)
+			if !isNum || f <= 0 {
+				return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig,
+					fmt.Sprintf("属性 %q 的 max 应为正数：%v", k, v))
 			}
 		}
 	}

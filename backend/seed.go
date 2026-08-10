@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"log"
 
 	"backend/internal/model"
 
@@ -29,6 +30,14 @@ func seed(db *gorm.DB) (uuid.UUID, error) {
 		return uuid.Nil, err
 	}
 
+	// 1.5 自愈：guest 被删过再重建时 ID 会变，而 ensureStory 按 (creator_id, title) 幂等，
+	//     认不出旧 guest 名下的同名作品 → 每次重启都再建一整套，首页就出现「每部作品两份」。
+	//     这里先把无主/旧 guest 的同名种子作品认领回当前 guest，并只保留最早那份
+	//     （它带着玩家的会话历史），删掉后来重复建的。
+	if err := healSeedDuplicates(db, guest.ID); err != nil {
+		return uuid.Nil, err
+	}
+
 	// 2. 清理已下线的种子作品（迷雾古堡改版后移除）。
 	//    Story 无软删除，硬删会经 FK ON DELETE CASCADE 一并清掉其会话/节点——仅 demo 数据，无碍。
 	if err := db.Where("creator_id = ? AND title = ?", guest.ID, "迷雾古堡").
@@ -45,6 +54,42 @@ func seed(db *gorm.DB) (uuid.UUID, error) {
 	}
 
 	return guest.ID, nil
+}
+
+// healSeedDuplicates 修复「guest 被删号后重建」留下的重复种子作品。
+//
+// 只处理**种子标题**、且**无主或属于当前 guest**的行——真实用户名下的同名作品绝不碰。
+// 同一标题存在多行时保留 created_at 最早的一份（它挂着已有的游玩会话，删掉会级联清空玩家进度），
+// 其余删除；保留的那份若还挂在旧 creator_id 上，认领给当前 guest，
+// 这样后续 ensureStory 的 (creator_id, title) 判定重新对得上，不会再产生新副本。
+func healSeedDuplicates(db *gorm.DB, guestID uuid.UUID) error {
+	for _, s := range richSeedStories(guestID) {
+		var rows []model.Story
+		err := db.Where("title = ?", s.Title).
+			Where("creator_id = ? OR creator_id NOT IN (SELECT id FROM users)", guestID).
+			Order("created_at ASC").
+			Find(&rows).Error
+		if err != nil {
+			return err
+		}
+		if len(rows) == 0 {
+			continue
+		}
+		for _, dup := range rows[1:] {
+			if err := db.Delete(&model.Story{}, "id = ?", dup.ID).Error; err != nil {
+				return err
+			}
+			log.Printf("seed: 清理重复种子作品 %q（id=%s，creator=%s）", s.Title, dup.ID, dup.CreatorID)
+		}
+		if keep := rows[0]; keep.CreatorID != guestID {
+			if err := db.Model(&model.Story{}).Where("id = ?", keep.ID).
+				Update("creator_id", guestID).Error; err != nil {
+				return err
+			}
+			log.Printf("seed: 认领无主种子作品 %q（id=%s）到当前 guest", s.Title, keep.ID)
+		}
+	}
+	return nil
 }
 
 // ensureStory 按 (creator_id, title) upsert 测试作品：不存在则建；已存在则更新可变配置
@@ -87,6 +132,8 @@ func richSeedStories(creatorID uuid.UUID) []model.Story {
 			Status:      "published",
 			PriceConfig: `{"type":"free"}`,
 			WorldConfig: `{
+  "theme": "horror",
+  "tags": ["悬疑推理", "民国", "本格"],
   "background": "1937年孤岛时期的上海法租界。灯红酒绿之下暗流涌动，你是小有名气的私家侦探，受富商遗孀苏眉之托，调查其丈夫在书房中的离奇死亡——警方草草定为自杀，但她不信。",
   "style": "冷峻、悬疑、时代质感，重线索推理与人物博弈",
   "rules": "线索需主动搜集与串联；贸然指认会打草惊蛇（提升怀疑度）；不同人物对你的信任度影响他们愿意透露多少，信任在与人真正打交道后才逐渐明朗；关键证物可用于对质。",
@@ -113,6 +160,8 @@ func richSeedStories(creatorID uuid.UUID) []model.Story {
 			Status:      "published",
 			PriceConfig: `{"type":"free"}`,
 			WorldConfig: `{
+  "theme": "xian",
+  "tags": ["奇幻", "校园", "成长"],
   "background": "悬浮于云海之上的云顶魔法学院。你是平民出身的新生，被分入最不受待见的『灰纹』学院，处处遭世家子弟排挤。开学第一周，你在禁书区偶然发现一道幽蓝的裂隙，似乎通向学院尘封的禁地。",
   "style": "奇幻、少年成长，明快中带悬疑与阴谋",
   "rules": "施法消耗魔力，魔力耗尽会虚脱；违规探索提升处分风险，过高会被退学；与导师、同窗的关系影响你能借到的资源与情报；习得的法术可在合适情境施展。",
@@ -139,6 +188,8 @@ func richSeedStories(creatorID uuid.UUID) []model.Story {
 			Status:      "published",
 			PriceConfig: `{"type":"free"}`,
 			WorldConfig: `{
+  "theme": "radio",
+  "tags": ["末世生存", "孤独", "抉择"],
   "background": "丧尸爆发后的第七天。城市已成废墟，你是最后一座还在运作的电台的深夜DJ，用微弱的电波向黑暗中的幸存者播报安全路线与希望。但你不知道电台为何还有电，也不知道电波正把什么吸引过来。",
   "style": "末世、孤独、紧张，重人性抉择与资源取舍",
   "rules": "每个决定消耗或获得物资、影响幸存者对你的信任；对外广播会同时招来幸存者与危险；长期孤独与恐惧会侵蚀理智，理智过低会误判甚至幻听；装备可在外出时使用。",
@@ -166,6 +217,8 @@ func richSeedStories(creatorID uuid.UUID) []model.Story {
 			Status:      "published",
 			PriceConfig: `{"type":"free"}`,
 			WorldConfig: `{
+  "theme": "ink",
+  "tags": ["武侠仙侠", "复仇", "苍凉"],
   "background": "北境边关雁门。你本是名门之后，十年前满门被诬通敌而遭屠，唯你侥幸逃生，隐姓埋名以护镖为生。仇人如今已是执掌边军的都督裴烈。开春第一趟镖出关未久，镖队便在风雪隘口遭伏——而这桩血案，似乎与你的旧仇有关。",
   "style": "苍凉、快意恩仇、留白写意的武侠",
   "rules": "动武消耗内力，内力见底则招式使不出、需调息恢复；行事张扬会积累杀气（招致仇家察觉与旁人戒备，幕后暗涨）；侠名影响江湖人是否愿意相助或投靠；银两用于打点、疗伤、买马与情报；习得的武学可在对招时施展。",
@@ -193,6 +246,8 @@ func richSeedStories(creatorID uuid.UUID) []model.Story {
 			Status:      "published",
 			PriceConfig: `{"type":"free"}`,
 			WorldConfig: `{
+  "theme": "sci",
+  "tags": ["科幻", "赛博朋克", "悬疑"],
   "background": "2087年，霓虹与酸雨交织的新九龙城寨。你是接黑活的义体黑客。三天前一单侵入『苍穹生物』数据库的委托彻底翻车——你脑内被植入了一段不属于自己的记忆代码，而企业的清道夫已循着数据残迹找来。你在义肢黑医阿蛇的诊所里醒来，警报器正在城寨深处鸣响。",
   "style": "霓虹、赛博朋克、悬疑，道德灰色、节奏凌厉",
   "rules": "入侵与义体超频消耗神经负荷，过高会宕机、幻视甚至脑死；行动留下的数据痕迹会抬高企业警戒（幕后追踪度）；信用点用于买药、买情报、升级义体；安装的插件在对应场景生效；脑内那段记忆代码需要逐步解码才能看清。",
@@ -220,6 +275,8 @@ func richSeedStories(creatorID uuid.UUID) []model.Story {
 			Status:      "published",
 			PriceConfig: `{"type":"free"}`,
 			WorldConfig: `{
+  "theme": "heal",
+  "tags": ["治愈日常", "奇幻", "慢节奏"],
   "background": "云屿是一座漂浮在茫茫雾海中的小岛。岛上有一间只在起雾时才亮灯的邮局，替人投递那些寄往『再也无法送达之处』的信——写给逝者、写给回不去的从前、写给还没说出口的心事。你阴差阳错成了这里的新任邮差；推开门的第一天，第一封无法投递的信，已在柜台上等你。",
   "style": "温柔、治愈、淡淡的奇幻与怅惘，慢节奏，重情感、倾听与选择（没有生命危险）",
   "rules": "每投出一封信，都会牵动你与某位岛民的羁绊，羁绊在你真正走进对方的故事后才建立；用心倾听与共情，人才愿把心事托付；你的心情会随际遇起落，心情太低时会看不清雾里的路；投递途中收集到的信物，各自承载一段往事。",

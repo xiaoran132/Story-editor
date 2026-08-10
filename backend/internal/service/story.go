@@ -5,6 +5,7 @@ import (
 	"backend/internal/repository"
 	"backend/pkg"
 	"context"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -135,6 +136,11 @@ func (s *StoryService) SetStatus(storyID, userID uuid.UUID, status string) (*mod
 	}
 
 	if status == "published" {
+		// 标题是作品在书库里的唯一身份，空标题会在首页渲染成一张无字白卡。
+		// world_config 校验管的是世界观，管不到这一层，这里单独兜住。
+		if strings.TrimSpace(story.Title) == "" {
+			return nil, pkg.BadRequest("发布前请先填写作品标题")
+		}
 		if err := pkg.ValidateWorldConfig([]byte(story.WorldConfig), true); err != nil {
 			return nil, err
 		}

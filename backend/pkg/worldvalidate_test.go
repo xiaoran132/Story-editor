@@ -2,16 +2,17 @@ package pkg
 
 import "testing"
 
-// 一份完整合法的 world_config：覆盖 number/scalar/set 三型 + hidden + reveal。
+// 一份完整合法的 world_config：覆盖 number/scalar/set 三型 + hidden + reveal + max。
 const validWorld = `{
   "background": "孤岛上的一座旧宅，一夜之间管家离奇死亡。",
   "style": "本格推理，冷峻克制",
   "rules": "线索需实地勘察获得；怀疑度过高会被围攻。",
   "outline": "三幕：封闭现场→逐一排查→揭示真凶。",
   "characters": [{"name": "侦探", "role": "主角", "desc": "冷静的观察者"}],
-  "initial_state": {"线索": 0, "怀疑度": 0, "信任": 50, "location": "门厅", "证物": []},
+  "initial_state": {"线索": 0, "体力": 80, "怀疑度": 0, "信任": 50, "location": "门厅", "证物": []},
   "attributes": {
     "线索":   {"type": "number", "initial": 0},
+    "体力":   {"type": "number", "initial": 80, "max": 100},
     "怀疑度": {"type": "number", "initial": 0, "hidden": true},
     "信任":   {"type": "number", "initial": 50, "reveal": true},
     "location": {"type": "scalar", "initial": "门厅"},
@@ -56,6 +57,9 @@ func TestValidateWorldConfig_Rejects(t *testing.T) {
 		{"set初值非数组", `{"initial_state":{"bag":1},"attributes":{"bag":{"type":"set","initial":1}}}`, false},
 		{"hidden非布尔", `{"initial_state":{"hp":0},"attributes":{"hp":{"type":"number","initial":0,"hidden":"yes"}}}`, false},
 		{"reveal非布尔", `{"initial_state":{"hp":0},"attributes":{"hp":{"type":"number","initial":0,"reveal":1}}}`, false},
+		{"max非数值", `{"initial_state":{"hp":0},"attributes":{"hp":{"type":"number","initial":0,"max":"100"}}}`, false},
+		{"max非正数", `{"initial_state":{"hp":0},"attributes":{"hp":{"type":"number","initial":0,"max":0}}}`, false},
+		{"非number属性声明max", `{"initial_state":{"loc":"门厅"},"attributes":{"loc":{"type":"scalar","initial":"门厅","max":10}}}`, false},
 		{"严格模式缺基本字段", `{"initial_state":{},"attributes":{}}`, true},
 	}
 	for _, tc := range cases {

@@ -25,6 +25,11 @@ type Story struct {
 	PublishedAt    *time.Time `json:"published_at"`
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
+
+	// CreatorName 不是 stories 的列，而是查询时 LEFT JOIN users 带出的作者昵称（只读投影）。
+	// `->` 禁写（Save 不会尝试更新它），`-:migration` 禁止 AutoMigrate 建列。
+	// 未 join 的查询路径（如 Create 后回读）留空，DTO 侧留空即由前端省略署名，不编造。
+	CreatorName string `gorm:"->;column:creator_name;-:migration" json:"-"`
 }
 
 func (s *Story) BeforeCreate(tx *gorm.DB) error {
@@ -37,6 +42,7 @@ func (s *Story) BeforeCreate(tx *gorm.DB) error {
 type StoryResponse struct {
 	ID             uuid.UUID  `json:"id"`
 	CreatorID      uuid.UUID  `json:"creator_id"`
+	CreatorName    string     `json:"creator_name"` // 作者昵称；未 join 的路径为空串，前端据此省略署名
 	Title          string     `json:"title"`
 	Description    string     `json:"description"`
 	CoverURL       string     `json:"cover_url"`
@@ -58,6 +64,7 @@ func (s *Story) ToResponse() *StoryResponse {
 	return &StoryResponse{
 		ID:             s.ID,
 		CreatorID:      s.CreatorID,
+		CreatorName:    s.CreatorName,
 		Title:          s.Title,
 		Description:    s.Description,
 		CoverURL:       s.CoverURL,
