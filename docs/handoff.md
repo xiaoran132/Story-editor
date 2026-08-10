@@ -45,15 +45,7 @@ flowchart LR
 handler → service → repository
 ```
 
-- `handler`：绑定/校验 HTTP 请求，调用 service，返回统一信封。
-- `service`：业务规则、状态合并、调用 Agent；不绑定 Gin。
-- `repository`：仅 GORM 读写。
-- `model`：纯数据模型和 DTO 转换，不放业务规则。
-- `pkg`：无业务依赖的通用错误、JWT、响应工具。
-
-完整规则在 [`../CLAUDE.md`](../CLAUDE.md)。新增代码不得绕过这条依赖方向。
-
-**模块边界（模块化单体，2026-08-06）**：模块 = 领域（user/story/play/llm/community），**禁止跨模块直接依赖对方 repository**；跨模块只读走 `service/ports.go` 的窄接口（如 `StoryReader`，由 `*repository.StoryRepository` 满足）。这是未来无痛拆分服务的接缝。`PlayService`/`NodeService` 已改为依赖 `StoryReader` 而非具体 story repo。play 的跨表事务（节点+会话）下沉为 `PlaySessionRepository.CreateNodeAndUpdateSession`/`DeleteSessionCascade`，`DB()` 裸连接泄漏已移除。RBAC 与归属校验见 §9.2 及 `CLAUDE.md` Authentication & Authorization 段。
+各层职责、模块边界（模块化单体：禁止跨模块直接依赖对方 repository，跨模块只读走 `service/ports.go` 的窄接口）、RBAC 与归属校验的完整规则都在 [`../CLAUDE.md`](../CLAUDE.md)，这里不再复述。**新增代码不得绕过这条依赖方向。**
 
 ## 4. 代码地图：从需求找到实现
 
@@ -304,19 +296,24 @@ cd agent
 
 ### 9.2 已知技术债
 
-- 质量审校是同一模型的二次调用，能提升下限但不能保证事实正确；可能增加延迟和费用。真实样本显示审校**并非橡皮图章**：拒绝率约 18%，命中的多是「`state_delta` 与正文不一致 / `summary` 漏记新增实体 / 选项 hint 无后果」——正是留存杀手。**已针对这三条反哺生成提示词**（`agent/app/prompts.py`，2026-08-03）：① 利用流式「正文先出、JSON 尾后出」的时序，在 `STORY_STREAM_SYSTEM` 哨兵格式说明里加「写 JSON 尾前回看正文逐句倒推 delta/summary」自检锚点（打拒因 1、2）；② `STORY_SYSTEM` 的 summary 规则加「落笔前自检本段新登场人物/新物品/新线索」（打拒因 2）；③ hint 规则改为「预期收益+转折+风险/代价」两面结构，并给出「无转折词即漏后果」的词法自检（打拒因 3）；兜底 `STRUCTURE_SYSTEM` 同步。策略是把已有的散文规则换成**可自检的动作锚点**而非堆更多规则（避免提示词过长稀释注意力）。**效果需真实多回合样本复测首稿通过率/拒绝率验证**——离线单测已过。2026-08-03 用 `agent/tools/sample_metrics.py` 跑了 5 世界 ×[1 开局+8 续写]=45 样本（含 2 个多 NPC/隐藏属性/长伏笔的「难」世界）：0 报错、**45/45 首稿通过、0 审校拒绝**，延迟均值 10.5s / p95 14.2s、ttfb ~1s。**但这不能证明改动有效**：另做的审校敏感度自检（喂「正文写角色已死、summary 却称其健在」+ 选项雷同的双硬伤候选给 `review`）确认 review 仍**精准拒绝**——故 0 拒绝是「自动采样永远点第一个选项、线性直推、不回溯不逆境，那三类拒因根本触发不了」所致，而非审校失灵。**结论：自动线性采样无法检验本类改动，别指望它跑出拒因；效果只能靠 §8.3 的人工逆境多回合验收**（专挑矛盾/高风险选项、回溯开分支、深剧情）。另注意采样中 openai SDK 层几乎每次调用都有一次 `Retrying request` 重试，疑似 DeepSeek 限流，可能抬高了 `elapsed_ms`，待查。
-  - **2026-08-03 逆境 A/B 复测（`agent/tools/adversarial_ab.py`，新增）**：为补上「线性采样测不出」的缺口，写了逆境 A/B 驱动器——2 个「难」世界（多 NPC/隐藏属性/长伏笔），**自由文本逆境选择**（灭口搜尸引入新实体、当众揭伏笔、道德反转、欺骗压隐藏属性、**回溯岔出与主线矛盾的分支**），新旧提示词喂**完全相同**的玩家输入,唯一变量是 `prompts.py`（HEAD vs 父提交 `43aa21c^`）。结果：**NEW 与 OLD 各 12/12 首稿通过、0 审校拒绝、0 降级，完全一致**；再绕开 review 直接审计 24 段转录，新旧 summary 都记全了新实体、delta 都合理，**无稳定质量差距**（唯一不同是 NEW 把「马库斯（人物）」误塞进 `items` set，反而语义更可疑，非改进）。**判定：离线手段（线性采样 → 逆境脚本 → 直接查转录）都无法复现 ~18% 的拒绝区间，故 review 的二元判定对这 7 行改动零区分力**——因为逆境压的是剧情黑暗度，而三类拒因是「输出纪律」问题（长上下文摘要漂移/真正模棱两可的状态变化/模型方差），选择文本逼不出来。**这次改动是低风险（7 行、散文规则换自检锚点、只益不损），别再在离线证明上钻牛角尖；唯一能结账的是真实多回合埋点**（`gen`/`review` logfmt 已就位，见 §9.1），等真人游玩几百回合量级再统计 `first_draft_pass`/`reject_rate`/拒因分布。若要更灵敏的离线仪表，需换成对每段输出在 delta 完整性/实体召回/hint 后果三维打分的**分级 LLM 裁判**，而非 review 的二元闸门——pre-launch 不值当。`adversarial_ab.py` 留库供换模型/改提示词时复用（产物写入被 `.gitignore` 忽略的 `tools/out/`）。
-  - **2026-08-03 选项 hint 整体移除（推翻上面的锚点③）**：真机试玩发现「预期收益+转折+风险」两面结构的 hint **太标准化、且每次提前剧透后果，破坏氛围与悬念**。权衡三条路线后（属性变化预估被否——反事实预测常与真实 delta 不符、数字更游戏化、隐藏属性还不能显示），决定**彻底省去选项 hint**：`prompts.py` 四处 JSON/规则不再产出 hint、删两面结构与转折词自检；`REVIEW_SYSTEM` 删掉 hint 放行项；`story_graph.py` 的 `normalize` **主动剥离** hint 兜底（即便模型手滑也丢弃）；前端 `OptionList` 本就隐藏空 hint。选项回归**纯行动文字**，代价与后果交给玩家在剧情里承受。**拒因3（选项无后果）随之作废，不再是质量维度**——这也顺带印证了上面那句「别在离线证明上钻牛角尖」：锚点③还没被离线证明有效就已被产品判断推翻。
-- LLM 偶发返回非法 JSON（真实样本约 7%），过去直接冒泡成玩家 502。现 `chat_json` 对 `LLMParseError` 附纠正指令重试 `AI_PARSE_MAX_RETRIES`(默认1) 次并打 `parse_retry` 点；耗尽仍抛。重试后仍高发时再考虑修复 JSON 或换更稳的解析。
-- `summary` 是有损压缩，长剧情仍可能漂移；RAG 是后续补精确细节的方案。
-- 前端没有登录，后端已有的真实用户边界尚未被游玩 UI 验证。
-- **匿名 guest 共享单一 PlayerID（结构性弱点，2026-08-06）**：所有匿名玩家回退同一个 seed `guest` 用户 id 作 PlayerID（`handler/play.go` 的 `player()`），故会话归属校验（`checkSessionOwner`）**对匿名会话之间不生效**——匿名者彼此可见/可删对方存档。登录用户已被完全隔离（PlayerID = 各自 userID）。0 用户 demo 危害趋近零，暂不修。未来方案：前端每端生成 guest UUID 存 localStorage、后端每匿名会话独立 PlayerID、Migrate 按该 UUID 迁移。
-- **创作侧 node CRUD 半残（2026-08-06）**：`POST /stories/:id/nodes` 仍以 `sessionID=uuid.Nil` 建节点（`handler/node.go` 的 TODO），创作侧手工建树未完成。本次仅给 `NodeService.Update/Delete` 补了经 `Story.CreatorID` 的越权校验，未扩建双归属模型。将来要独立编辑节点树时再引入「作者草稿树」或可空 sessionID 语义。
-- **上传的孤儿文件无回收（2026-08-10）**：上传成功但表单没保存、或换头像/封面后旧文件，都会永远留在磁盘上。0 用户阶段不值得建引用计数表或 GC 任务；真要治理时，最小方案是「上传即写一行 assets 表 + 夜间扫描无引用记录」。
-- **上传走单机本地磁盘（2026-08-10）**：`UPLOAD_DIR` 是进程本地目录，多实例部署必须挂共享卷（compose 已挂 named volume `uploads`），否则 A 实例存的图 B 实例读不到。换对象存储时只需替换 `service.UploadService`，`url` 语义不变、无需迁移数据表。
-- `community` 路由已注册但 handler 未实现；不能把它作为可用接口依赖。
-- `AutoMigrate` 适合当前 Demo，不等同于生产级迁移治理。
-- Go 服务的上下文传递、优雅关闭、seed 开关等工程化问题仍在 [prd.md](prd.md) 的开放问题中记录。
+**质量审校（review）**
+- review 是同一模型的二次调用：能抬下限，不保证事实正确，且加延迟与费用。真实样本拒绝率约 18%，**不是橡皮图章**。两类主要拒因：`state_delta` 与正文不一致、`summary` 漏记新增实体。（第三类「选项 hint 无后果」已随 hint 移除而作废。）
+- 已针对拒因把 `prompts.py` 的散文规则换成**可自检的动作锚点**（写 JSON 尾前回看正文倒推 delta/summary；落笔前自检本段新登场人物/物品/线索），而不是堆更多规则。
+- ⚠️ **这类提示词改动离线测不出来，别再试。** 线性采样（`agent/tools/sample_metrics.py`）、逆境 A/B（`agent/tools/adversarial_ab.py`，新旧提示词喂完全相同的玩家输入）、直接审计转录，三种手段都跑出「新旧完全一致」——因为逆境压的是剧情黑暗度，而拒因是**输出纪律**问题（长上下文摘要漂移、真正模棱两可的状态变化、模型方差），选择文本逼不出来。**唯一能结账的是真人多回合埋点**（`gen`/`review` logfmt 已就位，见 §9.1），攒到几百回合再统计 `first_draft_pass`/`reject_rate`/拒因分布。两个工具留库供换模型时复用。
+- 想要更灵敏的离线仪表，得换成对 delta 完整性/实体召回打分的**分级 LLM 裁判**，而非 review 的二元闸门——pre-launch 不值当。
+- **选项 hint 已整体移除**：真机试玩发现「收益+转折+风险」两面结构太标准化，且每次提前剧透后果、破坏悬念。属性变化预估也被否（反事实预测常与真实 delta 不符、更游戏化、隐藏属性还不能显示）。选项回归**纯行动文字**，代价交给玩家在剧情里承受；`normalize` 主动剥离 hint 兜底。
+- 待查：采样时 openai SDK 层几乎每次调用都有一次 `Retrying request`，疑似 DeepSeek 限流，可能抬高了 `elapsed_ms`。
+
+**其余**
+- LLM 偶发返回非法 JSON（真实样本约 7%）。`chat_json` 对 `LLMParseError` 附纠正指令重试 `AI_PARSE_MAX_RETRIES`（默认 1）次并打 `parse_retry` 点；耗尽仍抛。
+- `summary` 是有损压缩，长剧情仍会漂移；RAG 是后续补精确细节的方案。
+- **匿名 guest 共享单一 PlayerID（结构性弱点，2026-08-06）**：所有匿名玩家回退同一个 seed `guest` id 作 PlayerID（`handler/play.go` 的 `player()`），故 `checkSessionOwner` **对匿名会话之间不生效**——匿名者彼此可见/可删对方存档。登录用户已完全隔离。0 用户阶段危害趋近零。修法：前端每端生成 guest UUID 存 localStorage、后端每匿名会话独立 PlayerID、Migrate 按该 UUID 迁移。
+- **创作侧 node CRUD 半残（2026-08-06）**：`POST /stories/:id/nodes` 仍以 `sessionID=uuid.Nil` 建节点（`handler/node.go` 的 TODO）。仅补了 `NodeService.Update/Delete` 经 `Story.CreatorID` 的越权校验，未建双归属模型。将来要独立编辑节点树时再引入「作者草稿树」或可空 sessionID 语义。
+- **上传孤儿文件无回收（2026-08-10）**：上传成功但表单没保存、换头像/封面后的旧文件，都会永远留在磁盘。最小治理方案是「上传即写一行 assets 表 + 夜间扫描无引用记录」，0 用户阶段不值得。
+- **上传走单机本地磁盘（2026-08-10）**：`UPLOAD_DIR` 是进程本地目录，多实例必须挂共享卷（compose 已挂 named volume `uploads`）。换对象存储只需替换 `service.UploadService`，`url` 语义不变、无需迁移表。
+- `community` 路由已注册但 handler 未实现，不能当可用接口依赖。
+- `AutoMigrate` 适合当前 demo，不等同于生产级迁移治理。
+- Go 侧的 context 透传、优雅关闭、seed 开关等工程化问题记在 [prd.md](prd.md) 开放问题里。
 
 ### 9.3 建议的后续顺序
 
@@ -331,13 +328,15 @@ cd agent
 |---|---|---|
 | `README.md` | 项目入口、架构、当前概览、快速启动 | 主链路/入口/优先级变化 |
 | 本手册 | 现状、边界、文件入口、交接风险、验证方式 | 任一模块状态或契约变化 |
-| `CLAUDE.md` | 开发规范、分层边界、精确实现约定 | 修改工程规则、模块状态、运行方式 |
+| `CLAUDE.md` | 开发规范、分层边界、实现约定、**不放进度状态** | 修改工程规则或运行方式 |
 | 模块 README | 模块接口、配置、目录、测试 | 修改模块契约/流程/配置 |
 | `docs/design.md` | 技术选择、演进和权衡 | 修改架构/数据/Agent 方案 |
 | `docs/prd.md` | 产品愿景、范围、开放决策 | 修改产品目标或优先级 |
 | `infa/sql/` | 完整数据模型设计 | 新增持久化模块或改变长期 schema |
 
 **完成代码任务不等于完成交付。** 涉及当前行为、配置、接口、数据字段或优先级的改动，至少更新本手册和对应模块 README；必要时同步设计文档与 `CLAUDE.md`。
+
+**怎么写**见 `CLAUDE.md` 的「Keep docs small」——一句话版本：改受影响的那几行，不要另起一节；一个事实只存一处，别处只放指针；git 是变更日志，文档不是。
 
 ## 11. 接手第一天检查清单
 
@@ -379,94 +378,41 @@ cd agent
 
 **作品级主题（8 套）**：主题 id 存 `world_config.theme`（缺省 `star`），**零后端改动**透传（后端固定 struct 反序列化忽略未知键）。`lib/types.ts` `THEMES` = star/ink/horror/sci/love/xian/heal/radio，每套 `swatch=[强调色,渐变起,渐变止]`（`themeAccent/themeGradient/themeLabel` 取用）。**仅阅读态换肤**：`lib/useReadingTheme.ts` hook 把 `od-reading` class + `data-work-theme` + `data-mode` + `--scrim-alpha` 挂到 `<html>`（CSS 变量只父→子继承，故挂 html 非 .wrap），卸载全部清除回管理态白底。`globals.css` 的 `.od-reading[data-work-theme="…"]` 各覆盖 `--glow-a/-b/--accent-read/--scene-*`（star 默认无需块）。消费者：详情页 `app/story/[storyId]/page.tsx`（读 `parseWorld().theme`）、游玩页 `app/play/[sessionId]/page.tsx`（读 `playStore.theme`，`load()` 复用已拉 `/stories/:id`，零额外请求）。管理态页不挂 → 恒白底中性。
 
-**入口/展示**：编辑器 `StoryEditor.tsx` 世界观区色块选择器（读 `THEMES`）；`editorStore.ts` `theme` round-trip。发现页封面卡 `StoryCard.tsx` 用作品主题**渐变**作封面底（管理态外壳仍白），kicker/点缀用强调色。星图树/抽屉在阅读态自动取暖金配色。
+**入口/展示**：编辑器 `StoryEditor.tsx` 第 5 步「主题与生成」的色块选择器（读 `THEMES`），与封面上传并列；`editorStore.ts` `theme` round-trip。发现页封面卡 `StoryCard.tsx` 有封面图时用图 + 主题渐变半透明罩层，无图时用纯主题渐变（管理态外壳始终白），kicker/点缀用强调色。星图树/抽屉在阅读态自动取暖金配色。
 
-**边界（不做）**：玩家全局覆盖皮肤推迟。~~自主背景图上传预留 `--reader-bg` 替换点未接~~ → 已接：作者上传的封面即经该替换点注入阅读态背景（见 §14）。
+**边界（不做）**：玩家全局覆盖皮肤推迟。（`--reader-bg` 自主背景图替换点已由作品封面接上，见 §14。）
 
-### 13.4 首页排版：题材与主题分家（2026-08-10）
+### 13.1 沉淀下来的硬约束
 
-首页三处观感问题同源——**种子作品既没配 `theme` 也没有题材字段**：
+原 13.1–13.6 是六段按日期堆的变更叙述（2026-08-10 的三个阶段）。**过程已在 git log 里**（`f167c29`、`a53097d`），这里只留改完之后仍然生效、且踩过坑才知道的约束。
 
-1. 6 张封面同色、kicker 全写「末世 · 星海」——所有作品回落默认 `star`，而 `StoryCard` 拿 `themeLabel(theme)` 当 kicker 用，等于把配色皮肤名当题材展示（《孤岛探案》会被标成「恐怖 · 怪谈」）。
-2. 题材筛选栏整条消失——`buildCats` 的「少于两类不给 chip」规则遇上「全都是 star」，于是 hero 下面空出一截。
-3. 6 张卡铺 `column-count: 4` 的瀑布 → 多列是竖向填充，变成 2/2/1/1 左重右轻。
+**布局与卡片**
+- 书库作品墙是**等大网格**（`grid` + `repeat(auto-fill, minmax(260px,1fr))`），不是 `column-count` 瀑布——多列是竖向填充，阅读顺序会变成「第 1 列从上到下再第 2 列」，且 6 张卡会排成左重右轻。
+- 卡片等大靠：封面 `min-height: 210px` + 列向 flex，标题钳 2 行、摘要钳 3 行，CTA 用 `margin-top: auto` 顶到封面底部（标题长短不一时 CTA 仍在同一水平线）。**骨架卡必须同步等高**，否则加载态到落地会跳动。
+- kicker 用 `tags[0]`（真题材），不是 `themeLabel()`——`theme` 只决定配色，拿它当题材会让《孤岛探案》标成「恐怖 · 怪谈」。首页 chip 从**实际在架作品**的 `tags[0]` 聚合并计数，少于两类整条不出。
+- 窄屏（≤1080px）**不隐藏属性轨**：属性是「选哪一项」的依据，藏了就没法决策。左轨改成正文上方可横滑的状态带，右轨收起。
 
-**修法**：
-- `seed.go` 六部作品各补 `theme`（horror/xian/radio/ink/sci/heal，只决定配色）与 `tags`（真题材，`tags[0]` 为主题材）。
-- **`theme` 与题材彻底分家**：`StoryCard` 的 kicker 改用 `tags[0]`，无 tags 则不渲染；卡片补出原型的标签行（`.work-tags` 此前是死样式）。首页 chip 改从 `tags[0]` 聚合、按作品数排序。
-- **作品墙从错落瀑布改为等大网格**（用户决定）。`.wall` 由 `column-count` 换成 `grid` + `repeat(auto-fill, minmax(260px, 1fr))`：列数随容器自适应、无需 JS 传，**阅读顺序恢复为行优先**，`column-count` 那个「第 1 列从上到下再第 2 列」的老问题一并消失。
-- 卡片等大的落地方式：封面 `min-height: 210px` + 列向 flex，标题钳 2 行、摘要钳 3 行（`-webkit-line-clamp`），CTA 用 `margin-top: auto` 顶到封面底部——这样标题长短不一时各卡的 CTA 仍在同一水平线。`StoryCard` 的 lg/md/sm 尺寸错落与对应 CSS 一并删除，骨架卡同步改为等高（否则加载态与落地布局会跳动）。
+**组件**
+- **新组件必须在同一阶段就有真实消费者**，只建不接等于新造死代码。
+- `Dialog` 必须 **portal 到 `body`**：留在原组件树会被祖先的 transform/overflow 裁掉（`.scrim`、`.od-drawer` 都带 transform）。配套：焦点陷阱 + 焦点归还、Esc 关闭、滚动锁定。弹窗打开时错误提示要按开合分流，否则被遮罩挡住、用户只看到「保存」毫无反应。
+- **轻量破坏性动作用行内二次确认，不弹窗**（删作品/删连接是点两下）。
+- Toast 统一走 `useToast()`（统一时长、连续提示重新计时、卸载清 timer）。
+- **`components/editor/PublishCheck.tsx` 镜像 `pkg/worldvalidate.go` 的 strict 分支** —— ⚠️ 改后端 strict 规则必须同步改它，否则前端放行、后端拒。
+- 编辑器是**分步向导**（六步，同一时刻只渲染当前步），不是长表单：世界观那一段字段密集（标题/简介/背景/风格/题材/基调/规则/大纲/角色），和开场、属性表堆一页里作者不知道下一步干什么。完成态只由发布检查有检查项的步骤驱动——没有检查项的步骤不打勾，否则误导成「这步做完了」。
+- **保留的「暂时没人用」样式**（有明确后续消费者，删了要重写）：`.chapter`/`.reader h1`（阅读态章节标题）。
+- 氛围场景（`[data-scene]`）是**当下氛围、不持久化**，退出阅读态即清；昼夜与遮罩浓度才是长期偏好（localStorage + `PrefsBoot` 每次加载套回 `<html>`）。
 
-### 13.5 通用组件收敛（2026-08-10）
+**token 合规的复查口径**（改完实测过一轮，回归时照这四条量）
+- 组件层硬编码色 ≤4（且全为永远深色的封面高光/文字投影这类装饰，已注释）；
+- 每屏可见 accent ≤2（`.eyebrow::before` 默认中性，只有每屏第一条挂 `.lead` 才用 accent）；
+- 无可访问名的输入 0；各路由 header/nav/main 各 1；
+- 新增变量**先回写 `docs/design/tokens.css`** 再落 `globals.css`，不两边各写一份。
 
-原则：**新组件必须在同一阶段就有真实消费者**，只建不接等于新造死代码。`Switch` 因此推迟到偏好设置真正落地时再建。
-
-- **`components/Dialog.tsx`**（全站此前零实现，三个原型屏都依赖）：portal 到 `body`（留在原组件树会被祖先的 transform/overflow 裁掉——`.scrim`、`.od-drawer` 都带 transform）、`role="dialog" aria-modal`、Esc 关闭、**焦点陷阱 + 焦点归还**、背景滚动锁定。样式 `.ov/.dlg/.dlg-close/.ic/.sub/.row` 照原型 `settings.html:95-103`。
-  - **第一个消费者：`LLMSettings` 的「添加/编辑连接」**——原型本就是模态，此前用内联表单顶替，展开会把下方内容整块推走。顺带修了一个搬家才暴露的问题：错误提示原在 section 里，弹窗打开时会被遮罩挡住，用户只看到「保存」毫无反应；现按弹窗开合分流显示。
-  - **保持行内二次确认不变**：删除作品/连接仍是「点两下」，原型 `settings.html:235` 亦如此，轻量动作不该弹窗。
-- **`components/Toast.tsx`**：`admin` / `me` / `StoryLLMConfigPanel` / `StoryEditor` 四处各写一份 `setState + setTimeout`，时长还不一致（2400/2400/2200），且都没在卸载时清 timer。收敛为 `useToast()`（统一时长、连续提示重新计时、卸载清 timer）+ `<Toast>`（供文案存在外部 store 的 `StoryEditor` 复用）。补上原型有而实现漏掉的 `role="status" aria-live="polite"`。`.ed-toast` 别名一并废弃。
-- **清死样式**：`.h-page`、`.h-sec`（还带负字距，是 §4 最后一处残留违规）、`.text-muted`、`.card.pad-legacy`、`.card.story-mine`、`.llm-conn-form` 删除。**保留** `.chapter`/`.reader h1`（阅读态章节标题待接）、`.od-tags`/`.od-tag`（详情页标签行待接）——这些有明确的后续消费者，删了要重写。
-- **修阶段 1 的一处回归**：`CharacterList` 新增的表头 `.ed-char-head` 当时没写 CSS，列宽与数据行对不齐；补齐并在窄屏与 `.ed-attr-head` 一同收起。
-
-### 13.6 补齐原型区块（2026-08-10，阶段 3）
-
-- **题材可编辑**（3.1）：编辑器 ② 世界观段补「题材多选 + 基调」写入 `world_config.tags`（`lib/types.ts` 的 `GENRES`/`TONES` 是**建议表不是白名单**——AI 生成或手填的其它标签原样保留在 tags 里，UI 不抹）。排序约定：题材在前、自定义居中、基调置尾，因此 `tags[0]` 恒为主题材。详情页补出标签行（`.od-tags` 此前是死样式），kicker 与首页统一改用 `tags[0]`。
-- **`/mine` → 我的空间**（3.2）：资料头（作品数取 `/auth/profile`，被游玩/获赞由 `/stories/mine` 求和，无新接口）+ 「我的创作 / 我在读」双页签；作品卡补主题渐变封面 + 状态徽标 + 游玩/赞；存档卡改为原型的行式布局（渐变缩略 + 进度）。**「我在读」从首页迁来**——书库首屏不该被个人存档挤占；`AppHeader` 导航按 DESIGN §9.3 补成「发现 / 我在读 / 我的空间 / 社区」，`/mine#reading` 直达第二页签。
-- **`/me` → 设置**（3.3）：左侧分区导航（个人资料 / 账号与安全 / AI 连接 / 偏好），窄屏转横向滚动条。账号与安全本期只做退出登录（改密需后端接口）。偏好三项全 localStorage：减少动效（写 `<html data-motion="off">`，正是 §5 要求的「>5s 循环动效可关」那个开关）、默认遮罩浓度（复用 `getScrimAlpha/setScrimAlpha`）、昼夜指路。新增 `components/Switch.tsx`（用真 checkbox 承载状态与键盘行为）与 `components/PrefsBoot.tsx`（挂 root layout，**每次加载**都把偏好套回 `<html>`，而不只是点开关那一刻）。
-- **编辑器改为分步向导 + 左侧步骤导航**（3.4，对齐原型 `create-editor.html` 的 `.shell/.steps`）：六步——灵感 / 世界观 / 属性系统 / 开场 / 主题与生成 / 发布检查，同一时刻只渲染当前步（原型即 `.panel{display:none}` 的分页式，不是锚点滚动）。左侧导航可任意跳步、每步底部有上一步/下一步；**完成态**由发布检查按 `step` 归并驱动（没有检查项的步骤不打勾，否则会误导成「这步做完了」）。窄屏转横向滚动条——竖排六步会把首屏占满，作者还没看到任何输入框。
-  > 分步不只是照搬原型：世界观那一段字段密集（标题/简介/背景/风格/题材/基调/规则/大纲/角色），和开场、属性表堆在一页里，作者不知道下一步该干什么。
-- **发布检查清单**（3.4）：`components/editor/PublishCheck.tsx` 镜像 `pkg/worldvalidate.go` 的 strict 规则 + 标题校验，逐条列出缺什么，未全通过则发布按钮 disabled；每项带 `step`，「去补」直接跳到对应步骤。此前只能点了发布等后端报错，且一次只报一条。
-  > ⚠️ **两边规则必须同步**：改 `worldvalidate.go` 的 strict 分支时要同步改 `PublishCheck.tsx`（文件头已标注）。
-- **阅读态两屏**（3.5）：游玩页补氛围切换按钮（`[data-scene]` 的 CSS 早就写好，一直没有触发入口；氛围是「当下的」不持久化，退出阅读态即清）+ 章节标签（`StoryPane` 的 `chapter` prop 从来没人传过；后端无章节概念，用当前节点 depth 表达「第几节」，比编一个章节名诚实）。详情页补「继续上次」（`/play/sessions` 已返回带 `story_id` 的列表，前端过滤即可）。
-
-### 13.3 铁律与 token 合规（2026-08-10，对齐 `docs/design`）
-
-按 `DESIGN.md` 逐条核查后的一轮机械修正。**改法的事实源都在 `docs/design/tokens.css`，新增变量已回写事实源**，两边不再各写一份。
-
-- **token 回填**：`globals.css` 组件层的硬编码色从 61 处降到 4 处（剩下 4 处是永远深色的封面高光/文字投影，装饰性，已注释说明）。新增并回写事实源的变量：`--fg-strong`/`--border-strong`/`--danger-bg`/`--r-read`/`--border-w`/6 档字阶 `--t-*`、阅读态的 `--panel-fill(-2)`/`--on-accent-read`/`--read-*` 语义色/`--shadow-read`/`--scene-*`。圆角 45 处、动效时长 22 处收敛到 token；抽屉那条 M2 缓动换成全站 `--ease`。
-- **`.login-aside` 挂 `od-reading`**：这一块原本整份复制了阅读态深色字面量。挂上 class 后直接吃阅读态 token，10 处字面量归零，昼夜切换也跟着走。
-- **§3 颜色**：`.avatar` 的蓝紫双色渐变、hero 标题的四色渐变（含 9s 无限 `flow`）全部换成中性/单色强调，Tailwind indigo 从 sci 主题清除（`globals.css` 与 `lib/types.ts` 两份副本同步）。`.eyebrow::before` 默认改中性，只有每屏第一条挂 `.lead` 才用 accent —— 编辑器一页 4 条 eyebrow 正是 accent 超标的主因。主题色块选中环也改中性（色块自己已在展示作品色）。
-- **§6 无障碍**：`/me`·`/mine`·`/admin`·`/story` 补 `<main>`；首页补 sr-only h2 消除 h1→h3 跳级；`/play` 的作品名从 `<span>` 升为 `<h1>`，其下 h4/h3 统一降 h2（CSS 选择器同步）；编辑器 13 处无名控件补齐可访问名（`StoryEditor` 复用现成的 `Input`/`Textarea` 封装，`AttrTable`/`CharacterList` 用「表头 aria-hidden + 每格带行号的 aria-label」，密集表格不逐格挂可见 label）；`StoryTree` 节点补 `role=button`+`tabIndex`+Enter/Space+可见焦点，并垫 `r=12` 透明命中圈（回溯是改写进度的破坏性动作，键盘不可达不能接受）；抽屉 close 补到 36×36，遮罩退化为 `aria-hidden` 装饰。
-- **§7 图标与按钮**：新建 `components/icons.tsx`（单线 + currentColor）与 `components/BrandGlyph.tsx`，把 `✦ × → ← +` 等 13 处字符图标换成 SVG；BrandGlyph 原在 AppHeader 与 login 各存一份且颜色写死，合并为一处、颜色交给容器。**按钮两套体系收敛**：`.primary-btn`/`.ghost-btn`/`.ed-del`/`.btn-create`/`.od-mini` 共 24 处迁到 `.btn.primary/.accent/.secondary/.ghost/.danger`，旧规则删除或收成薄别名（`.ed-del` 只剩「推到行尾」的位置语义）。每屏一个主按钮：编辑器的「AI 生成世界观」降 `.btn accent`、`/me` 的「保存连接」、`/admin` 的分段「保存」、详情页的「保存本作品配置」全部降次级。
-
-**复查口径**（改完实测）：组件层硬编码色 4（全为装饰）、每屏可见 accent ≤2、无可访问名的输入 0、各路由 header/nav/main 各 1。
-
-### 13.2 种子作品重复：guest 删号后的自愈（2026-08-10）
-
-**症状**：首页每部种子作品显示两份，内容一模一样。
-
-**根因**：`seed()` 按 `username='guest'` 找预置用户，`ensureStory` 按 `(creator_id, title)` 幂等。guest 用户一旦被删，下次启动会重建一个**新 UUID** 的 guest，旧的 6 部作品仍以 `published` 留在库里但认不出来，于是整套再建一遍。旧那批的 `creator_id` 已成孤儿（users 里查无此人），新加的 `creator_name` 恰好让它显形——旧的作者名为空，新的是「游客」。
-
-**修法**：`seed.go` 新增 `healSeedDuplicates`，在 ensureStory 之前跑：
-- 只处理**种子标题**且**无主或属于当前 guest**的行，真实用户的同名作品绝不碰；
-- 同标题多行时保留 `created_at` 最早的一份（它挂着玩家会话，删掉会级联清空进度），其余删除；
-- 保留的那份若挂在旧 creator_id 上，认领给当前 guest —— 之后 `(creator_id, title)` 判定重新对齐，不再产生副本。
-
-自愈是幂等的：guest 若再被删，下次启动会重新收敛，不需要手工清库。
-
-**顺带**：`StoryService.SetStatus` 发布前新增空标题拦截。库里那两张空标题的已发布作品就是从这个缺口进去的，在首页渲染成无字白卡（`ValidateWorldConfig` 只管 world_config，管不到标题）。
-
-存量已按「作者是否还在」分别处置（一次性订正，跑完即删脚本，不留死代码）：
-- 作者仍在 users 表 → **降为草稿**，作品与其游玩会话全部保留，作者补上标题即可重新发布；
-- 作者已删号（孤儿）→ **删除**，级联清掉会话/节点。
-
-若日后又发现空标题的已发布作品，说明拦截被绕过（例如直接改库），按同一规则处理即可：
-`SELECT id, creator_id FROM stories WHERE status='published' AND btrim(title)=''`，
-再逐条判断 `creator_id` 是否存在于 users。
-
-### 13.1 双态落地后的一轮修正（真实数据 vs 原型假数据）
-
-原型里的占位一度跟着搬进了产品页，这轮清掉，并把「靠猜」的地方换成有事实源的：
-
-- **作者署名**：卡片/详情页原本一律写死「佚名作者」。改为后端 `stories` 查询 `LEFT JOIN users` 投影 `creator_name`（`model.Story.CreatorName`，`gorm:"->;-:migration"` 只读、不建列），前端 `creator_name` 为空则**整块不渲染**——统一挂个假作者名比不署名更伤。注意 join 后 `users` 也有 `status`/`created_at`，`listWhere` 里所有列名必须带 `stories.` 前缀。
-- **详情页「分支 ∞」**已删：它坐在真实 play/like 数字旁边会被读成统计值，而后端没有分支数。
-- **题材 chip**：原本把 8 个作品主题铺满当分类，实际在架作品几乎全是 `star`，7 个 chip 点进去全空。改为从**实际在架作品**派生（`buildCats`，带计数，少于两类则整条不出），并在作品重载后把已失效的选中项回落「全部」。真正的 genre 待后端补字段。
-- **hidden 属性不再出现在详情页**：它的契约是「仅供 AI 参考、玩家端永不展示」，连存在都不该让玩家知道；`reveal` 门控相反，明说「会在剧情里显现」是钩子，只是不泄露初值。
-- **属性进度条**改由 `attributes[k].max` 决定（见 CLAUDE.md「Display bound」）：声明了上限才画条，否则只显示数字。编辑器属性表多一列「上限」，`pkg.ValidateWorldConfig` 规则 8 卡「正数 + 仅 number」。
-- **窄屏（≤1080px）不再隐藏属性轨**：属性是「选哪一项」的依据。左轨改成正文上方一条可横滑的状态带，右轨（回合/已探索 + 星图入口）收起，星图入口顶栏已有。
-- **注册不再由前端派生 username**：`email.split("@")[0]` 会让 `a@x` 与 `a@y` 撞车，且报错对不上用户填过的任何一栏。前端传空串，`service.generateUsername` 从邮箱本地部分清洗后加数字后缀直到可用；邮箱唯一性改为**先查**，冲突文案改中文。
-- **生成中保留选项列表**（禁用 + 选中项高亮 + genbar 垫底），不再整片换成一条进度条——原来玩家看不到自己刚点了什么，`.choice.committed` 样式也永远没机会出现。
-- `/create`·`/edit` 补上 `AppHeader`（DESIGN §2：编辑器属管理态），未登录改跳 `/login?next=/create` 而非甩回首页。
+**数据与后端**
+- `seed()` 有自愈：`healSeedDuplicates` 在 ensureStory 之前跑。guest 被删后重建会拿到**新 UUID**，旧的 6 部作品成孤儿并被整套重建一遍。自愈只处理**种子标题**且**无主或属于当前 guest**的行（真实用户同名作品绝不碰），同标题多行保留 `created_at` 最早的一份（它挂着玩家会话，删了会级联清进度），并把它认领给当前 guest。幂等，不需要手工清库。
+- `StoryService.SetStatus` 发布前拦空标题（`ValidateWorldConfig` 只管 world_config，管不到标题）。若又出现空标题的已发布作品说明被绕过（如直接改库）：`SELECT id, creator_id FROM stories WHERE status='published' AND btrim(title)=''`，作者仍在则降草稿、已删号则删除。
+- 作者署名走 `LEFT JOIN users` 投影 `creator_name`（`gorm:"->;-:migration"` 只读不建列），空则前端**整块不渲染**——统一挂个假作者名比不署名更伤。⚠️ **join 后 `users` 也有 `status`/`created_at`，`listWhere` 里所有列名必须带 `stories.` 前缀。**
+- 注册的 username 由**后端**派生（`service.generateUsername`），不由前端 `email.split("@")[0]`——那会让 `a@x` 与 `a@y` 撞车，且报错对不上用户填过的任何一栏。邮箱唯一性**先查**。
 
 ## 14. 图片上传（头像 / 作品封面，2026-08-10）
 

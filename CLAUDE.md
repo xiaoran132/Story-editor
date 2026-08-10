@@ -2,9 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **Language split.** This file is written in **English** — it exists to be read by Claude Code, not browsed by humans. Chinese appears only where it is a literal quote of something defined in a Chinese doc (a heading to search for, a domain term, real seed data); don't translate those away or the pointer stops resolving. Every *other* doc in the repo (`README.md`, `docs/**`, module READMEs) and every reply to the user are Chinese.
+
 ## Rules
 1. Reply in Chinese for all responses.
-2. After completing a task, update the documentation promptly.
+2. After completing a task, update the documentation promptly — **by editing the affected lines, never by appending a new section or rewriting the file**. See "Keep docs small" below; that constraint is part of this rule, not a suggestion.
 3. This project is currently in demo design stage (not launched, 0 users). Feel free to share your views on the project at any time — don't blindly follow the user's commands, but continuously raise reasonable challenges and suggestions, including but not limited to design proposals, technical planning, architecture, and database design. After completing a task, also reflect on whether the implementation can be simplified. As long as it makes the project better, you may propose rebuilding anything from scratch at any time.
 
 ## Documentation Maintenance & Reading Order
@@ -13,6 +15,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Documentation maintenance rules** (what to sync when you change something): see `docs/handoff.md` §10.
 - **Conflict priority**: running code / tests > `docs/handoff.md` (current facts) > this file (engineering constraints) > module README > `docs/design.md` (technical design) > `docs/prd.md` (vision).
 - After completing a code task, you must sync affected docs, especially `docs/handoff.md`; do not only update the PRD.
+
+### Keep docs small — edit in place, don't accumulate
+
+Docs are read every session; length is a real cost. **Updating a doc means editing the affected lines, not appending a new section and not rewriting the file.**
+
+- **Write once, point elsewhere.** A fact lives in exactly one doc. Everywhere else links to it. Never restate status, route details, or design rationale in two files — if you're about to, replace the copy with a pointer.
+- **Replace, don't append.** When behaviour changes, rewrite the sentence that is now wrong. Do not add a dated "update" paragraph below the stale one — that is how a doc doubles in size while getting less trustworthy.
+- **No changelog sections.** Git history is the changelog. Only record a dated entry when a *decision* (and its reason) must survive, and keep it to a few lines.
+- **Keep the reason, drop the narrative.** "X because Y" earns its place; the story of how you arrived at X does not. Failed experiments compress to one line stating what was ruled out.
+- **This file holds constraints, not status.** Invariants, boundaries, and conventions that are expensive to rediscover. Progress/completion state belongs in `docs/handoff.md` §2 only.
+- **Prune while you're there.** If a section you're touching has gone stale or duplicated, delete the dead part in the same pass.
 
 ## Project Overview
 
@@ -61,71 +74,52 @@ Defaults are defined in `config.setDefaults()` (private): DB localhost/5432/post
 
 ### Layered Architecture (flat layering)
 
-Strictly follows `handler → service → repository` unidirectional dependency. `model` and `pkg` are stateless common layers, forbidden from containing business logic.
+Strictly unidirectional: `handler → service → repository`. `model` and `pkg` are stateless shared layers and must contain no business logic.
 
-```
-backend/
-├── main.go                     # Startup entry: config → db → DI → routes → run
-├── config/config.go            # viper config management
-├── internal/
-│   ├── model/                  # Pure GORM data models + ToResponse() DTO
-│   │   ├── user.go
-│   │   ├── story.go
-│   │   └── node.go
-│   ├── handler/                # HTTP handler: param binding → call service → response
-│   │   ├── user.go
-│   │   ├── story.go
-│   │   ├── node.go
-│   │   └── community.go
-│   ├── service/                # Business logic layer (pure Go, not tightly bound to HTTP)
-│   │   ├── user.go
-│   │   ├── story.go
-│   │   ├── node.go
-│   │   ├── ports.go            # Cross-module narrow interfaces (StoryReader) — the split seam
-│   │   ├── ownership.go        # Unified resource-ownership check (requireOwner / ownerOrNotFound)
-│   │   └── agent_client.go     # HTTP calls to the Python agent service
-│   ├── repository/             # Data access layer (GORM operations)
-│   │   ├── user.go
-│   │   ├── story.go
-│   │   └── node.go
-│   ├── authz/                  # Lightweight RBAC single source of truth (role→permission, stateless, no DB)
-│   │   └── authz.go
-│   └── middleware/
-│       ├── auth.go             # JWT Bearer parsing + RequirePermission (RBAC gate)
-│       └── cors.go             # Cross-origin
-└── pkg/                        # Utility packages with no business dependencies
-    ├── jwt.go                  # JWT generation/verification
-    ├── response.go             # Unified response format
-    └── errors.go               # AppError + business error codes
-```
+| Path | Responsibility |
+|---|---|
+| `main.go` | config → db → DI → routes → run (manual wiring, no DI framework) |
+| `config/` | viper: env > config.yaml > defaults |
+| `internal/model/` | GORM structs + `ToResponse()` DTO. Data shape only |
+| `internal/handler/` | bind → call service → respond. No logic |
+| `internal/service/` | business logic, pure Go, not bound to HTTP |
+| `internal/service/ports.go` | cross-module narrow interfaces (`StoryReader`) — **the split seam** |
+| `internal/service/ownership.go` | `requireOwner` / `ownerOrNotFound` |
+| `internal/repository/` | GORM only; takes/returns `model` structs |
+| `internal/authz/` | role→permission policy. Stateless, no DB |
+| `internal/middleware/` | JWT parsing, `RequirePermission`, CORS |
+| `pkg/` | zero-business utilities; any layer may import |
 
-### Layering Rules
+The table is the whole rule for layers. The one that actually gets violated is the module seam:
 
-1. `handler` may only call `service`, responsible for request binding/validation and response
-2. `service` may only call `repository` or `agent_client`, responsible for business logic
-3. `repository` only does database operations, accepts/returns `model` structs
-4. `model` only defines data structures, forbidden from writing business logic
-5. `pkg` has no business dependencies, may be referenced by any layer
-6. **Module boundaries (modular monolith)**: modules = domains (user/story/play/llm/community). A module must **not** depend directly on another module's `repository`; cross-module reads go through a narrow interface in `service/ports.go` (e.g. `StoryReader`, satisfied by `*repository.StoryRepository`). This is the seam for future extraction. `internal/authz` is a stateless policy layer (role→permission, no DB) referenceable by any layer.
+> **Module boundaries (modular monolith).** Modules are domains (user/story/play/llm/community). A module must **never** import another module's `repository` — cross-module reads go through a narrow interface in `service/ports.go` (e.g. `StoryReader`, satisfied by `*repository.StoryRepository` via duck typing). That interface is the seam a future extraction cuts along; a direct repo import welds the modules together.
 
 ### Dependency Injection
 
-Assembled manually in `main.go`: config → database → repository → service → handler → route registration.
+Assembled by hand in `main.go`: config → db → repository → service → handler → routes. Startup runs `CREATE EXTENSION IF NOT EXISTS pgcrypto` (needed by `gen_random_uuid()`), then `AutoMigrate` over all models, then an idempotent `seed()` (guest user + demo works).
 
-On startup, `main.go` first executes `CREATE EXTENSION IF NOT EXISTS pgcrypto` (required by `gen_random_uuid()`), then `AutoMigrate` on the current five models: `User`, `UserCredential`, `Story`, `StoryNode`, `PlaySession`, followed by idempotent `seed()` that pre-seeds a guest user + demo works. `PlayService` takes story access as the `StoryReader` narrow interface (not the concrete story repo): `NewPlayService(sessionRepo, nodeRepo, storyRepo, aiClient, llmResolver)` — `storyRepo` satisfies `StoryReader` by duck typing. `NewNodeService(nodeRepo, storyRepo)` likewise takes `StoryReader` for node ownership checks. Cross-table writes in play (node + session) are done via `PlaySessionRepository.CreateNodeAndUpdateSession` / `DeleteSessionCascade`; the old `PlaySessionRepository.DB()` raw-connection leak was **removed**. Mounted at `/api/v1/play/*`.
+- `NewPlayService` / `NewNodeService` take story access as the **`StoryReader` interface**, not the concrete repo — keep it that way.
+- Play's cross-table writes go through `PlaySessionRepository.CreateNodeAndUpdateSession` / `DeleteSessionCascade`. The old `DB()` raw-connection escape hatch was removed on purpose; don't reintroduce one.
 
 ### Route Registration
 
-Routes are registered directly in route groups in `main.go`:
-- `/api/v1/auth/*` — register/login/profile. **JWT now carries a `role` snapshot** (`pkg.GenerateToken(userID, role, secret)`); `middleware.RequireAdmin()` gates admin routes. The old single-key `/auth/settings` was **removed** — BYOK moved to `/llm/*` (see below).
-- `/api/v1/llm/*` (AuthRequired) — **BYOK**. Connections are **account-level**, model choice is **per-work**: `GET/POST /connections`, `PUT/DELETE /connections/:id` (each = an OpenAI-compatible endpoint + AES-256-GCM key + default_model; reads masked hint only), `POST /connections/test` (one-shot ping via agent), `GET /connections/:id/models` (fetch the endpoint's `/models` for a dropdown; manual fallback), `GET/PUT /story-config/:storyId` (the player's per-work stage→{conn,model} choice, stored in `user_story_llm_configs`; stages: write/review). Creator's per-stage **recommended models** live in `stories.world_config.recommended_models` (display-only annotation, not auto-applied).
-- `/api/v1/admin/llm/*` (AuthRequired + RequireAdmin) — platform LLM settings per stage (`platform_llm_settings` table): `GET/PUT /platform`, `POST /platform/test`. **First admin via manual DB promotion** (`UPDATE users SET role='admin'`), then re-login. See `docs/handoff.md §12`.
-- `/api/v1/stories/*` — story CRUD + node creation; creation extras: `GET /mine` (my works incl. drafts, AuthRequired), `PUT /:id/status` (draft↔published, publish does strict world_config validation + sets PublishedAt); `GET /` (homepage) filters to published only
-- `/api/v1/assist/*` — creation assistance forwarding to agent (AuthRequired): `POST /world|opening|polish|branches`. Requests may carry `connection_id` to override the creator's world-stage connection. Go resolves the creator's LLM config (via `LLMResolver`) and injects it before forwarding. Agent has no CORS/auth so the browser never calls it directly; Go forwards via `AgentClient` (180s `assistClient`)
-- `/api/v1/uploads/*` — **image upload** (AuthRequired): `POST /uploads/image` (multipart `file` + `kind`∈{avatar,cover}) → `{url}`; `GET /uploads/*` serves the files statically (`api.Static`). Mounted under `/api/v1` **on purpose** — the prod nginx only proxies `/api/v1/` to the backend, a bare `/uploads` would go to Next.js. Type is decided by sniffing the file header (`http.DetectContentType`), never by `Content-Type`/extension; SVG is excluded (inline script + same-origin static serving = stored XSS). Binding is separate: avatar rides `PUT /auth/profile` (`avatar_url`), cover rides the story save (`cover_url`). See `docs/handoff.md §14`.
-- `/api/v1/nodes/*` — node query/update/delete
-- `/api/v1/play/*` — (mounted with `AuthOptional`: with a token, belongs to the logged-in user; otherwise anonymous guest) play sessions: create empty session `POST /sessions` (no longer synchronously generates the opening), **claim anonymous progress after login `POST /sessions/migrate` (AuthRequired, only migrates sessions reported by this browser and owned by guest)**, **streaming opening `POST /sessions/:id/opening/stream` (SSE, idempotent; triggered when the play page sees current_node=null)**, list `GET /sessions` (the current player's/guest's history sessions, with `story_title`, for loading saves), query `GET /sessions/:id`, delete `DELETE /sessions/:id` (delete save, validates ownership then transactionally cascade-deletes all nodes of that run), **streaming choice `POST /sessions/:id/choice/stream` (SSE: delta/revise/done/error)**, backtrack `POST /sessions/:id/backtrack` (playable anonymously)
-- `/api/v1/community/*` — community browse/detail/like/comment (handler stubs)
+Registered directly in route groups in `main.go`. **The endpoint list lives in `docs/handoff.md` §7.1** — don't duplicate it here.
+
+| Group | Auth |
+|---|---|
+| `/api/v1/auth/*` | public (register/login) + `AuthRequired` (profile) |
+| `/api/v1/stories/*`, `/nodes/*` | reads public, writes `AuthRequired` |
+| `/api/v1/play/*` | `AuthOptional` |
+| `/api/v1/assist/*`, `/llm/*`, `/uploads/*` | `AuthRequired` |
+| `/api/v1/admin/llm/*` | `AuthRequired` + `RequirePermission(authz.PermPlatformLLMManage)` |
+| `/api/v1/community/*` | handler stubs, not usable |
+
+Constraints that are expensive to rediscover:
+- **`/play` is `AuthOptional` on purpose** — anonymous play must work; with a token the session belongs to the user, otherwise it falls back to the seeded guest. Every session-scoped route still verifies `session.PlayerID` (the anonymous-guest sharing weakness is `docs/handoff.md` §9.2).
+- **The browser never calls the agent.** It has no CORS and no auth; Go forwards `/assist/*` through `AgentClient` (180s `assistClient`).
+- **`/uploads` is mounted under `/api/v1` deliberately** — prod nginx only proxies `/api/v1/` to the backend, a bare `/uploads` would go to Next.js. Upload type is decided by sniffing the file header, never by `Content-Type`/extension; SVG is excluded (inline script + same-origin static serving = stored XSS). Uploading only yields a URL — binding is a separate save (`avatar_url` / `cover_url`).
+- **BYOK: connection is account-level, model choice is per-work.** `world_config.recommended_models` is the creator's display-only annotation, never auto-applied to a player.
+- **Publishing is the strict gate**: `PUT /stories/:id/status` runs strict `world_config` validation; drafts stay lenient. `GET /stories/` (homepage) returns published only.
 
 ### Unified Error Handling
 
@@ -134,7 +128,7 @@ Routes are registered directly in route groups in `main.go`:
 - `BizCode` — business error code (serialized to `error.code` in JSON)
 
 Predefined HTTP errors: `BadRequest(msg)`, `Unauthorized(msg)`, `NotFound(msg)`, `Forbidden(msg)`, `Conflict(msg)`, `Internal(msg)`.
-Business error codes 10001-10011 use `NewBusinessError(code)` or `NewBusinessErrorWithMessage(code, msg)`.
+Business codes use `NewBusinessError(code)` / `NewBusinessErrorWithMessage(code, msg)`. **The allocated range and what each code means is the comment block above `NewBusinessError` in `pkg/errors.go`** — read it there and take the next free number; don't restate the list here.
 
 Handlers directly return errors from the service layer, handled uniformly by `pkg.Error(c, err)` — which extracts `AppError` via type assertion and sets the correct HTTP status code.
 
@@ -153,7 +147,7 @@ In handlers, use `middleware.GetUserID(c)` / `middleware.GetRole(c)` to retrieve
 
 **RBAC (lightweight, code-level)** — two distinct concerns, kept separate:
 - **Role → permission** (global actions): declared in `internal/authz` (`authz.Can(role, perm)`, single source of truth, stateless, no DB). Gate routes with `middleware.RequirePermission(perm)`; `RequireAdmin()` is kept as a backward-compatible alias delegating to `RequirePermission(authz.PermPlatformLLMManage)`. Role is a JWT snapshot — promotion (`UPDATE users SET role='admin'`) requires re-login.
-- **Resource ownership** (owner == caller): NOT part of RBAC. Enforced in the service layer via `service.requireOwner(ownerID, callerID)` (→403) or `ownerOrNotFound` (→404, doesn't leak existence). Play sessions use `checkSessionOwner`; node CRUD checks via `node.StoryID → Story.CreatorID`. `GetSession`/`Backtrack`/`ChoiceStream`/`OpeningStream` and `NodeService.Update/Delete` all verify ownership (previously an IDOR/越权 gap).
+- **Resource ownership** (owner == caller): NOT part of RBAC. Enforced in the service layer via `service.requireOwner(ownerID, callerID)` (→403) or `ownerOrNotFound` (→404, doesn't leak existence). Play sessions use `checkSessionOwner`; node CRUD checks via `node.StoryID → Story.CreatorID`. `GetSession`/`Backtrack`/`ChoiceStream`/`OpeningStream` and `NodeService.Update/Delete` all verify ownership (previously an IDOR gap).
 
 > **Known limitation**: anonymous players all fall back to the single seeded `guest` PlayerID, so ownership checks don't isolate anonymous sessions from each other (logged-in users are fully protected). See `docs/handoff.md §9.2`.
 
@@ -169,28 +163,31 @@ The service layer defines its own input structs (e.g. `service.StoryCreateInput`
 
 ### Story Node Tree — JSONB Incremental Attribute Design
 
-Core design idea (see `docs/design.md`): story attributes (HP, gold, affinity, etc.) are entirely customized by creators; the backend does not hardcode fields.
+Story attributes (HP, gold, affinity…) are **entirely creator-defined; the backend hardcodes no field**. Rationale in `docs/design.md`.
 
-- **`StoryNode`** uses an adjacency list (`parent_id`) to form a tree, `depth` records the level, `is_ending` marks endings
-- Attribute changes are stored as increments (`state_delta JSONB`); the current full state = all deltas along the path merged by type + initial values
-- Postgres recursive CTE handles tree queries (backtrack path, subtree expansion), no application-layer recursion needed
-- Attribute field names are transparent to the backend, directly using JSONB merge operations
+- `StoryNode` is an adjacency list (`parent_id` + `depth`, `is_ending` marks endings). Tree queries (backtrack path, subtree) use Postgres recursive CTEs — never recurse in Go.
+- Changes are stored as **increments** (`state_delta JSONB`). Current full state = initial values + all deltas along the path, merged by type.
 
-**Attribute type system (number / scalar / set)**: creators declare the type of each attribute key in `world_config.attributes`; the AI and backend decide the format and merge strategy of `state_delta` accordingly —
-- `number` (numeric accumulation, e.g. hp/gold): delta gives the increment/decrement `{"hp": -10}`, added on merge;
-- `scalar` (overwrite, e.g. location/boolean flag): delta gives the new value, later value overwrites earlier;
-- `set` (set add/remove, e.g. inventory items): delta gives `{"add": [...], "remove": [...]}`, added/removed and deduplicated per element;
-- **keys without a declared type**: backward compatible — if both sides are numeric, accumulate; otherwise overwrite.
+**Attribute types** — declared per key in `world_config.attributes`; they decide both the delta format the AI must emit and the merge strategy:
 
-The merge logic lives in `service.mergeState` (`play.go`), with types coming from `WorldConfig.AttrTypes()`; on the Python side, `graph/story_graph.py`'s `normalize` regularizes LLM output by the same set of types (discards illegal keys, validates format). The two sides' semantics are strictly aligned, see `play_merge_test.go`.
+| type | delta shape | merge |
+|---|---|---|
+| `number` (hp, gold) | the increment: `{"hp": -10}` | add |
+| `scalar` (location, flag) | the new value | overwrite |
+| `set` (inventory) | `{"add": [...], "remove": [...]}` | per-element add/remove, dedup |
+| *undeclared* | — | both numeric → add, else overwrite (back-compat for pre-`attributes` works) |
 
-**Hidden attributes (`"hidden": true`)**: an attribute declaration may add `hidden`, meaning "a behind-the-scenes gauge for AI reference only" (e.g. suspicion/alertness/fate value). It **still** enters `current_state`, merges with deltas, and passes through to the agent; the difference is — ① the player-side `AttrBar` filters out hidden keys per `world_config` and does not display them (the frontend separately fetches `GET /stories/:id` for the hidden list); ② agent `prepare` uses `_hidden_attrs` to inject hidden keys into the prompt, instructing the LLM to update their deltas as usual but **not to name or report numbers** in content/options, only reflecting them indirectly through the story; ③ the creation-side `WORLD_SYSTEM` lets the AI proactively mark pressure-type attributes as hidden when building the worldview. This is the foundation for a future "let players choose which attributes to hide".
+**The two implementations must stay aligned**: `service.mergeState` (`play.go`, types from `WorldConfig.AttrTypes()`) and the agent's `normalize` (`graph/story_graph.py`, which also discards illegal keys). `play_merge_test.go` is the contract test — change one side, run it.
 
-**Genre tags (`world_config.tags: string[]`, optional)**: the work's genre labels, passed through exactly like `theme` (the backend's fixed `worldConfigShape` struct ignores unknown keys, so this needs zero backend changes). **Convention: `tags[0]` is the primary genre** — the homepage groups its filter chips by it; the remaining tags are display-only labels on the card and detail page. Keep this distinct from `theme`, which only selects the color skin: using the theme's display name as a genre produced cards like 《孤岛探案》 labelled "恐怖 · 怪谈". Seed works declare both (`backend/seed.go`). The creator picks them in the editor's worldview section; `lib/types.ts` `GENRES`/`TONES` are a **suggestion list, not a whitelist** — tags the AI or the author writes that are outside it survive round-trips untouched.
+Three optional flags on an attribute declaration:
 
-**Display bound (`"max": <positive number>`, optional, `number` only)**: declares the attribute's upper bound purely for **player-side display** — `AttrBar` draws a progress bar only for keys that declare `max` (width = value/max), and shows a plain number otherwise. Without a declared bound there is no meaning of "full": hardcoding 0–100 made `gold: 500` sit permanently full and `affinity: -20` permanently empty, which misleads more than no bar at all. It never participates in delta merging (`mergeState` ignores it) and is not pushed to the agent. Validated by `pkg.ValidateWorldConfig` rule 8 (positive number, `number` type only); editable per row in the creator's attribute table.
+- **`"hidden": true`** — a behind-the-scenes gauge for the AI only (suspicion, fate). It still merges into `current_state` and is passed to the agent; what changes is that `AttrBar` filters it out, and the prompt tells the LLM to steer with it but **never name it or report its numbers** — it may only surface indirectly through the narrative.
+- **`"reveal": true`** — hidden *until the story lets the player discover it*, then shown; a per-session visibility the AI controls. The value is tracked all along; only display is gated. State lives in `play_sessions.revealed_attrs` + `story_nodes.revealed_snapshot` (per-node, so **backtracking before the discovery re-hides it**). The writer emits a `revealed: [...]` list, `normalize` whitelists it against declared reveal keys, Go unions it in. `AttrBar` shows a key iff `not hidden ∧ (not gated ∨ revealed)`. This is what stops an opening from spoiling every `initial_state` attribute up front.
+- **`"max": <positive number>`** (`number` only) — a **display** bound: `AttrBar` draws a progress bar only for keys that declare it, plain number otherwise. There is no meaning of "full" without a declared bound — a hardcoded 0–100 left `gold: 500` permanently full and `affinity: -20` permanently empty, which misleads more than no bar. Never participates in merging, never sent to the agent. Enforced by `pkg.ValidateWorldConfig` rule 8.
 
-**Reveal-gated attributes (`"reveal": true`)**: distinct from `hidden` (never shown), a reveal-gated attribute is **hidden from the player until the story lets them discover it**, then shown — a per-session dynamic visibility the AI controls. The value is still tracked in `current_state` all along; only display is gated. Data: per-session `play_sessions.revealed_attrs` + per-node `story_nodes.revealed_snapshot` (restored on backtrack so backtracking before the discovery re-hides it). Flow: agent `prepare`/`_write_reveal_gated` injects the "not-yet-revealed gated attrs" into the prompt; the writer emits a `revealed: [...]` list when the narrative discovers them; `normalize` whitelists it against declared reveal keys; Go (`applyContinueResult`/`StartOpeningStream`) unions it into the session set + node snapshot; `AttrBar` shows a key iff not-hidden ∧ (not-gated ∨ revealed). Solves the "opening shows all initial_state attrs prematurely" problem (e.g. 《最后的深夜电台》 marks 物资 as reveal, so it isn't shown until the player organizes supplies — avoiding the illogical "5→4 on organize").
+**Genre tags (`world_config.tags: string[]`)** — `tags[0]` is the primary genre (homepage groups its filter chips by it); the rest are display-only labels. **Keep distinct from `theme`, which only picks a color skin** — using the theme's display name as a genre produced cards like 《孤岛探案》 labelled "恐怖 · 怪谈". `GENRES`/`TONES` in `lib/types.ts` are a **suggestion list, not a whitelist**; tags outside it survive round-trips untouched.
+
+> `world_config` unknown keys pass through untouched (the Go `worldConfigShape` struct ignores them). That's why `theme`/`tags` cost zero backend changes — reach for it before adding a column.
 
 ### AgentClient
 
@@ -206,28 +203,6 @@ The merge logic lives in `service.mergeState` (`play.go`), with types coming fro
 - Tables are auto-created by GORM AutoMigrate
 - Model definitions are in `internal/model/`, using GORM tags
 
-## Current Implementation Status
-
-| Module                                    | Status |
-|---------------------------------------|------|
-| Project skeleton (config, pkg, middleware, DI, routes) | Done |
-| User (register/login/JWT/profile)                  | Done (bcrypt password + user_credentials credential separation) |
-| Story (CRUD + list)                      | Done |
-| Node (node creation/children/update/delete)                  | Done |
-| Play / play sessions (opening/choice/backtrack + attribute merge + session list)   | Done (`PlayService` + `/play` routes, incl. `GET /sessions` save-load list) |
-| AgentClient + Agent service integration              | Done (`agent/` + Go HTTP orchestration, attribute type system number/scalar/set) |
-| Play frontend (Next.js)                         | Done (`frontend/`: star-map theme; work selection → **story detail/transition page** (`/story/:id`) → play; play page shows the **script name** and uses a **left status rail (`AttrBar`) + centered story + right star-map drawer** layout; attribute visibility honors hidden/reveal-gated; history session save-load resume + delete; explored story lines shown as a glowing star map in the drawer, click node to backtrack; **optional login/register + guest session migration**) |
-| Node semantic merge & dedup                            | Done (after continuation stream ends, `applyContinueResult`: same-level children hard-filtered by `state_delta` equality + agent `/merge-check` semantic equivalence judgment → reuse on hit instead of creating, avoiding near-synonymous branches polluting the story tree) |
-| Agent pipeline Phase 1 (director beats + consequential choices + attributes in play + ④ incremental summary + quality review) | Done (low-temperature `review` callback audit after `generate`; on failure, **memory-equipped writer revises** (edits on the previous draft), up to `AI_REVIEW_MAX_RETRIES` times, **degrades to deliver the last draft when exceeded** (tolerates flaws, never lets the player's operation fail). `summary` is persisted and re-injected during continuation; old data falls back to a sliding window. See "AI agent" three phases in `docs/design.md`) |
-| Full streaming output for opening + continuation (SSE, Phase 2 slice) | Done (continuation `/choice/stream`→`MakeChoiceStream`→agent `/continue/stream`; opening `StartSession` only creates an empty session, the play page triggers `/opening/stream`→`StartOpeningStream`→agent `/generate/stream`. Body text streams character-by-character separated by a sentinel, then merged/deduped/persisted after the end; review rejection emits revise. First-byte latency `ttfb_ms` telemetry ~0.4~1.5s vs full ~7.7s) |
-| Preset opening completion | Done (opening for works with `opening_content`: body text as a single-frame delta + call `/opening/complete` to fill starting options + summary, avoiding an opening with only a free-input box) |
-| Creation/editing system (creator editor) | Done (MVP) (backend: `StoryCreateInput`/`StoryUpdateInput` now accept `world_config`/`opening_content`; runtime validator `pkg.ValidateWorldConfig` (draft lenient / publish strict); publish transition `PUT /stories/:id/status`; my-works `GET /stories/mine`; homepage `List` filters to published; assist Go-forwarding `POST /api/v1/assist/world|opening|polish|branches` (agent stays internal, no CORS/auth; 180s `assistClient`). Frontend: `editorStore` + `/create`,`/edit/:id`,`/mine`; **AI-first flow** (idea→`/assist/world`→structured tweak→`/assist/opening`→publish); structured attribute table (type/initial/hidden/reveal), `initial_state` derived from attributes at save; star-map-themed form components) |
-| User profile + personal settings | Done (backend: profile CRUD; `/me` — display + edit nickname/bio) |
-| BYOK (multi-provider, per-work model choice, platform key in DB, min admin gate) | Done (backend: `llm_connections`(account-level) + `user_story_llm_configs`(per user+story model choice) + `platform_llm_settings` tables; `LLMResolver.ResolveForPlay(userID, storyID, stage)` = story-config > platform > nil, `ResolveForAssist(userID, override)` = editor-override > platform > nil; AES-256-GCM keys via `pkg.Encrypt`; JWT carries `role` + `RequireAdmin`; `/llm/*`, `/admin/llm/*`. Agent threads `llm_write`/`llm_review`/`llm` into `_build_ephemeral` (agent stays DB-free). Frontend: `/me` connections CRUD (`LLMSettings`), story-detail per-work config panel (`StoryLLMConfigPanel`, connection→`/models` dropdown + manual), editor recommended-model fields + connection dropdown, role-gated `/admin`. Play burns the player's own key, falls back to platform. First admin via manual DB promotion. See `docs/handoff.md §12`. **Deferred: platform-key quota limiting**; old `User.LLMKeyCipher` deprecated/orphaned) |
-| Per-work theming (star map skin swap) | Done (v1, frontend-only, zero backend/migration: theme id in `world_config.theme`, passthrough. `globals.css` `:root`=default `star` + `[data-theme="ink"]`/`[data-theme="horror"]` override blocks (nebula bg variabilized to `--nebula-a/b`); `data-theme` mounted on `<html>` via `lib/useDocumentTheme.ts` — experience pages only (story detail/play), shell pages keep star. Editor swatch picker (`THEMES` in `lib/types.ts`), `editorStore.theme` round-trip, homepage `StoryCard` accent tint. Story tree auto-recolors via `--glow/--star`. See `docs/handoff.md §13`. **Deferred v2: player global skin override; presets beyond 3**) |
-| Image upload (avatar + story cover) | Done (backend: `pkg/upload.go` header sniffing + uuid object keys, `service/upload.go` local-disk store with size guard, `POST /uploads/image` + `api.Static`, `users.avatar_url`; frontend: `api.upload`/`assetUrl`, `lib/imageResize.ts` canvas downscale, `components/ImageUpload.tsx`, consumed by `/me`+`AuthWidget`+`/mine` for avatars and by the editor+`StoryCard`+`SessionCard`+`--reader-bg` for covers. No image processing server-side; no `story_assets` table yet. See `docs/handoff.md §14`. **Deferred: orphan-file GC, object storage, author avatar on story cards**) |
-| Community (browse/detail/like/comment)                | handler stubs, all TODO |
-
 ## Database Design Blueprint (infa/sql/)
 
 The SQL files under `infa/sql/` are the **complete data model design blueprint, ahead of the Go implementation** — GORM currently only AutoMigrates a subset of these tables. Before adding a new module, check the corresponding SQL first:
@@ -238,47 +213,33 @@ The SQL files under `infa/sql/` are the **complete data model design blueprint, 
 
 ## Agent Service (agent/, Python FastAPI)
 
-A standalone process; the Go backend calls it via `AGENT_URL` (default `http://localhost:8001`), and it **does not touch the database**. DeepSeek credentials are pushed down to `agent/.env`; the Go side no longer connects directly to the LLM.
+A standalone process reached via `AGENT_URL` (default `http://localhost:8001`). Startup: `cd agent && pip install -r requirements.txt && uvicorn app.main:app --port 8001` (see `agent/README.md`).
 
-- `app/graph/story_graph.py` — **the only generation orchestration is in `_stream_pipeline` (true streaming)**; the historical non-streaming langgraph graph has been retired. `prepare` (build context / inject attribute types & hidden attributes), `normalize` (regularize deltas by type, filter illegal keys, regularize endings), and `review` are shared pure functions; `run_start`/`run_continue` are synchronous adapters that drain the stream (for tools unrelated to `/opening/complete` and for `/assist/opening`). **Agent pipeline Phase 1**: the writer outputs a single "body `<<<META>>>` JSON tail", doubling as "director + scribe" — beat-controlled body text (referencing attributes) + action-only options (no hints — options are plain in-world actions; consequences are experienced in the story, not previewed) + a rolling `summary`; body text streams character-by-character, and after the end the JSON tail is parsed by the sentinel (missing/illegal falls back to `STRUCTURE_SYSTEM`); then a low-temperature `review` audits continuity/attributes/delta and summary consistency, and on failure a **memory-equipped writer revises** (appends the previous draft's AIMessage + feedback HumanMessage into `writer_msgs`, editing on the previous draft rather than rewriting, reducing oscillation). At most `AI_REVIEW_MAX_RETRIES` additional rewrites (default 2), and **on exceeding, degrades to deliver the last draft** (emits `degraded=1` telemetry, no hard failure — attributes/delta are only auxiliary means, flaws are tolerable, never let the player's operation fail). Review is **tiered**: only blocks blocking-level hard defects (body contradictions/no progress/no options/summary tampering with key facts/broken JSON); fuzzy cases like delta precision and attempted-action accounting are all let through. Hidden attributes (`attributes[k].hidden`) are injected into the prompt by `_write_hidden`, having the LLM steer the direction with them but not leak them in body/options. Reveal-gated attributes (`attributes[k].reveal`) are injected by `_write_reveal_gated` (unrevealed ones only); the writer emits a `revealed` list to disclose them at the discovery moment (see "Reveal-gated attributes" above). Continuation context uses the **④ node tree incremental summary** (`_write_history_window`): the most recent non-empty `summary` rendered as `【前情提要】` (recap) + the most recent `_RECENT_RAW`(=2) raw segments, O(1); old sessions without summary fall back to a **sliding window** (`HISTORY_WINDOW`, default 8). Evolution in `docs/design.md` "AI agent", context strategy in `docs/context-strategy.md`
-- `app/routers/generate.py` — `POST /generate/stream` `/continue/stream` (streaming SSE: delta/revise/done/error), `/opening/complete` (preset opening fills options + summary, non-streaming), `/merge-check` (node semantic merge judgment, non-streaming). The generation orchestration is all in `_stream_pipeline` in `graph/story_graph.py` (body `<<<META>>>` JSON tail, structurer fallback, review rejection → memory-equipped writer revision, degrade-on-exceed delivery)
-- `app/routers/assist.py` — creation assistance `POST /assist/world|opening|polish|branches` (`/world` also produces `attributes` type declarations)
-- `app/schemas.py` — request/response models; `WorldConfig.attributes` carries attribute type declarations, aligned with the Go contract. **BYOK**: `LLMConfig{provider,base_url,api_key,model}`; generate/continue/opening-complete requests carry `llm_write`/`llm_review`, assist requests carry `llm` (all optional; absent → agent uses `.env` default)
-- `app/llm.py` — OpenAI-compatible client. `chat_json` forces `response_format=json_object` (used for review/merge/structuring/creation assistance); `chat_stream` does not force it (streaming writing, body text separated by a sentinel). `_build_llm(json_mode)` caches two platform-default instances; **`_build_ephemeral(cfg, json_mode)` builds a per-request uncached client for BYOK** (`chat_json`/`chat_stream` take an optional `llm_cfg`). In `story_graph`, the writer/structure-fallback use `llm_write`, `review` uses `llm_review` (threaded via `run_*_stream`/`run_start`/`complete_opening`)
+Hard boundaries — breaking these breaks the architecture, not just a feature:
+- **The agent never touches the database.** Everything it needs arrives in the request; LLM credentials are pushed down per request (`llm_write` / `llm_review` for play, `llm` for assist; absent → the agent's own `.env` default).
+- **The agent is not internet-facing** — no CORS, no auth. Go is the only caller.
+- **`_stream_pipeline` in `app/graph/story_graph.py` is the only generation orchestration.** The historical non-streaming langgraph graph is retired; `run_start`/`run_continue` are synchronous adapters that drain the same stream. Don't add a second path.
+- **Quality review must never fail the player's turn.** A rejected draft is revised by a memory-equipped writer at most `AI_REVIEW_MAX_RETRIES` times, then **delivered anyway** with `degraded=1` telemetry. Attributes/deltas are auxiliary; a flawed turn beats a blocked one.
+- **`normalize` passes through keys whose type isn't declared** in `attributes`, letting Go's `mergeState` infer — this is what keeps pre-`attributes` works playable.
 
-> The full semantics of attribute types (number/scalar/set) are in "JSONB Incremental Attribute Design" above. `normalize` **passes through** keys whose type is not declared in `attributes`, with Go's `mergeState` inferring as a fallback, ensuring old works without `attributes` still work.
+Files: `routers/generate.py` (`/generate/stream`, `/continue/stream`, `/opening/complete`, `/merge-check`), `routers/assist.py` (`/assist/world|opening|polish|branches`), `schemas.py` (contract mirror of the Go DTOs), `llm.py` (OpenAI-compatible client; `chat_json` forces `response_format=json_object`, `chat_stream` does not; `_build_ephemeral` makes the per-request uncached client BYOK needs).
 
-Startup: `cd agent && pip install -r requirements.txt && uvicorn app.main:app --port 8001` (see `agent/README.md`).
+How the pipeline actually works (writer beats, `<<<META>>>` JSON tail, tiered review, incremental summary + recap window): `docs/handoff.md` §6.1–6.3. Design rationale and the unbuilt phases: `docs/design.md` "AI agent", `docs/context-strategy.md`.
 
-> Go's `NewAgentClient(cfg.AgentURL)` only does HTTP orchestration; the `StartStory`/`Continue` signatures are unchanged, and the `play` pipeline is unaffected.
+## Status & roadmap are NOT in this file
 
-## Modules To Be Implemented (in order)
+Deliberately — a status table here would be a second copy that goes stale. Completion state: `docs/handoff.md` §2. What to build next: §9.3. Per-feature deep dives: BYOK §12, dual-mode design + per-work theming §13, image upload §14.
 
-1. ~~**save** — session resume/save-load~~ ✅ Done (`GET /play/sessions` list + frontend homepage save-load resume; already filtered by logged-in user, falls back to guest anonymously)
-2. ~~**ai** — agent_client integration with Python agent service~~ ✅ Done (agent/ + Go integration)
-2.5. ~~**play** — play session pipeline~~ ✅ Done (`PlayService` + `/play` routes, incl. backtrack)
-2.8. ~~**play frontend** — Next.js work selection/play/save-load~~ ✅ Done (`frontend/`)
-2.9. ~~**login integration** — frontend login + session migration~~ ✅ Done (optional login, AuthOptional, guest session migration)
-3. **Agent pipeline evolution (retention-first, before expansion)** — Phase 1 (director beats + consequential choices + attributes in play + ④ incremental summary + quality review/memory-equipped revision/degrade-on-exceed) ✅ Done; **streaming (SSE, part of the original Phase 2) ✅ Done**.
-   - Remaining Phase 2: split the single generation into independent director/recall/write/critic nodes; upgrade recall from node summary to ③ RAG.
-   - Phase 3: when multiple NPCs are on scene, dispatch character sub-agents in parallel, with the main agent synthesizing (full multi-agent form). See `docs/design.md` "AI agent" and `docs/context-strategy.md`.
-4. ~~**Creation/editing system**~~ ✅ Done (MVP) — creator editor: AI-first flow (idea → `/assist/world` → structured tweak → `/assist/opening` → publish) with a structured attribute table (type/initial/hidden/reveal). Backend extends `StoryCreateInput`/`StoryUpdateInput` to `world_config`/`opening_content` + runtime validator `pkg.ValidateWorldConfig` (draft lenient / publish strict) + publish transition + my-works list + assist Go-forwarding. Frontend `editorStore` drives `/create`,`/edit/:id`,`/mine`. Remaining polish: `/assist/polish` per-field wiring, `/assist/branches` in-editor use, richer character fields.
-5. **community** — work publishing/search/leaderboard/like/favorite/comment
-6. **payment** — paid unlock/tipping/revenue share (can be stubbed for MVP)
-7. **achievement** — achievement system
+The one sequencing constraint worth repeating: the agent pipeline's Phase 2/3 (splitting director/recall/write into separate nodes, RAG, per-NPC sub-agents) is **gated on real multi-turn telemetry**, not on it being the next interesting thing to build. See `docs/design.md` "AI agent" and `docs/context-strategy.md`.
 
-`templates/index.html` is a Gin template placeholder, to be replaced once the frontend is formally built.
+`templates/index.html` is a leftover Gin placeholder, superseded by `frontend/`.
 
-## 前端设计规范（UI 事实源）
+## Frontend Design System (the UI source of truth)
 
-新增或改造任何前端界面前，**必须先读**：
-- `docs/design/DESIGN.md` —— 可执行设计铁律 + 双态（管理态/阅读态）决策 + 组件约定 + 加新页面清单；
-- `docs/design/tokens.css` —— 全部设计变量的唯一事实源（颜色/字阶/间距/圆角/动效/阴影/阅读态/作品主题色）；只引用变量，不写死数值。
+**Read these two before adding or reshaping any frontend surface:**
+- `docs/design/DESIGN.md` — enforceable design rules, the dual-mode decision (管理态 *management mode* / 阅读态 *reading mode*), component conventions, and the checklist for adding a page.
+- `docs/design/tokens.css` — **the single source of truth for every design variable** (color, type scale, spacing, radius, motion, shadow, reading mode, per-work theme colors). Reference variables only; never hardcode a value. Adding a variable means writing it into `tokens.css` first, then `globals.css`.
 
-`docs/design/prototypes/*.html` 是各屏静态高保真参考（视觉参照，非要照抄的代码）：
-index(总览) · home-discover(书库) · story-detail(作品详情) · play-reading(游玩) ·
-create-editor(创作) · my-space(我的空间) · settings(设置/BYOK) · community(社区) ·
-login(登录) · design-system(可视规范)。
+Tokens are already merged into `frontend/app/globals.css` as three layers: `:root` (管理态), `.od-reading` (阅读态), `[data-work-theme]` (per-work theme colors).
 
-落地方式：把 tokens 合并进 `frontend` 的 `globals.css` 主题体系（阅读态映射到现有 `data-theme`），
-用 Next.js/React 逐屏实现；交互逻辑以后端契约为准，原型里的假数据/定时器仅为演示。
+`docs/design/prototypes/*.html` are static high-fidelity references per screen — **visual targets, not code to copy**: `index` (overview), `home-discover` (library), `story-detail`, `play-reading`, `create-editor`, `my-space`, `settings` (incl. BYOK), `community`, `login`, `design-system` (visual spec). Behaviour always follows the backend contract; the prototypes' fake data and timers exist only to demo the visuals.
