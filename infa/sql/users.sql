@@ -15,6 +15,7 @@ CREATE TABLE users (
     username        VARCHAR(30) NOT NULL UNIQUE,    -- 唯一用户名，用于 @mention，注册后不可改
     nickname        VARCHAR(50) NOT NULL,            -- 显示名，可重复、可修改
     bio             VARCHAR(200),                    -- 个人简介
+    avatar_url      TEXT,                            -- 头像访问 URL（本地为 /api/v1/uploads/avatar/...，日后换 OSS 语义不变）
 
     -- 角色与状态
     role            VARCHAR(20) NOT NULL DEFAULT 'user',

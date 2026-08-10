@@ -10,6 +10,7 @@ import Input from "./Input";
 import CharacterList from "./CharacterList";
 import AttrTable from "./AttrTable";
 import { Toast } from "@/components/Toast";
+import ImageUpload from "@/components/ImageUpload";
 import PublishCheck, { usePublishChecks } from "./PublishCheck";
 
 // 创作编辑器主体：AI 优先流程——灵感生成世界观 → 结构化微调 → 生成开场 → 存草稿/发布。
@@ -340,6 +341,14 @@ export default function StoryEditor() {
           {step === 4 && (
             <section className="ed-section">
               <span className="eyebrow lead">第 5 步 · 主题与生成</span>
+              {/* 封面与主题同属「这部作品长什么样」，放一起；不传则各处回落主题渐变 */}
+              <ImageUpload
+                kind="cover"
+                value={s.coverUrl}
+                onChange={(url) => s.setField("coverUrl", url)}
+                label="封面图"
+                hint="（可选，不传则用主题渐变）建议横图，会被裁成卡片比例"
+              />
               <div className="ed-field">
                 <span className="ed-label">
                   主题皮肤

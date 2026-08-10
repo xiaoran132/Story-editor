@@ -15,8 +15,8 @@ Story Editor 的长期愿景是“AI 驱动的互动剧情共创社区”：用�
 
 | 域 | 已完成 | 未完成或限制 |
 |---|---|---|
-| 用户 | 后端注册/登录/JWT/资料、凭证分表；**前端登录接入完成**（可选登录，未登录仍匿名 guest；登录后迁移本浏览器 guest 会话到账号）；**个人主页 `/me`（资料 + 编辑昵称/简介 + BYOK 连接管理）**；**BYOK 已接入生成**（连接=账号级、模型=作品级，见 §12） | OAuth/密码找回未做；平台 key 额度限制未做；旧 `User.LLMKeyCipher`（单 key）已废弃、列留孤儿 |
-| 作品 | Story CRUD（列表/详情 LEFT JOIN users 带出 `creator_name` 作者昵称，只读投影）、作品列表、世界观/初始状态 JSON；**创作编辑器(MVP)**：`world_config`/`opening_content` 可写入、运行时校验(`pkg.ValidateWorldConfig`，草稿宽松/发布严格)、发布态切换、我的作品列表、assist Go 转发 | 封面上传、`/assist/polish`·`/assist/branches` 编辑内接入未做 |
+| 用户 | 后端注册/登录/JWT/资料、凭证分表；**前端登录接入完成**（可选登录，未登录仍匿名 guest；登录后迁移本浏览器 guest 会话到账号）；**个人主页 `/me`（资料 + 编辑昵称/简介/头像 + BYOK 连接管理）**；**BYOK 已接入生成**（连接=账号级、模型=作品级，见 §12） | OAuth/密码找回未做；平台 key 额度限制未做；旧 `User.LLMKeyCipher`（单 key）已废弃、列留孤儿 |
+| 作品 | Story CRUD（列表/详情 LEFT JOIN users 带出 `creator_name` 作者昵称，只读投影）、作品列表、世界观/初始状态 JSON；**创作编辑器(MVP)**：`world_config`/`opening_content` 可写入、运行时校验(`pkg.ValidateWorldConfig`，草稿宽松/发布严格)、发布态切换、我的作品列表、assist Go 转发；**封面上传（`/uploads/image` + `cover_url`，见 §14）** | `/assist/polish`·`/assist/branches` 编辑内接入未做 |
 | 游玩 | 开局、续写、自由输入、回溯、读档、删档、剧情树、状态合并 | 真实环境下的多回合质量/延迟指标尚未沉淀 |
 | Agent | **流式生成(SSE)**、属性类型规整（含 hidden）、故事大纲导演、滚动摘要、审校分级 + 有记忆修订 + 超限降级交付 | RAG、多 Agent fan-out、独立 director/recall/write 子图未做 |
 | 前端 | **双态设计体系（`docs/design` 落地，见 §13）**：管理态（白底 Inter + 全局 `AppHeader`）发现书库(错落瀑布 + 题材/搜索前端过滤 + 三态)、我的创作、社区占位、登录页(`/login` 双栏)、个人主页、admin、创作编辑器；阅读态（暖深色 Noto Serif + `useReadingTheme` 整页换肤 + 遮罩浓度/昼夜可调）作品详情、游玩(三栏舞台 + 状态轨 + 选项坞 1/2/3 快捷键 + 星图抽屉)。正文逐字流式(无首字下沉)、属性揭示门控可见性(hidden 全程不露面)、进度条按 `max` 声明画、登录/会话迁移、按作品配模型、作品级 8 主题换肤 | 社区功能、移动端细节/自动化测试未做 |
@@ -185,6 +185,7 @@ prepare
 | 鉴权 | `POST /auth/register`、`POST /auth/login`、`GET/PUT /auth/profile`（登录签发的 JWT 现携带 `role` 快照） |
 | 作品/节点 | `POST/GET /stories`、`GET/PUT/DELETE /stories/:id`、`POST /stories/:id/nodes`、`GET /nodes/:id/children`、`PUT/DELETE /nodes/:id`（node 增改删经 `Story.CreatorID` 校验归属） |
 | 游玩 | `POST /play/sessions`（建空会话）、`POST /play/sessions/:id/opening/stream`（SSE 流式开局，幂等）、`GET /play/sessions`、`GET/DELETE /play/sessions/:id`、`POST /play/sessions/:id/choice/stream`（SSE 流式续写）、`POST /play/sessions/:id/backtrack`（**所有按 sessionID 访问的接口均校验 `session.PlayerID` 归属**，登录用户已堵死越权；匿名 guest 共享弱点见 §9.2） |
+| 图片上传（AuthRequired） | `POST /uploads/image`（multipart：`file` + `kind`∈{avatar,cover}，返回 `{url}`）；静态直出 `GET /uploads/*`（见 §14） |
 | 创作辅助 | `POST /assist/world`、`/opening`、`/polish`、`/branches`（AuthRequired；Go 转发 agent；请求可带 `connection_id` 覆盖 world 环节连接） |
 | BYOK（AuthRequired） | `GET/POST /llm/connections`、`PUT/DELETE /llm/connections/:id`、`POST /llm/connections/test`、`GET /llm/connections/:id/models`（拉端点模型列表）、`GET/PUT /llm/story-config/:storyId`（玩家在某作品的模型配置） |
 | 平台设置（AuthRequired + `RequirePermission(authz.PermPlatformLLMManage)`，`RequireAdmin` 为其别名） | `GET/PUT /admin/llm/platform`、`POST /admin/llm/platform/test` |
@@ -214,7 +215,7 @@ Agent 的开场和续写响应统一包含：`content`、`options`、`state_delt
 | 进程 | 示例文件 | 必要项 |
 |---|---|---|
 | Agent | `agent/.env.example` | `DEEPSEEK_API_KEY` |
-| 后端 | `backend/.env.example` | 可达 PostgreSQL、`DB_*`、`JWT_SECRET`、`AGENT_URL` |
+| 后端 | `backend/.env.example` | 可达 PostgreSQL、`DB_*`、`JWT_SECRET`、`AGENT_URL`；可选 `UPLOAD_DIR`(默认 `./uploads`)、`UPLOAD_MAX_MB`(默认 5) |
 | 前端 | `frontend/.env.local.example` | 可选 `NEXT_PUBLIC_API_BASE` |
 
 推荐执行 `./scripts/dev.ps1`。注意后端必须以 `backend/` 为工作目录运行：模板路径和配置搜索路径依赖该目录。
@@ -311,6 +312,8 @@ cd agent
 - 前端没有登录，后端已有的真实用户边界尚未被游玩 UI 验证。
 - **匿名 guest 共享单一 PlayerID（结构性弱点，2026-08-06）**：所有匿名玩家回退同一个 seed `guest` 用户 id 作 PlayerID（`handler/play.go` 的 `player()`），故会话归属校验（`checkSessionOwner`）**对匿名会话之间不生效**——匿名者彼此可见/可删对方存档。登录用户已被完全隔离（PlayerID = 各自 userID）。0 用户 demo 危害趋近零，暂不修。未来方案：前端每端生成 guest UUID 存 localStorage、后端每匿名会话独立 PlayerID、Migrate 按该 UUID 迁移。
 - **创作侧 node CRUD 半残（2026-08-06）**：`POST /stories/:id/nodes` 仍以 `sessionID=uuid.Nil` 建节点（`handler/node.go` 的 TODO），创作侧手工建树未完成。本次仅给 `NodeService.Update/Delete` 补了经 `Story.CreatorID` 的越权校验，未扩建双归属模型。将来要独立编辑节点树时再引入「作者草稿树」或可空 sessionID 语义。
+- **上传的孤儿文件无回收（2026-08-10）**：上传成功但表单没保存、或换头像/封面后旧文件，都会永远留在磁盘上。0 用户阶段不值得建引用计数表或 GC 任务；真要治理时，最小方案是「上传即写一行 assets 表 + 夜间扫描无引用记录」。
+- **上传走单机本地磁盘（2026-08-10）**：`UPLOAD_DIR` 是进程本地目录，多实例部署必须挂共享卷（compose 已挂 named volume `uploads`），否则 A 实例存的图 B 实例读不到。换对象存储时只需替换 `service.UploadService`，`url` 语义不变、无需迁移数据表。
 - `community` 路由已注册但 handler 未实现；不能把它作为可用接口依赖。
 - `AutoMigrate` 适合当前 Demo，不等同于生产级迁移治理。
 - Go 服务的上下文传递、优雅关闭、seed 开关等工程化问题仍在 [prd.md](prd.md) 的开放问题中记录。
@@ -318,7 +321,7 @@ cd agent
 ### 9.3 建议的后续顺序
 
 1. **试玩与观测**：补 Agent/PlayService 回归测试、埋点或日志，跑真实多回合样本。
-2. ~~**创作前端**：消费 `/assist/*`，打通"创作 → 游玩"~~ ✅ 已完成(MVP)：`/create`·`/edit/:id`·`/mine`，AI 优先 + 结构化属性表；后端补 `world_config` 输入/校验/发布态/assist 转发。剩余打磨：`/assist/polish`·`/assist/branches` 编辑内接入、封面上传。
+2. ~~**创作前端**：消费 `/assist/*`，打通"创作 → 游玩"~~ ✅ 已完成(MVP)：`/create`·`/edit/:id`·`/mine`，AI 优先 + 结构化属性表；后端补 `world_config` 输入/校验/发布态/assist 转发。剩余打磨：`/assist/polish`·`/assist/branches` 编辑内接入。
 3. **Agent 阶段二**（**因备案冻结真机验证而暂缓**，待线上恢复后带真实数据做）：依据数据选择先拆 director、先补 recall/RAG；不要一次完成完整多 Agent。
 4. **社区 MVP**：发布、浏览、详情、点赞/评论；随后才考虑付费与成就。
 
@@ -378,7 +381,7 @@ cd agent
 
 **入口/展示**：编辑器 `StoryEditor.tsx` 世界观区色块选择器（读 `THEMES`）；`editorStore.ts` `theme` round-trip。发现页封面卡 `StoryCard.tsx` 用作品主题**渐变**作封面底（管理态外壳仍白），kicker/点缀用强调色。星图树/抽屉在阅读态自动取暖金配色。
 
-**边界（不做）**：玩家全局覆盖皮肤推迟；自主背景图上传预留 `--reader-bg` 替换点未接。
+**边界（不做）**：玩家全局覆盖皮肤推迟。~~自主背景图上传预留 `--reader-bg` 替换点未接~~ → 已接：作者上传的封面即经该替换点注入阅读态背景（见 §14）。
 
 ### 13.4 首页排版：题材与主题分家（2026-08-10）
 
@@ -464,3 +467,36 @@ cd agent
 - **注册不再由前端派生 username**：`email.split("@")[0]` 会让 `a@x` 与 `a@y` 撞车，且报错对不上用户填过的任何一栏。前端传空串，`service.generateUsername` 从邮箱本地部分清洗后加数字后缀直到可用；邮箱唯一性改为**先查**，冲突文案改中文。
 - **生成中保留选项列表**（禁用 + 选中项高亮 + genbar 垫底），不再整片换成一条进度条——原来玩家看不到自己刚点了什么，`.choice.committed` 样式也永远没机会出现。
 - `/create`·`/edit` 补上 `AppHeader`（DESIGN §2：编辑器属管理态），未登录改跳 `/login?next=/create` 而非甩回首页。
+
+## 14. 图片上传（头像 / 作品封面，2026-08-10）
+
+**一句话**：一个通用上传端点产出 URL，绑定由各自已有的更新接口完成；文件落本地磁盘，静态直出。
+
+**接口**
+- `POST /api/v1/uploads/image`（AuthRequired，multipart）：字段 `file` + `kind`∈`{avatar, cover}`，返回 `{"url": "/api/v1/uploads/<kind>/<yyyy-mm>/<uuid><ext>"}`。
+- `GET /api/v1/uploads/*`：Gin `api.Static` 直出。
+- 绑定不走上传接口：头像随 `PUT /auth/profile` 的 `avatar_url` 存，封面随作品保存的 `cover_url` 存。**「上传成功」不等于「已保存」**，这是刻意的——上传没有副作用。
+
+**为什么挂在 `/api/v1/uploads` 而不是裸 `/uploads`**：生产 nginx 只有 `/api/v1/ → 8080` 和 `/ → 3000` 两条 location，裸路径会被转给 Next.js。挂进 API 命名空间后反代规则天然覆盖，前端拼 `NEXT_PUBLIC_API_BASE` 在 dev（绝对地址）与 prod（同源）下都对。**但 nginx 仍需 `client_max_body_size 8m`**（默认 1m 会 413），已写进 `deploy/nginx/story-editor.conf`。
+
+**校验口径（`pkg/upload.go` + `service/upload.go`）**
+- 类型判定只看**文件头字节**（`http.DetectContentType`），不信 `Content-Type`、不信扩展名——把 `evil.exe` 改名 `a.png` 必须被挡（有测试）。
+- 白名单 jpeg/png/webp/gif。**SVG 故意排除**：它是 XML 可内嵌脚本，而上传目录同源直出，放行等于开存储型 XSS。
+- 大小上限 `UPLOAD_MAX_MB`（默认 5MB），用 `io.LimitReader(max+1)` 兜底而非信 `Content-Length`；超限**删除半成品**再报错（有测试）。
+- 落盘文件名一律 uuid，不保留原始文件名；`kind` 白名单化（它决定一级目录，否则 `kind=../../etc` 就是路径穿越，有测试）。
+- 业务错误码：`10014` 格式不支持、`10015` 超出大小限制。
+
+**服务端不做图片处理**，缩放放在前端（`lib/imageResize.ts`，canvas 等比缩到最长边 avatar 512 / cover 1280，导出 webp q0.85；GIF 跳过以免丢动画；任何一步失败都回退原文件）。理由：省掉图像库依赖与一倍代码量，而手机大图的问题在客户端解决同样彻底。
+
+**为什么不建 `story_assets` 表**：`infa/sql/stories.sql` 里那张表已设计好（oss_key/url/width/height/mime），但它 `story_id NOT NULL`，装不下用户头像；当前也只需要「一张图一个 URL」。本期只加 `users.avatar_url`，沿用已有 `stories.cover_url`。等真做立绘/BGM/素材库再建——届时 `url` 语义不变，不用迁移数据。
+
+**前端接入**
+- `lib/api.ts`：`api.upload(kind, file, name)` 是独立的 multipart 通道（**不设 `Content-Type`**，boundary 必须由浏览器带）；`assetUrl(u)` 把相对路径补上 dev 的后端源。
+- `components/ImageUpload.tsx`：通用控件（`kind` 决定圆形/矩形预览），真 `<button>` 触发隐藏 file input，上传中/空/失败三态齐全。
+- 消费点：`/me` 头像（保存时**手动双写 localStorage + `useAuthStore.setState`**，否则顶栏不刷新）、`AuthWidget`、`/mine` 资料头；封面在编辑器第 5 步「主题与生成」、`StoryCard`、`/mine` 作品卡、`SessionCard`、以及阅读态的 `--reader-bg`。
+- **无图时的渲染与改动前完全一致**：所有位置都回落原来的主题渐变 / 昵称首字母，不引入「默认灰头像」这种无信息占位。
+- **有图时仍叠一层主题渐变罩层**（`lib/types.ts` 的 `coverStyle`，用 `color-mix` 降透明度）：封面上压着白色标题/摘要/CTA，裸铺照片会让对比度跌破 4.5:1；罩层同时保住「彩色只来自作品主题色」这条铁律。有封面时不加 `.cover.alive`——那个 16s 漂移靠拉伸 `background-size`，用在照片上会变形。
+
+**部署**：`UPLOAD_DIR` 默认 `./uploads`（相对 `backend/`，与 `LoadHTMLGlob("../templates/*")` 同一个 cwd 约束）；容器里用绝对路径 `/data/uploads` 并挂 named volume `uploads`（`deploy/docker/docker-compose.yml`），否则 `up --build` 一次图就全没了。`backend/uploads/` 已进 `.gitignore`。
+
+**已知限制**：孤儿文件无回收、单机本地磁盘（见 §9.2）；作品卡的作者小头像 `.au` 仍是灰圆——`StoryResponse` 只带 `creator_name`，要显示作者头像需按 `CreatorName` 的 `->` + `-:migration` 只读投影再加一列，留待社区期。

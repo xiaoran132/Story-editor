@@ -8,6 +8,7 @@ import LLMSettings from "@/components/LLMSettings";
 import AppHeader from "@/components/AppHeader";
 import { useToast } from "@/components/Toast";
 import Switch from "@/components/Switch";
+import ImageUpload from "@/components/ImageUpload";
 import {
   SCRIM_MIN,
   SCRIM_MAX,
@@ -36,6 +37,7 @@ export default function MePage() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [nickname, setNickname] = useState("");
   const [bio, setBio] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState("");
   const [loading, setLoading] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,6 +68,7 @@ export default function MePage() {
         setProfile(p);
         setNickname(p.nickname);
         setBio(p.bio);
+        setAvatarUrl(p.avatar_url ?? "");
       })
       .catch((e) => setError((e as Error).message))
       .finally(() => setLoading(false));
@@ -75,12 +78,18 @@ export default function MePage() {
     setSavingProfile(true);
     setError(null);
     try {
-      const p = await api.put<UserProfile>("/auth/profile", { nickname: nickname.trim(), bio: bio.trim() });
+      // avatar_url 传的是 string（含空串 = 显式移除），后端用指针接，区分得了「没传」与「清空」。
+      const p = await api.put<UserProfile>("/auth/profile", {
+        nickname: nickname.trim(),
+        bio: bio.trim(),
+        avatar_url: avatarUrl,
+      });
       setProfile(p);
-      // 同步顶栏昵称（authStore.user + localStorage）
+      // 同步顶栏昵称与头像（authStore.user + localStorage）。
+      // authStore.user 只在 login/init 时从 localStorage 读，这里必须手动双写，否则顶栏不刷新。
       const raw = localStorage.getItem("user");
       if (raw) {
-        const u = { ...JSON.parse(raw), nickname: p.nickname };
+        const u = { ...JSON.parse(raw), nickname: p.nickname, avatar_url: p.avatar_url };
         localStorage.setItem("user", JSON.stringify(u));
         setAuthUser({ user: u });
       }
@@ -140,6 +149,13 @@ export default function MePage() {
                     <span>注册于 {new Date(profile.created_at).toLocaleDateString("zh-CN")}</span>
                   </div>
                 )}
+                <ImageUpload
+                  kind="avatar"
+                  value={avatarUrl}
+                  onChange={setAvatarUrl}
+                  label="头像"
+                  hint="（可选，不传则显示昵称首字母）"
+                />
                 <label className="ed-field">
                   <span className="ed-label">昵称</span>
                   <input className="ed-input" value={nickname} onChange={(e) => setNickname(e.target.value)} />
@@ -167,6 +183,7 @@ export default function MePage() {
                     onClick={() => {
                       setNickname(profile?.nickname ?? "");
                       setBio(profile?.bio ?? "");
+                      setAvatarUrl(profile?.avatar_url ?? "");
                     }}
                   >
                     撤销修改

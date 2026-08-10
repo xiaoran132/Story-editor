@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { themeAccent, themeGradient, type Story } from "@/lib/types";
+import { assetUrl } from "@/lib/api";
+import { coverStyle, themeAccent, type Story } from "@/lib/types";
 import { IconArrowRight } from "@/components/icons";
 
 // 从 world_config 取：主题 id（只决定配色）、题材标签、是否含隐藏属性（封面徽标用）。
@@ -40,7 +41,7 @@ export default function StoryCard({
 }) {
   const { theme, tags, hasHidden } = parseWorld(story.world_config);
   const accent = themeAccent(theme);
-  const [g0, g1] = themeGradient(theme);
+  const cover = assetUrl(story.cover_url);
   // kicker 用题材（tags[0]），不再拿主题名充数——主题只决定配色，
   // 拿它当题材会出现「孤岛探案」卡上写着「恐怖 · 怪谈」这种张冠李戴。
   const kicker = tags[0] ?? "";
@@ -51,10 +52,9 @@ export default function StoryCard({
       style={{ ["--reveal-delay" as string]: `${Math.min(index, 7) * 55}ms` }}
       aria-label={kicker ? `${story.title}，题材 ${kicker}` : story.title}
     >
-      <div
-        className="cover alive"
-        style={{ background: `linear-gradient(155deg, ${g0}, ${g1} 55%, ${g0})` }}
-      >
+      {/* 有封面图时不加 .alive：那个 16s 漂移靠拉伸 background-size 实现，
+          用在照片上会把画面拉变形。渐变封面维持原样。 */}
+      <div className={`cover${cover ? "" : " alive"}`} style={coverStyle(theme, cover)}>
         <span className="cover-badge" style={{ color: accent }}>
           {hasHidden ? "含隐藏属性" : "AI 生成"}
         </span>

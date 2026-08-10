@@ -12,6 +12,7 @@ type User struct {
 	Username       string    `gorm:"uniqueIndex;size:30;not null" json:"username"`
 	Nickname       string    `gorm:"size:50;not null" json:"nickname"`
 	Bio            string    `gorm:"size:200" json:"bio"`
+	AvatarURL      string    `gorm:"type:text" json:"avatar_url"`
 	Role           string    `gorm:"size:20;not null;default:user" json:"role"`
 	Status         string    `gorm:"size:20;not null;default:active" json:"status"`
 	FollowerCount  int       `gorm:"not null;default:0" json:"follower_count"`
@@ -36,6 +37,7 @@ type UserResponse struct {
 	Username       string    `json:"username"`
 	Nickname       string    `json:"nickname"`
 	Bio            string    `json:"bio"`
+	AvatarURL      string    `json:"avatar_url"`
 	Role           string    `json:"role"`
 	FollowerCount  int       `json:"follower_count"`
 	FollowingCount int       `json:"following_count"`
@@ -49,6 +51,7 @@ func (u *User) ToResponse() *UserResponse {
 		Username:       u.Username,
 		Nickname:       u.Nickname,
 		Bio:            u.Bio,
+		AvatarURL:      u.AvatarURL,
 		Role:           u.Role,
 		FollowerCount:  u.FollowerCount,
 		FollowingCount: u.FollowingCount,

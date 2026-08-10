@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { api } from "@/lib/api";
+import { api, assetUrl } from "@/lib/api";
 import { trackGuestSession } from "@/lib/guestSessions";
 import { useAuthStore } from "@/store/authStore";
 import { useReadingTheme } from "@/lib/useReadingTheme";
@@ -71,7 +71,8 @@ export default function StoryDetailPage() {
   }, [storyId, user]);
 
   const world = story ? parseWorld(story.world_config) : {};
-  useReadingTheme(world.theme); // 作品主题：整页阅读态换肤
+  // 作品主题：整页阅读态换肤；封面（若有）作为阅读背景图注入 --reader-bg
+  useReadingTheme(world.theme, assetUrl(story?.cover_url ?? ""));
 
   const start = async () => {
     if (starting || !story) return;

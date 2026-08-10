@@ -1,3 +1,5 @@
+import type { CSSProperties } from "react";
+
 // 与 Go 后端 DTO 对齐的类型。
 // 注意：current_state / suggested_options / state_snapshot 后端以 JSON **字符串** 返回，
 // 需经 lib/state.ts 的解析辅助转成对象，不要直接当对象用。
@@ -8,6 +10,8 @@ export interface AuthUser {
   nickname: string;
   bio?: string;
   role?: string;
+  // 可选：老 localStorage 里的 user 没有这个字段，读到 undefined 时回退首字母占位。
+  avatar_url?: string;
 }
 
 // GET /auth/profile 完整资料（对齐后端 UserResponse）。
@@ -16,6 +20,7 @@ export interface UserProfile {
   username: string;
   nickname: string;
   bio: string;
+  avatar_url: string;
   role: string;
   follower_count: number;
   following_count: number;
@@ -70,6 +75,29 @@ export function themeGradient(id: string | undefined): [string, string] {
   const t = THEMES.find((x) => x.id === id);
   return t ? [t.swatch[1], t.swatch[2]] : ["#1a1c2b", "#0e1730"];
 }
+/**
+ * 封面背景样式：有作者上传的封面就用图，否则回落主题渐变。
+ *
+ * 有图时**仍然叠一层主题渐变**（半透明罩层）而不是裸铺照片，两个理由：
+ * ① 封面上压着白色标题/摘要/CTA，任意照片都可能让对比度跌破 4.5:1；
+ * ② 设计铁律要求「彩色只来自作品主题色」，保留罩层，主题识别就不会被照片冲掉。
+ */
+export function coverStyle(themeId: string | undefined, url: string): CSSProperties {
+  const [g0, g1] = themeGradient(themeId);
+  if (!url) {
+    return { background: `linear-gradient(155deg, ${g0}, ${g1} 55%, ${g0})` };
+  }
+  const scrim =
+    `linear-gradient(155deg, color-mix(in srgb, ${g0} 74%, transparent), ` +
+    `color-mix(in srgb, ${g1} 60%, transparent) 55%, ` +
+    `color-mix(in srgb, ${g0} 82%, transparent))`;
+  return {
+    backgroundImage: `${scrim}, url("${url}")`,
+    backgroundSize: "cover",
+    backgroundPosition: "center",
+  };
+}
+
 // 取某主题的显示名（卡片 kicker / 题材标注用）。
 export function themeLabel(id: string | undefined): string {
   return THEMES.find((t) => t.id === id)?.label ?? "AI 生成";

@@ -61,12 +61,46 @@ async function request<T>(
   return env.data;
 }
 
+// upload：multipart 通道。不能复用 request——那里把 Content-Type 写死成 json，
+// 而 multipart 必须由浏览器自己带 boundary，手写 header 反而会让后端解不出来。
+async function upload(kind: string, file: File | Blob, filename = "image"): Promise<string> {
+  const fd = new FormData();
+  fd.append("kind", kind);
+  fd.append("file", file, filename);
+
+  const res = await safeFetch("/uploads/image", {
+    method: "POST",
+    headers: authHeaders(), // 注意：不设 Content-Type
+    body: fd,
+  });
+
+  let env: Envelope<{ url: string }>;
+  try {
+    env = (await res.json()) as Envelope<{ url: string }>;
+  } catch {
+    throw new Error(httpErr(res.status));
+  }
+  if (!env.success) throw new Error(env.error?.message || httpErr(res.status));
+  return env.data.url;
+}
+
 export const api = {
   get: <T>(path: string) => request<T>("GET", path),
   post: <T>(path: string, body?: unknown) => request<T>("POST", path, body),
   put: <T>(path: string, body?: unknown) => request<T>("PUT", path, body),
   del: <T>(path: string) => request<T>("DELETE", path),
+  upload,
 };
+
+// assetUrl：把后端返回的 /api/v1/uploads/... 变成浏览器能取的地址。
+// 生产同源（API_BASE = "/api/v1"）时原样返回；开发时 API_BASE 是绝对地址
+// (http://localhost:8080/api/v1)，需要补上它的源。
+export function assetUrl(u: string): string {
+  if (!u) return "";
+  if (/^(https?:)?\/\//.test(u) || u.startsWith("data:")) return u;
+  const m = API_BASE.match(/^https?:\/\/[^/]+/);
+  return m ? m[0] + u : u;
+}
 
 // postStream：消费后端的 SSE 流（text/event-stream）。
 // delta 帧 → onDelta(增量正文)；revise 帧 → onRevise(清空重来)；

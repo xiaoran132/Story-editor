@@ -55,6 +55,7 @@ func main() {
 	nodeSvc := service.NewNodeService(nodeRepo, storyRepo)
 	llmSvc := service.NewLLMService(llmRepo, agentClient, cfg.EncryptionKey)
 	playSvc := service.NewPlayService(sessionRepo, nodeRepo, storyRepo, agentClient, llmResolver)
+	uploadSvc := service.NewUploadService(cfg.UploadDir, cfg.UploadMaxBytes())
 
 	// Handlers
 	userH := handler.NewUserHandler(userSvc)
@@ -64,10 +65,13 @@ func main() {
 	playH := handler.NewPlayHandler(playSvc, guestID)
 	assistH := handler.NewAssistHandler(agentClient, llmResolver)
 	llmH := handler.NewLLMHandler(llmSvc)
+	uploadH := handler.NewUploadHandler(uploadSvc)
 
 	r := gin.Default()
 	r.Use(middleware.CORS())
 	r.LoadHTMLGlob("../templates/*")
+	// 默认 32MB 内存缓冲对「几张图片」偏大；超出部分 gin 会落临时文件。
+	r.MaxMultipartMemory = 8 << 20
 
 	// 最小游玩界面
 	r.GET("/", func(c *gin.Context) {
@@ -75,6 +79,13 @@ func main() {
 	})
 
 	api := r.Group("/api/v1")
+
+	// 图片上传：通用端点（需登录），只产出 URL；绑定到头像/封面各走已有的资料/作品更新接口。
+	// 静态直出挂在 /api/v1/uploads 而非裸 /uploads —— 生产 nginx 的 location / 会把后者
+	// 转给 Next.js（详见 service.UploadPathPrefix 注释）。
+	api.POST("/uploads/image", middleware.AuthRequired(cfg.JWTSecret), uploadH.Image)
+	api.Static("/uploads", cfg.UploadDir)
+
 	auth := api.Group("/auth")
 	{
 		auth.POST("/register", userH.Register)

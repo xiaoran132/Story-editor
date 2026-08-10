@@ -16,6 +16,7 @@ Internet → :80/:443 Nginx(宿主机, 域名)
 - 8001/8080/3000/5432 **只监听本机**,公网只放 **80/443**(由宿主 nginx 占)。
 - 反代用宿主机原生 nginx,配置见 `deploy/nginx/story-editor.conf`;**不再用 Caddy 容器**。
 - 首启后端会建 `pgcrypto` 扩展 + AutoMigrate + seed(建 guest + 六部作品、**级联删「迷雾古堡」**)。这是你现在连的**同一台 PG**,注意别误删想留的数据。
+- **上传的头像/封面存在后端本地磁盘**(`UPLOAD_DIR`),不是数据库也不是对象存储。Docker 下必须挂持久卷(compose 已挂 named volume `uploads` → `/data/uploads`,与 `backend.env` 的 `UPLOAD_DIR` 对齐),否则 `up --build` 一次图就全没了;原生部署下默认落 `backend/uploads/`(备份别漏)。
 
 ---
 
@@ -97,6 +98,8 @@ python agent/tools/aggregate_log.py agent.log   # 见 handoff §8.4
 ## 排错
 
 - **前端能开、API 连不上**:构建时没设 `NEXT_PUBLIC_API_BASE=/api/v1`(构建时固化)。Docker 见 compose 的 `args`;原生见 deploy.sh。
+- **上传图片报 413**:nginx 的 `client_max_body_size` 默认 1m。仓库配置已在 `/api/v1/` location 设 8m,自己改过配置的记得补回。
+- **图片传上去了、刷新就 404**:容器没挂持久卷,或 `backend.env` 的 `UPLOAD_DIR` 与 compose 的挂载点不一致。
 - **开局/续写不逐字(卡住)**:反代缓冲了 SSE。nginx 的 `/api/v1/` location 需 `proxy_buffering off` + `proxy_http_version 1.1` + `proxy_set_header Connection ''` + 大 `proxy_read_timeout`(仓库配置已含)。
 - **DB 报 `Ident authentication failed`(SQLSTATE 28000)**:`pg_hba.conf` 对 `127.0.0.1/32`、`::1/128` 用了 `ident`,改成 `md5`/`scram-sha-256` → `SELECT pg_reload_conf();`(改文件后光存不重载不生效)。
 - **DB 报 `password authentication failed`(SQLSTATE 28P01)**:`backend.env` 的 `DB_PASSWORD` 与 PG 里 `postgres` 密码不符。对齐后 **`docker compose up -d --force-recreate backend`**——改 `.env` 用 `restart` 不重读环境变量,必须 `--force-recreate`。

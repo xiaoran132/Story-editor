@@ -77,6 +77,9 @@ deploy/docker/*.env
 *.exe
 backend/backend
 
+# 用户上传的头像/作品封面（本地磁盘存储，UPLOAD_DIR 默认 backend/uploads）
+backend/uploads/
+
 # parcel-bundler cache (https://parceljs.org/)
 .cache
 .parcel-cache

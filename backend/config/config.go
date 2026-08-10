@@ -19,6 +19,17 @@ type Config struct {
 	EncryptionKey string `mapstructure:"ENCRYPTION_KEY"`
 	ServerPort    string `mapstructure:"SERVER_PORT"`
 	AgentURL      string `mapstructure:"AGENT_URL"`
+	// UploadDir 是上传图片的落盘根目录。默认相对路径 ./uploads —— 与
+	// LoadHTMLGlob("../templates/*") 同一个约束：进程必须在 backend/ 下启动。
+	// 容器/生产建议填绝对路径并挂持久卷，否则重建即丢图。
+	UploadDir string `mapstructure:"UPLOAD_DIR"`
+	// UploadMaxMB 是单张图片的大小上限（MB）。
+	UploadMaxMB int `mapstructure:"UPLOAD_MAX_MB"`
+}
+
+// UploadMaxBytes 把配置的 MB 换算成字节，供 UploadService 使用。
+func (c *Config) UploadMaxBytes() int64 {
+	return int64(c.UploadMaxMB) << 20
 }
 
 func (c *Config) DSN() string {
@@ -52,6 +63,8 @@ func Load(configPath string) (*Config, error) {
 	_ = v.BindEnv("ENCRYPTION_KEY")
 	_ = v.BindEnv("SERVER_PORT")
 	_ = v.BindEnv("AGENT_URL")
+	_ = v.BindEnv("UPLOAD_DIR")
+	_ = v.BindEnv("UPLOAD_MAX_MB")
 
 	setDefaults(v)
 
@@ -79,4 +92,6 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("ENCRYPTION_KEY", "change-me-encryption-key")
 	v.SetDefault("SERVER_PORT", ":8080")
 	v.SetDefault("AGENT_URL", "http://localhost:8001")
+	v.SetDefault("UPLOAD_DIR", "./uploads")
+	v.SetDefault("UPLOAD_MAX_MB", 5)
 }

@@ -37,6 +37,10 @@ type LoginInput struct {
 type UpdateProfileInput struct {
 	Nickname string `json:"nickname"`
 	Bio      string `json:"bio"`
+	// AvatarURL 用指针（对齐 StoryUpdateInput.CoverURL 的风格）：昵称/简介是
+	// 「空串=没填，跳过」语义，而头像必须能被显式清空回首字母占位——
+	// 指针才区分得了「没传这个字段」和「传了空串，要删」。
+	AvatarURL *string `json:"avatar_url"`
 }
 
 func (s *UserService) Register(input *RegisterInput) (*model.UserResponse, error) {
@@ -203,6 +207,9 @@ func (s *UserService) UpdateProfile(userID uuid.UUID, input *UpdateProfileInput)
 	}
 	if input.Bio != "" {
 		user.Bio = input.Bio
+	}
+	if input.AvatarURL != nil {
+		user.AvatarURL = *input.AvatarURL
 	}
 
 	if err := s.repo.Update(ctx, user); err != nil {

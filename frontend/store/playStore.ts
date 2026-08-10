@@ -7,6 +7,7 @@ interface PlayState {
   currentNode: StoryNode | null;
   allNodes: StoryNode[]; // 该会话已探索的全部节点，供树状视图建树
   storyTitle: string; // 作品标题，用于游玩页顶栏展示
+  coverUrl: string; // 作品封面：作为阅读背景图注入 --reader-bg（无则保持纯场景色）
   theme: string; // 作品级主题 id：游玩页整页换肤（挂 <html data-theme>）
   hiddenAttrs: string[]; // world_config.attributes 里标了 hidden 的属性键：仅供 AI 参考，玩家端不展示
   revealGated: string[]; // world_config.attributes 里标了 reveal 的门控属性键：揭示前不显示
@@ -100,6 +101,7 @@ export const usePlayStore = create<PlayState>((set, get) => ({
   currentNode: null,
   allNodes: [],
   storyTitle: "",
+  coverUrl: "",
   theme: "star",
   hiddenAttrs: [],
   revealGated: [],
@@ -115,6 +117,7 @@ export const usePlayStore = create<PlayState>((set, get) => ({
       currentNode: null,
       allNodes: [],
       storyTitle: "",
+      coverUrl: "",
       theme: "star",
       hiddenAttrs: [],
       revealGated: [],
@@ -141,6 +144,7 @@ export const usePlayStore = create<PlayState>((set, get) => ({
         .then((story) =>
           set({
             storyTitle: story.title,
+            coverUrl: story.cover_url ?? "",
             theme: parseTheme(story.world_config),
             hiddenAttrs: parseFlaggedAttrs(story.world_config, "hidden"),
             revealGated: parseFlaggedAttrs(story.world_config, "reveal"),

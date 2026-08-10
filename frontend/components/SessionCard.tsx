@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { themeGradient, type SessionListItem } from "@/lib/types";
+import { assetUrl } from "@/lib/api";
+import { coverStyle, type SessionListItem } from "@/lib/types";
 import { IconTrash } from "@/components/icons";
 
 function fmtTime(iso: string): string {
@@ -22,15 +23,16 @@ function fmtTime(iso: string): string {
 export default function SessionCard({
   item,
   theme,
+  cover,
   onDelete,
 }: {
   item: SessionListItem;
   theme?: string; // 作品主题 id，用于缩略色块；拿不到就用默认星海
+  cover?: string; // 作品封面（仅自己的作品拿得到），无则用主题渐变
   onDelete: () => void;
 }) {
   const [confirming, setConfirming] = useState(false);
   const ended = item.status === "ended";
-  const [g0, g1] = themeGradient(theme);
 
   return (
     <div className="session-card">
@@ -50,7 +52,7 @@ export default function SessionCard({
         <span
           className="sc-cov"
           aria-hidden="true"
-          style={{ background: `linear-gradient(155deg, ${g0}, ${g1})` }}
+          style={coverStyle(theme, assetUrl(cover ?? ""))}
         />
         <span className="sc-body">
           <span className="sc-title">{item.story_title || "未命名作品"}</span>

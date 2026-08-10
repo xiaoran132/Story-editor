@@ -18,21 +18,27 @@ const clampScrim = (v: number) =>
 // 给 <html> 加 od-reading + data-work-theme（作品主题皮肤）+ data-mode（昼/夜）+ --scrim-alpha（遮罩浓度）。
 // CSS 自定义属性只父→子继承，body 是页面容器祖先，故必须挂在 <html> 而非 .wrap。
 // 卸载或切换时清除（含 inline 的 --scrim-alpha，否则会漏到外壳页并与控件 state 失同步）。
-export function useReadingTheme(workTheme: string | undefined) {
+// coverUrl（可选）：作者上传的封面，走 CSS 早就预留好的 --reader-bg 替换点
+// （globals.css:652 `.od-bg::after`）。它在场景色之上、颗粒/暗角/遮罩之下，
+// 所以对比度护栏自动生效——不需要为封面单开一个「头图位」。
+export function useReadingTheme(workTheme: string | undefined, coverUrl?: string) {
   useEffect(() => {
     const el = document.documentElement;
     el.classList.add("od-reading");
     el.dataset.workTheme = workTheme || "star";
     el.dataset.mode = getReadingMode();
     el.style.setProperty("--scrim-alpha", (getScrimAlpha() / 100).toFixed(2));
+    if (coverUrl) el.style.setProperty("--reader-bg", `url("${coverUrl}")`);
+    else el.style.removeProperty("--reader-bg");
     return () => {
       el.classList.remove("od-reading");
       delete el.dataset.workTheme;
       delete el.dataset.mode;
       delete el.dataset.scene;
       el.style.removeProperty("--scrim-alpha");
+      el.style.removeProperty("--reader-bg");
     };
-  }, [workTheme]);
+  }, [workTheme, coverUrl]);
 }
 
 // 氛围场景：在作品主题之上再叠一层辉光/强调覆盖（CSS 的 .od-reading[data-scene]）。

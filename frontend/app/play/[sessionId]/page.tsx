@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { usePlayStore } from "@/store/playStore";
+import { assetUrl } from "@/lib/api";
 import {
   useReadingTheme,
   getReadingMode,
@@ -33,7 +34,7 @@ export default function PlayPage() {
   const sessionId = params.sessionId;
 
   const {
-    session, currentNode, allNodes, storyTitle, theme,
+    session, currentNode, allNodes, storyTitle, theme, coverUrl,
     hiddenAttrs, revealGated, attrMax, busy, streamingText, loading, error,
     load, choose, backtrack, reset,
   } = usePlayStore();
@@ -43,7 +44,8 @@ export default function PlayPage() {
   const [scrim, setScrim] = useState(SCRIM_DEFAULT);
   const [scene, setScene] = useState(""); // 氛围场景（不持久化，见 useReadingTheme.SCENES）
 
-  useReadingTheme(theme); // 作品主题：整页阅读态换肤（含挂载时套用已存的昼夜/遮罩偏好）
+  // 作品主题：整页阅读态换肤（含挂载时套用已存的昼夜/遮罩偏好）；封面作阅读背景图
+  useReadingTheme(theme, assetUrl(coverUrl));
 
   // 控件态从持久化偏好初始化——hook 已把值套到 <html>，这里只是让滑块/分段与之对齐。
   useEffect(() => {

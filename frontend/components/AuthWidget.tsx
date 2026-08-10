@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
+import { assetUrl } from "@/lib/api";
 
 // 账户控件（导航头右侧）：未登录 → 「登录」链接跳 /login；登录后 → 头像下拉（个人主页 / 设置 / 退出）。
 export default function AuthWidget() {
@@ -51,7 +52,13 @@ export default function AuthWidget() {
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
       >
-        {initial}
+        {/* 有头像用图，否则回退首字母色块——头像是可选的，不该有「默认灰头像」这种无信息占位 */}
+        {user.avatar_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={assetUrl(user.avatar_url)} alt="" />
+        ) : (
+          initial
+        )}
       </button>
       {open && (
         <div className="account-menu" role="menu">

@@ -22,7 +22,11 @@ services:
       dockerfile: deploy/docker/Dockerfile.backend
     image: story-backend
     network_mode: host
-    env_file: [./backend.env] # DB_*/JWT_SECRET/AGENT_URL/SERVER_PORT
+    env_file: [./backend.env] # DB_*/JWT_SECRET/AGENT_URL/SERVER_PORT/UPLOAD_*
+    # 上传的头像/封面落在容器内本地磁盘，必须挂持久卷，否则 up --build 一次就全没了。
+    # 路径要与 backend.env 的 UPLOAD_DIR 一致。
+    volumes:
+      - uploads:/data/uploads
     depends_on: [agent]
     restart: unless-stopped
 
@@ -40,5 +44,8 @@ services:
       NODE_ENV: production
     depends_on: [backend]
     restart: unless-stopped
+volumes:
+  uploads: # 用户上传的头像/作品封面（本地磁盘存储，见 backend/internal/service/upload.go）
+
 # 反代：宿主机原生 nginx，配置见 deploy/nginx/story-editor.conf
 # （80/443 由宿主 nginx 占，容器只监听 127.0.0.1 的 8001/8080/3000）

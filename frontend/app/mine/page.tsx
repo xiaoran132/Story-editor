@@ -3,13 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { api } from "@/lib/api";
+import { api, assetUrl } from "@/lib/api";
 import { useAuthStore } from "@/store/authStore";
 import AppHeader from "@/components/AppHeader";
 import SessionCard from "@/components/SessionCard";
 import { SkeletonWall, EmptyState, ErrorState } from "@/components/State";
 import { IconPlus } from "@/components/icons";
-import { themeGradient, type SessionListItem, type Story, type UserProfile } from "@/lib/types";
+import { coverStyle, type SessionListItem, type Story, type UserProfile } from "@/lib/types";
 
 // 「我的空间」（对齐原型 my-space.html）：资料头 + 两个页签——我的创作 / 我在读。
 // 「我在读」原先寄居在首页，会让书库首屏被个人数据挤占；按原型迁到这里，
@@ -84,10 +84,16 @@ export default function MinePage() {
     [stories]
   );
 
-  // 存档卡的缩略色取自对应作品的主题；不在「我的作品」里的（别人的作品）回落默认。
+  // 存档卡的缩略图取自对应作品的主题与封面；不在「我的作品」里的（别人的作品）回落默认渐变
+  // ——SessionListItem 只带 story_title，拿不到别人作品的 world_config/cover。
   const themeOf = useMemo(() => {
     const m = new Map<string, string>();
     stories.forEach((s) => m.set(s.id, parseTheme(s.world_config)));
+    return m;
+  }, [stories]);
+  const coverOf = useMemo(() => {
+    const m = new Map<string, string>();
+    stories.forEach((s) => s.cover_url && m.set(s.id, s.cover_url));
     return m;
   }, [stories]);
 
@@ -134,7 +140,13 @@ export default function MinePage() {
         <h1 className="sr-only">我的空间</h1>
 
         <section className="profile">
-          <span className="pic" aria-hidden="true" />
+          {/* 有头像用图；没有就保持原来的中性圆（不放默认灰头像，那是无信息占位） */}
+          {profile?.avatar_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img className="pic" src={assetUrl(profile.avatar_url)} alt="" />
+          ) : (
+            <span className="pic" aria-hidden="true" />
+          )}
           <div className="who">
             <h2>{nickname}</h2>
             <p>{profile?.bio || "还没有个人简介"}</p>
@@ -199,10 +211,9 @@ export default function MinePage() {
           ) : (
             <div className="works">
               {stories.map((s) => {
-                const [g0, g1] = themeGradient(parseTheme(s.world_config));
                 return (
                   <article className="work" key={s.id}>
-                    <div className="cov" style={{ background: `linear-gradient(155deg, ${g0}, ${g1})` }}>
+                    <div className="cov" style={coverStyle(parseTheme(s.world_config), assetUrl(s.cover_url))}>
                       <span className="ct">{s.title || "未命名作品"}</span>
                     </div>
                     <div className="info">
@@ -264,6 +275,7 @@ export default function MinePage() {
                 key={s.id}
                 item={s}
                 theme={themeOf.get(s.story_id)}
+                cover={coverOf.get(s.story_id)}
                 onDelete={() => deleteSession(s.id)}
               />
             ))}
