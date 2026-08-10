@@ -48,17 +48,54 @@ export const LLM_PROVIDERS: { key: string; label: string; baseURL: string; model
 ];
 
 // ===== 作品级主题换肤 =====
-// 主题是作品属性（存于 world_config.theme，透传、零后端改动）。体验页（详情/游玩）
-// 整页换肤，外壳页维持默认 star。swatch=[强调色, 底色] 用于编辑器色块 + 首页卡片微染。
-export const THEMES: { id: string; label: string; swatch: [string, string] }[] = [
-  { id: "star", label: "星图（默认）", swatch: ["#6ea8ff", "#0a0e1a"] },
-  { id: "ink", label: "民国墨色", swatch: ["#d9553b", "#14100c"] },
-  { id: "horror", label: "血色恐怖", swatch: ["#c8324a", "#0a0708"] },
+// 主题是作品属性（存于 world_config.theme，透传、零后端改动）。仅阅读态（详情/游玩）
+// 整页换肤，管理态外壳永远中性。swatch=[强调色, 渐变起, 渐变止] —— 强调色用于卡片 kicker/点缀，
+// 两段底色用于封面渐变 + 阅读场景背景。色值取自 docs/design/tokens.css 作品主题色板。
+export const THEMES: { id: string; label: string; swatch: [string, string, string] }[] = [
+  { id: "star", label: "末世 · 星海", swatch: ["#7fc4f2", "#1a1c2b", "#0e1730"] },
+  { id: "ink", label: "水墨 · 武侠", swatch: ["#5eead4", "#0b1a1a", "#134e4a"] },
+  { id: "horror", label: "恐怖 · 怪谈", swatch: ["#fca5a5", "#3b0a12", "#7f1d1d"] },
+  { id: "sci", label: "软科幻", swatch: ["#a5b4fc", "#111827", "#312e81"] },
+  { id: "love", label: "言情", swatch: ["#fbcfe8", "#4a1d3f", "#be185d"] },
+  { id: "xian", label: "仙侠", swatch: ["#fde68a", "#1c1917", "#4d3a10"] },
+  { id: "heal", label: "治愈日常", swatch: ["#bef264", "#1a2417", "#3f6212"] },
+  { id: "radio", label: "冷绿电台", swatch: ["#7fe3c8", "#04121c", "#08303f"] },
 ];
-// 取某主题的强调色（首页卡片微染用），未知 id 回落星图冷蓝。
+// 取某主题的强调色，未知 id 回落星海冷蓝。
 export function themeAccent(id: string | undefined): string {
-  return (THEMES.find((t) => t.id === id)?.swatch[0]) ?? "#6ea8ff";
+  return THEMES.find((t) => t.id === id)?.swatch[0] ?? "#7fc4f2";
 }
+// 取某主题的封面/场景渐变对 [起, 止]，未知 id 回落星海。
+export function themeGradient(id: string | undefined): [string, string] {
+  const t = THEMES.find((x) => x.id === id);
+  return t ? [t.swatch[1], t.swatch[2]] : ["#1a1c2b", "#0e1730"];
+}
+// 取某主题的显示名（卡片 kicker / 题材标注用）。
+export function themeLabel(id: string | undefined): string {
+  return THEMES.find((t) => t.id === id)?.label ?? "AI 生成";
+}
+
+// ===== 题材与基调（存 world_config.tags，透传；约定 tags[0] 为主题材） =====
+// 取自原型 create-editor.html 的题材表，并补上种子作品实际用到的「悬疑推理 / 奇幻」。
+// 这是**建议表**不是白名单：作者手填或 AI 生成的其它标签照样保留在 tags 里，不会被 UI 抹掉。
+export const GENRES = [
+  "末世生存",
+  "悬疑推理",
+  "恐怖惊悚",
+  "言情",
+  "科幻",
+  "武侠仙侠",
+  "奇幻",
+  "治愈日常",
+] as const;
+
+export const TONES = [
+  "压抑 · 孤绝",
+  "紧张 · 悬念",
+  "温情 · 治愈",
+  "热血 · 爽快",
+  "诡谲 · 惊悚",
+] as const;
 
 // GET /llm/connections 列表项：绝不含 key，只回是否已配置 + 打码提示。
 export interface LLMConnection {
@@ -108,6 +145,7 @@ export interface LoginResult {
 export interface Story {
   id: string;
   creator_id: string;
+  creator_name: string; // 作者昵称（后端 LEFT JOIN users 带出）；为空则前端省略署名，不编造
   title: string;
   description: string;
   cover_url: string;
@@ -175,6 +213,7 @@ export interface AttrRowData {
   key: string;
   type: AttrType;
   initial: number | string | string[]; // number→数值、scalar→字符串、set→字符串数组
+  max: number | null; // 仅 number 属性可有：声明上限后玩家端才画进度条；null=不画，只显示数字
   hidden: boolean;
   reveal: boolean;
 }

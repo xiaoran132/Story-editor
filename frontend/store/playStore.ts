@@ -10,6 +10,7 @@ interface PlayState {
   theme: string; // 作品级主题 id：游玩页整页换肤（挂 <html data-theme>）
   hiddenAttrs: string[]; // world_config.attributes 里标了 hidden 的属性键：仅供 AI 参考，玩家端不展示
   revealGated: string[]; // world_config.attributes 里标了 reveal 的门控属性键：揭示前不显示
+  attrMax: Record<string, number>; // 声明了 max 的 number 属性上限：只有它才画进度条，其余只显示数字
   busy: boolean; // AI 生成中，禁用交互
   streamingText: string; // 流式续写时逐字到达的正文（done 后清空，回落 currentNode.content）
   loading: boolean; // 首次加载会话中
@@ -32,6 +33,25 @@ function parseFlaggedAttrs(worldConfig: string, flag: "hidden" | "reveal"): stri
     return Object.keys(attrs).filter((k) => attrs[k] && attrs[k][flag] === true);
   } catch {
     return [];
+  }
+}
+
+// 取 number 属性声明的上限 max（可选）。没声明就不画条——硬编码 0–100 会让 gold:500 直接满格，
+// 一条错的进度条比没有条更误导。
+function parseAttrMax(worldConfig: string): Record<string, number> {
+  try {
+    const attrs = (JSON.parse(worldConfig || "{}").attributes || {}) as Record<
+      string,
+      Record<string, unknown>
+    >;
+    const out: Record<string, number> = {};
+    Object.entries(attrs).forEach(([k, spec]) => {
+      const m = spec?.max;
+      if (spec?.type === "number" && typeof m === "number" && m > 0) out[k] = m;
+    });
+    return out;
+  } catch {
+    return {};
   }
 }
 
@@ -83,6 +103,7 @@ export const usePlayStore = create<PlayState>((set, get) => ({
   theme: "star",
   hiddenAttrs: [],
   revealGated: [],
+  attrMax: {},
   busy: false,
   streamingText: "",
   loading: false,
@@ -97,6 +118,7 @@ export const usePlayStore = create<PlayState>((set, get) => ({
       theme: "star",
       hiddenAttrs: [],
       revealGated: [],
+      attrMax: {},
       busy: false,
       streamingText: "",
       loading: false,
@@ -122,6 +144,7 @@ export const usePlayStore = create<PlayState>((set, get) => ({
             theme: parseTheme(story.world_config),
             hiddenAttrs: parseFlaggedAttrs(story.world_config, "hidden"),
             revealGated: parseFlaggedAttrs(story.world_config, "reveal"),
+            attrMax: parseAttrMax(story.world_config),
           })
         )
         .catch(() => {});

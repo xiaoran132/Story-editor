@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useEditorStore } from "@/store/editorStore";
 import { useAuthStore } from "@/store/authStore";
+import AppHeader from "@/components/AppHeader";
 import StoryEditor from "@/components/editor/StoryEditor";
 
 export default function CreatePage() {
@@ -17,16 +18,21 @@ export default function CreatePage() {
     reset();
   }, [initAuth, reset]);
 
-  // 未登录不能创作：给出提示并回首页登录。
+  // 未登录不能创作：直接送去登录页（以前甩回首页，用户还得自己找登录入口），
+  // 并带上 next 参数，登录后回到创作。
   useEffect(() => {
     if (user === null && typeof window !== "undefined" && !localStorage.getItem("token")) {
-      router.replace("/");
+      router.replace("/login?next=/create");
     }
   }, [user, router]);
 
+  // 编辑器属管理态（DESIGN §2），沿用全局导航头。
   return (
-    <div className="wrap">
-      <StoryEditor />
-    </div>
+    <>
+      <AppHeader />
+      <main className="page-narrow section-space">
+        <StoryEditor />
+      </main>
+    </>
   );
 }

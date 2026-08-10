@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import type { SessionListItem } from "@/lib/types";
+import Link from "next/link";
+import { themeGradient, type SessionListItem } from "@/lib/types";
+import { IconTrash } from "@/components/icons";
 
 function fmtTime(iso: string): string {
   const d = new Date(iso);
@@ -14,51 +16,51 @@ function fmtTime(iso: string): string {
   });
 }
 
+// 管理态存档卡（原型 my-space.html:194-201 的 `.save` 行）：
+// 主题渐变缩略 + 作品名 + 进度 + 删除（行内二次确认）。
+// 整行是链接，删除按钮盖在上层——注意 preventDefault，否则点删除会连带跳转。
 export default function SessionCard({
   item,
-  onClick,
+  theme,
   onDelete,
 }: {
   item: SessionListItem;
-  onClick: () => void;
+  theme?: string; // 作品主题 id，用于缩略色块；拿不到就用默认星海
   onDelete: () => void;
 }) {
-  const ended = item.status === "ended";
   const [confirming, setConfirming] = useState(false);
-
-  // 删除按钮：首次点亮二次确认，再点才真正删除；离开时自动收起。
-  const handleDel = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (confirming) {
-      onDelete();
-    } else {
-      setConfirming(true);
-    }
-  };
+  const ended = item.status === "ended";
+  const [g0, g1] = themeGradient(theme);
 
   return (
-    <div className="card session" onClick={onClick}>
+    <div className="session-card">
       <button
-        className={`card-del${confirming ? " confirm" : ""}`}
-        title="删除这段旅程"
-        aria-label="删除这段旅程"
-        onClick={handleDel}
+        className={`icon-del${confirming ? " confirm" : ""}`}
+        aria-label={confirming ? "确认删除这段旅程" : "删除这段旅程"}
+        onClick={(e) => {
+          e.preventDefault();
+          if (confirming) onDelete();
+          else setConfirming(true);
+        }}
         onMouseLeave={() => setConfirming(false)}
       >
-        {confirming ? "确认删除" : "×"}
+        {confirming ? "确认删除" : <IconTrash size={15} />}
       </button>
-
-      <div className="title">{item.story_title || "未命名作品"}</div>
-      <div className="metaline">
-        <span className={`badge ${ended ? "ended" : "active"}`}>
-          {ended ? "已结局" : "进行中"}
+      <Link href={`/play/${item.id}`} className="sc-link">
+        <span
+          className="sc-cov"
+          aria-hidden="true"
+          style={{ background: `linear-gradient(155deg, ${g0}, ${g1})` }}
+        />
+        <span className="sc-body">
+          <span className="sc-title">{item.story_title || "未命名作品"}</span>
+          <span className="sc-meta">
+            <span className={`badge ${ended ? "info" : "ok"}`}>{ended ? "已结局" : "进行中"}</span>
+            <span>第 {Math.max(0, item.node_count - 1)} 步</span>
+            <span>{fmtTime(item.last_played_at)}</span>
+          </span>
         </span>
-        <span>第 {Math.max(0, item.node_count - 1)} 步</span>
-        <span>{fmtTime(item.last_played_at)}</span>
-      </div>
-      <div className="desc">
-        {ended ? "回顾这段旅程或回溯重玩" : "继续这段旅程"}
-      </div>
+      </Link>
     </div>
   );
 }

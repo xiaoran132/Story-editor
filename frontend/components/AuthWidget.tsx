@@ -1,119 +1,79 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
 
-// 顶栏登录/注册小组件：未登录展开内联表单；登录后显示昵称（点进个人主页）+ 退出。
+// 账户控件（导航头右侧）：未登录 → 「登录」链接跳 /login；登录后 → 头像下拉（个人主页 / 设置 / 退出）。
 export default function AuthWidget() {
   const router = useRouter();
-  const { user, login, register, logout } = useAuthStore();
+  const { user, init, logout } = useAuthStore();
   const [open, setOpen] = useState(false);
-  const [mode, setMode] = useState<"login" | "register">("login");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [username, setUsername] = useState("");
-  const [nickname, setNickname] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
 
-  if (user) {
+  useEffect(() => {
+    init();
+  }, [init]);
+
+  // 点击外部 / Esc 关闭下拉
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  if (!user) {
     return (
-      <div className="auth">
-        <button className="auth-user" onClick={() => router.push("/me")} title="个人主页">
-          你好，{user.nickname || user.username}
-        </button>
-        <button className="auth-link" onClick={logout}>
-          退出
-        </button>
-      </div>
+      <Link className="btn secondary sm" href="/login">
+        登录
+      </Link>
     );
   }
 
-  if (!open) {
-    return (
-      <div className="auth">
-        <button className="auth-link" onClick={() => { setOpen(true); setMode("login"); }}>
-          登录
-        </button>
-        <button className="auth-link" onClick={() => { setOpen(true); setMode("register"); }}>
-          注册
-        </button>
-      </div>
-    );
-  }
-
-  const submit = async () => {
-    setBusy(true);
-    setErr(null);
-    try {
-      if (mode === "login") {
-        await login(email.trim(), password);
-      } else {
-        await register(
-          username.trim(),
-          email.trim(),
-          password,
-          nickname.trim() || username.trim()
-        );
-      }
-      setOpen(false);
-      setPassword("");
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
+  const initial = (user.nickname || user.username || "?").trim().charAt(0).toUpperCase();
 
   return (
-    <div className="auth-panel">
-      <div className="auth-tabs">
-        <button className={mode === "login" ? "on" : ""} onClick={() => setMode("login")}>
-          登录
-        </button>
-        <button className={mode === "register" ? "on" : ""} onClick={() => setMode("register")}>
-          注册
-        </button>
-        <span className="auth-close" onClick={() => setOpen(false)}>
-          ×
-        </span>
-      </div>
-      {mode === "register" && (
-        <>
-          <input
-            placeholder="用户名"
-            value={username}
-            autoComplete="off"
-            onChange={(e) => setUsername(e.target.value)}
-          />
-          <input
-            placeholder="昵称（可选）"
-            value={nickname}
-            autoComplete="off"
-            onChange={(e) => setNickname(e.target.value)}
-          />
-        </>
-      )}
-      <input
-        placeholder="邮箱"
-        value={email}
-        autoComplete="off"
-        onChange={(e) => setEmail(e.target.value)}
-      />
-      <input
-        type="password"
-        placeholder="密码"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") submit();
-        }}
-      />
-      {err && <div className="auth-err">{err}</div>}
-      <button className="auth-submit" disabled={busy} onClick={submit}>
-        {busy ? "…" : mode === "login" ? "登录" : "注册并登录"}
+    <div className="account" ref={ref}>
+      <button
+        className="avatar"
+        type="button"
+        aria-label="我的账户"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {initial}
       </button>
+      {open && (
+        <div className="account-menu" role="menu">
+          <span className="account-name">你好，{user.nickname || user.username}</span>
+          <Link href="/me" role="menuitem" onClick={() => setOpen(false)}>个人主页</Link>
+          <Link href="/mine" role="menuitem" onClick={() => setOpen(false)}>我的创作</Link>
+          {user.role === "admin" && (
+            <Link href="/admin" role="menuitem" onClick={() => setOpen(false)}>平台设置</Link>
+          )}
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              logout();
+              setOpen(false);
+              router.push("/");
+            }}
+          >
+            退出登录
+          </button>
+        </div>
+      )}
     </div>
   );
 }

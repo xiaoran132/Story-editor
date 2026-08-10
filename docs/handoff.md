@@ -16,10 +16,10 @@ Story Editor 的长期愿景是“AI 驱动的互动剧情共创社区”：用�
 | 域 | 已完成 | 未完成或限制 |
 |---|---|---|
 | 用户 | 后端注册/登录/JWT/资料、凭证分表；**前端登录接入完成**（可选登录，未登录仍匿名 guest；登录后迁移本浏览器 guest 会话到账号）；**个人主页 `/me`（资料 + 编辑昵称/简介 + BYOK 连接管理）**；**BYOK 已接入生成**（连接=账号级、模型=作品级，见 §12） | OAuth/密码找回未做；平台 key 额度限制未做；旧 `User.LLMKeyCipher`（单 key）已废弃、列留孤儿 |
-| 作品 | Story CRUD、作品列表、世界观/初始状态 JSON；**创作编辑器(MVP)**：`world_config`/`opening_content` 可写入、运行时校验(`pkg.ValidateWorldConfig`，草稿宽松/发布严格)、发布态切换、我的作品列表、assist Go 转发 | 封面上传、`/assist/polish`·`/assist/branches` 编辑内接入未做 |
+| 作品 | Story CRUD（列表/详情 LEFT JOIN users 带出 `creator_name` 作者昵称，只读投影）、作品列表、世界观/初始状态 JSON；**创作编辑器(MVP)**：`world_config`/`opening_content` 可写入、运行时校验(`pkg.ValidateWorldConfig`，草稿宽松/发布严格)、发布态切换、我的作品列表、assist Go 转发 | 封面上传、`/assist/polish`·`/assist/branches` 编辑内接入未做 |
 | 游玩 | 开局、续写、自由输入、回溯、读档、删档、剧情树、状态合并 | 真实环境下的多回合质量/延迟指标尚未沉淀 |
 | Agent | **流式生成(SSE)**、属性类型规整（含 hidden）、故事大纲导演、滚动摘要、审校分级 + 有记忆修订 + 超限降级交付 | RAG、多 Agent fan-out、独立 director/recall/write 子图未做 |
-| 前端 | 作品选择、**作品详情/过渡页**、游玩(顶栏剧本名 + **左侧状态台 + 正文居中 + 星图树右抽屉**布局)、历史会话、正文逐字流式、属性揭示门控可见性、**登录/注册 + 会话迁移**、**创作编辑器**(`/create`·`/edit/:id`·`/mine`，AI 优先 + 结构化属性表)、**个人主页 `/me`**(资料编辑 + BYOK 连接管理)、**作品详情页按作品配模型 + admin `/admin` 平台设置**、**作品级主题换肤**(创作者在编辑器选，玩家进详情/游玩页整页换肤，见 §13) | 社区、移动端/无障碍/自动化测试未做 |
+| 前端 | **双态设计体系（`docs/design` 落地，见 §13）**：管理态（白底 Inter + 全局 `AppHeader`）发现书库(错落瀑布 + 题材/搜索前端过滤 + 三态)、我的创作、社区占位、登录页(`/login` 双栏)、个人主页、admin、创作编辑器；阅读态（暖深色 Noto Serif + `useReadingTheme` 整页换肤 + 遮罩浓度/昼夜可调）作品详情、游玩(三栏舞台 + 状态轨 + 选项坞 1/2/3 快捷键 + 星图抽屉)。正文逐字流式(无首字下沉)、属性揭示门控可见性(hidden 全程不露面)、进度条按 `max` 声明画、登录/会话迁移、按作品配模型、作品级 8 主题换肤 | 社区功能、移动端细节/自动化测试未做 |
 | 社区 | API 路由与 handler 占位 | 浏览、详情、点赞、评论、搜索、排行榜均未实现 |
 | 商业化 | SQL 蓝本中有概念 | 付费、打赏、分成、成就未做 |
 
@@ -367,16 +367,98 @@ cd agent
 **admin 门槛（最小）**：JWT 携带 `role` 快照（`pkg.GenerateToken(userID, role, secret)`）；`middleware.RequireAdmin()` 校验；`/admin/llm/*` 挂 `AuthRequired+RequireAdmin`。
 - **产生第一个 admin**：手动改库 `UPDATE users SET role='admin' WHERE username='<你的用户名>';`，然后该用户**重新登录**（role 是 JWT 签发时快照，旧 token 不含新角色）。前端 `/admin` 与 `/me` 的「平台设置」入口按 `user.role==='admin'` 显示；后端才是硬防线。
 
-## 13. 作品级主题换肤（v1）
+## 13. 双态设计体系 + 作品级主题换肤
 
-**目标**：平台外壳恒定「星图」；主题是**作品属性**、由创作者在编辑器选，玩家进入该作品的**详情页 + 游玩页**时整页换肤，离开恢复星图。纯前端、**零后端改动、零迁移**。
+**双态（`docs/design` 落地）**：`app/globals.css` 分三层——① token 层：管理态浅色在 `:root`（`--bg/#fff`、`--fg`、`--accent/#1677ff`、`--shadow-card` 等），阅读态暖深色在 `.od-reading` 作用域（`--ink/--scrim/--scrim-alpha(下限 .52)/--accent-read/--glow-a/-b/--scene-*`）；② 管理态组件层（`.app-header/.work-card/.wall/.chip/.btn/.card/.field/三态`）；③ 阅读态组件层（`.od-bg/.od-grain/.od-vignette/.scrim/.od-stage/.od-rail/.reader/.dock/.choice/.od-drawer` + 星图树阅读配色）。字体：`layout.tsx` 经 `next/font` 注入 Inter(`--font-sans-inter`) + Noto Serif SC(`--font-serif-noto`)，`globals.css` 的 `--font-sans/--font-serif` 引用它们并接系统回退栈。**两边变量名必须错开**——同名时 `:root` 与 next/font 注入的 class 权重相同(0,1,0)，后加载的 `globals.css` 会覆盖掉真实字体名，webfont 白下载不生效（已踩过一次）。
 
-**数据**：主题 id 存于 `world_config.theme`（字符串，缺省 `"star"`）。与 `recommended_models` 同法透传——后端 `worldConfigShape` 固定 struct 反序列化忽略未知键，`ValidateWorldConfig` 不受影响。
+- **管理态**（默认）：发现书库、我的创作、社区、登录表单、个人主页、admin、创作编辑器。统一 `components/AppHeader.tsx`（sticky 毛玻璃 + 分支节点 glyph + 导航 + 搜索 + 创作 + 账户下拉 `AuthWidget`）。外壳恒中性，彩色只来自作品自身。
+- **阅读态**：作品详情、游玩、登录左氛围栏。整页暖深 + 分层 CSS 场景背景 + 半透明遮罩；正文衬线**无首字下沉**（按既定偏好，偏离原型这一处）。游玩页遮罩浓度滑块（`--scrim-alpha`，夹在 52–92）与昼/夜（`data-mode`）**两者同构**：都存 localStorage、都由 `useReadingTheme` 在挂载时套用、卸载时清除（inline 的 `--scrim-alpha` 必须 `removeProperty`，否则漏到外壳页并与控件 state 失同步）。
 
-**令牌**：`globals.css` `:root` = 默认主题 star；`[data-theme="ink"]`/`[data-theme="horror"]` 各覆盖约 8–12 个语义变量（`--bg/--surface/--surface-2/--ink/--muted/--line/--glow/--glow-soft/--star/--star-soft` + 星云 `--nebula-a/--nebula-b`，ink 另换 `--font-body`）。星云原为 body 背景里的硬编码 rgba，已抽成变量方能换肤。
+**作品级主题（8 套）**：主题 id 存 `world_config.theme`（缺省 `star`），**零后端改动**透传（后端固定 struct 反序列化忽略未知键）。`lib/types.ts` `THEMES` = star/ink/horror/sci/love/xian/heal/radio，每套 `swatch=[强调色,渐变起,渐变止]`（`themeAccent/themeGradient/themeLabel` 取用）。**仅阅读态换肤**：`lib/useReadingTheme.ts` hook 把 `od-reading` class + `data-work-theme` + `data-mode` + `--scrim-alpha` 挂到 `<html>`（CSS 变量只父→子继承，故挂 html 非 .wrap），卸载全部清除回管理态白底。`globals.css` 的 `.od-reading[data-work-theme="…"]` 各覆盖 `--glow-a/-b/--accent-read/--scene-*`（star 默认无需块）。消费者：详情页 `app/story/[storyId]/page.tsx`（读 `parseWorld().theme`）、游玩页 `app/play/[sessionId]/page.tsx`（读 `playStore.theme`，`load()` 复用已拉 `/stories/:id`，零额外请求）。管理态页不挂 → 恒白底中性。
 
-**适用点（关键）**：`data-theme` **必须挂在 `<html>`**（`lib/useDocumentTheme.ts` hook：挂载设 `document.documentElement.dataset.theme`、卸载清除）——CSS 自定义属性只父→子继承，body 是页面容器祖先，挂在 `.wrap` 上则 body 星云不换肤。仅体验页调用：详情页 `app/story/[storyId]/page.tsx`（读 `parseWorld().theme`）、游玩页 `app/play/[sessionId]/page.tsx`（读 `playStore.theme`，由 `load()` 复用已拉的 `/stories/:id` 响应解析，零额外请求）。外壳页（首页/`/me`/编辑器/`/admin`）不挂即维持 star。
+**入口/展示**：编辑器 `StoryEditor.tsx` 世界观区色块选择器（读 `THEMES`）；`editorStore.ts` `theme` round-trip。发现页封面卡 `StoryCard.tsx` 用作品主题**渐变**作封面底（管理态外壳仍白），kicker/点缀用强调色。星图树/抽屉在阅读态自动取暖金配色。
 
-**入口/展示**：编辑器 `components/editor/StoryEditor.tsx` ② 世界观区块有色块选择器（读 `lib/types.ts` `THEMES`）；`store/editorStore.ts` `theme` 字段 round-trip（`worldObject` 写、`loadStory` 回填）。首页卡片 `components/StoryCard.tsx` 按作品 theme **微染**（本地覆盖 `--glow/--glow-soft` + 右上角强调色点），不整卡换肤。剧情树/抽屉已用 `--glow/--star`，换肤后自动变色。
+**边界（不做）**：玩家全局覆盖皮肤推迟；自主背景图上传预留 `--reader-bg` 替换点未接。
 
-**边界（v1 不做）**：玩家全局覆盖皮肤（不管作者选什么一律用我的）推迟 v2，避免过早引入「作者意图 vs 玩家偏好」优先级问题；预设暂 star/ink/horror 3 套，跑通后再扩 romance/cyber/paper。
+### 13.4 首页排版：题材与主题分家（2026-08-10）
+
+首页三处观感问题同源——**种子作品既没配 `theme` 也没有题材字段**：
+
+1. 6 张封面同色、kicker 全写「末世 · 星海」——所有作品回落默认 `star`，而 `StoryCard` 拿 `themeLabel(theme)` 当 kicker 用，等于把配色皮肤名当题材展示（《孤岛探案》会被标成「恐怖 · 怪谈」）。
+2. 题材筛选栏整条消失——`buildCats` 的「少于两类不给 chip」规则遇上「全都是 star」，于是 hero 下面空出一截。
+3. 6 张卡铺 `column-count: 4` 的瀑布 → 多列是竖向填充，变成 2/2/1/1 左重右轻。
+
+**修法**：
+- `seed.go` 六部作品各补 `theme`（horror/xian/radio/ink/sci/heal，只决定配色）与 `tags`（真题材，`tags[0]` 为主题材）。
+- **`theme` 与题材彻底分家**：`StoryCard` 的 kicker 改用 `tags[0]`，无 tags 则不渲染；卡片补出原型的标签行（`.work-tags` 此前是死样式）。首页 chip 改从 `tags[0]` 聚合、按作品数排序。
+- **作品墙从错落瀑布改为等大网格**（用户决定）。`.wall` 由 `column-count` 换成 `grid` + `repeat(auto-fill, minmax(260px, 1fr))`：列数随容器自适应、无需 JS 传，**阅读顺序恢复为行优先**，`column-count` 那个「第 1 列从上到下再第 2 列」的老问题一并消失。
+- 卡片等大的落地方式：封面 `min-height: 210px` + 列向 flex，标题钳 2 行、摘要钳 3 行（`-webkit-line-clamp`），CTA 用 `margin-top: auto` 顶到封面底部——这样标题长短不一时各卡的 CTA 仍在同一水平线。`StoryCard` 的 lg/md/sm 尺寸错落与对应 CSS 一并删除，骨架卡同步改为等高（否则加载态与落地布局会跳动）。
+
+### 13.5 通用组件收敛（2026-08-10）
+
+原则：**新组件必须在同一阶段就有真实消费者**，只建不接等于新造死代码。`Switch` 因此推迟到偏好设置真正落地时再建。
+
+- **`components/Dialog.tsx`**（全站此前零实现，三个原型屏都依赖）：portal 到 `body`（留在原组件树会被祖先的 transform/overflow 裁掉——`.scrim`、`.od-drawer` 都带 transform）、`role="dialog" aria-modal`、Esc 关闭、**焦点陷阱 + 焦点归还**、背景滚动锁定。样式 `.ov/.dlg/.dlg-close/.ic/.sub/.row` 照原型 `settings.html:95-103`。
+  - **第一个消费者：`LLMSettings` 的「添加/编辑连接」**——原型本就是模态，此前用内联表单顶替，展开会把下方内容整块推走。顺带修了一个搬家才暴露的问题：错误提示原在 section 里，弹窗打开时会被遮罩挡住，用户只看到「保存」毫无反应；现按弹窗开合分流显示。
+  - **保持行内二次确认不变**：删除作品/连接仍是「点两下」，原型 `settings.html:235` 亦如此，轻量动作不该弹窗。
+- **`components/Toast.tsx`**：`admin` / `me` / `StoryLLMConfigPanel` / `StoryEditor` 四处各写一份 `setState + setTimeout`，时长还不一致（2400/2400/2200），且都没在卸载时清 timer。收敛为 `useToast()`（统一时长、连续提示重新计时、卸载清 timer）+ `<Toast>`（供文案存在外部 store 的 `StoryEditor` 复用）。补上原型有而实现漏掉的 `role="status" aria-live="polite"`。`.ed-toast` 别名一并废弃。
+- **清死样式**：`.h-page`、`.h-sec`（还带负字距，是 §4 最后一处残留违规）、`.text-muted`、`.card.pad-legacy`、`.card.story-mine`、`.llm-conn-form` 删除。**保留** `.chapter`/`.reader h1`（阅读态章节标题待接）、`.od-tags`/`.od-tag`（详情页标签行待接）——这些有明确的后续消费者，删了要重写。
+- **修阶段 1 的一处回归**：`CharacterList` 新增的表头 `.ed-char-head` 当时没写 CSS，列宽与数据行对不齐；补齐并在窄屏与 `.ed-attr-head` 一同收起。
+
+### 13.6 补齐原型区块（2026-08-10，阶段 3）
+
+- **题材可编辑**（3.1）：编辑器 ② 世界观段补「题材多选 + 基调」写入 `world_config.tags`（`lib/types.ts` 的 `GENRES`/`TONES` 是**建议表不是白名单**——AI 生成或手填的其它标签原样保留在 tags 里，UI 不抹）。排序约定：题材在前、自定义居中、基调置尾，因此 `tags[0]` 恒为主题材。详情页补出标签行（`.od-tags` 此前是死样式），kicker 与首页统一改用 `tags[0]`。
+- **`/mine` → 我的空间**（3.2）：资料头（作品数取 `/auth/profile`，被游玩/获赞由 `/stories/mine` 求和，无新接口）+ 「我的创作 / 我在读」双页签；作品卡补主题渐变封面 + 状态徽标 + 游玩/赞；存档卡改为原型的行式布局（渐变缩略 + 进度）。**「我在读」从首页迁来**——书库首屏不该被个人存档挤占；`AppHeader` 导航按 DESIGN §9.3 补成「发现 / 我在读 / 我的空间 / 社区」，`/mine#reading` 直达第二页签。
+- **`/me` → 设置**（3.3）：左侧分区导航（个人资料 / 账号与安全 / AI 连接 / 偏好），窄屏转横向滚动条。账号与安全本期只做退出登录（改密需后端接口）。偏好三项全 localStorage：减少动效（写 `<html data-motion="off">`，正是 §5 要求的「>5s 循环动效可关」那个开关）、默认遮罩浓度（复用 `getScrimAlpha/setScrimAlpha`）、昼夜指路。新增 `components/Switch.tsx`（用真 checkbox 承载状态与键盘行为）与 `components/PrefsBoot.tsx`（挂 root layout，**每次加载**都把偏好套回 `<html>`，而不只是点开关那一刻）。
+- **发布检查清单**（3.4）：`components/editor/PublishCheck.tsx` 镜像 `pkg/worldvalidate.go` 的 strict 规则 + 标题校验，逐条列出缺什么、去哪补，未全通过则发布按钮 disabled。此前只能点了发布等后端报错，且一次只报一条。
+  > ⚠️ **两边规则必须同步**：改 `worldvalidate.go` 的 strict 分支时要同步改 `PublishCheck.tsx`（文件头已标注）。
+- **阅读态两屏**（3.5）：游玩页补氛围切换按钮（`[data-scene]` 的 CSS 早就写好，一直没有触发入口；氛围是「当下的」不持久化，退出阅读态即清）+ 章节标签（`StoryPane` 的 `chapter` prop 从来没人传过；后端无章节概念，用当前节点 depth 表达「第几节」，比编一个章节名诚实）。详情页补「继续上次」（`/play/sessions` 已返回带 `story_id` 的列表，前端过滤即可）。
+
+### 13.3 铁律与 token 合规（2026-08-10，对齐 `docs/design`）
+
+按 `DESIGN.md` 逐条核查后的一轮机械修正。**改法的事实源都在 `docs/design/tokens.css`，新增变量已回写事实源**，两边不再各写一份。
+
+- **token 回填**：`globals.css` 组件层的硬编码色从 61 处降到 4 处（剩下 4 处是永远深色的封面高光/文字投影，装饰性，已注释说明）。新增并回写事实源的变量：`--fg-strong`/`--border-strong`/`--danger-bg`/`--r-read`/`--border-w`/6 档字阶 `--t-*`、阅读态的 `--panel-fill(-2)`/`--on-accent-read`/`--read-*` 语义色/`--shadow-read`/`--scene-*`。圆角 45 处、动效时长 22 处收敛到 token；抽屉那条 M2 缓动换成全站 `--ease`。
+- **`.login-aside` 挂 `od-reading`**：这一块原本整份复制了阅读态深色字面量。挂上 class 后直接吃阅读态 token，10 处字面量归零，昼夜切换也跟着走。
+- **§3 颜色**：`.avatar` 的蓝紫双色渐变、hero 标题的四色渐变（含 9s 无限 `flow`）全部换成中性/单色强调，Tailwind indigo 从 sci 主题清除（`globals.css` 与 `lib/types.ts` 两份副本同步）。`.eyebrow::before` 默认改中性，只有每屏第一条挂 `.lead` 才用 accent —— 编辑器一页 4 条 eyebrow 正是 accent 超标的主因。主题色块选中环也改中性（色块自己已在展示作品色）。
+- **§6 无障碍**：`/me`·`/mine`·`/admin`·`/story` 补 `<main>`；首页补 sr-only h2 消除 h1→h3 跳级；`/play` 的作品名从 `<span>` 升为 `<h1>`，其下 h4/h3 统一降 h2（CSS 选择器同步）；编辑器 13 处无名控件补齐可访问名（`StoryEditor` 复用现成的 `Input`/`Textarea` 封装，`AttrTable`/`CharacterList` 用「表头 aria-hidden + 每格带行号的 aria-label」，密集表格不逐格挂可见 label）；`StoryTree` 节点补 `role=button`+`tabIndex`+Enter/Space+可见焦点，并垫 `r=12` 透明命中圈（回溯是改写进度的破坏性动作，键盘不可达不能接受）；抽屉 close 补到 36×36，遮罩退化为 `aria-hidden` 装饰。
+- **§7 图标与按钮**：新建 `components/icons.tsx`（单线 + currentColor）与 `components/BrandGlyph.tsx`，把 `✦ × → ← +` 等 13 处字符图标换成 SVG；BrandGlyph 原在 AppHeader 与 login 各存一份且颜色写死，合并为一处、颜色交给容器。**按钮两套体系收敛**：`.primary-btn`/`.ghost-btn`/`.ed-del`/`.btn-create`/`.od-mini` 共 24 处迁到 `.btn.primary/.accent/.secondary/.ghost/.danger`，旧规则删除或收成薄别名（`.ed-del` 只剩「推到行尾」的位置语义）。每屏一个主按钮：编辑器的「AI 生成世界观」降 `.btn accent`、`/me` 的「保存连接」、`/admin` 的分段「保存」、详情页的「保存本作品配置」全部降次级。
+
+**复查口径**（改完实测）：组件层硬编码色 4（全为装饰）、每屏可见 accent ≤2、无可访问名的输入 0、各路由 header/nav/main 各 1。
+
+### 13.2 种子作品重复：guest 删号后的自愈（2026-08-10）
+
+**症状**：首页每部种子作品显示两份，内容一模一样。
+
+**根因**：`seed()` 按 `username='guest'` 找预置用户，`ensureStory` 按 `(creator_id, title)` 幂等。guest 用户一旦被删，下次启动会重建一个**新 UUID** 的 guest，旧的 6 部作品仍以 `published` 留在库里但认不出来，于是整套再建一遍。旧那批的 `creator_id` 已成孤儿（users 里查无此人），新加的 `creator_name` 恰好让它显形——旧的作者名为空，新的是「游客」。
+
+**修法**：`seed.go` 新增 `healSeedDuplicates`，在 ensureStory 之前跑：
+- 只处理**种子标题**且**无主或属于当前 guest**的行，真实用户的同名作品绝不碰；
+- 同标题多行时保留 `created_at` 最早的一份（它挂着玩家会话，删掉会级联清空进度），其余删除；
+- 保留的那份若挂在旧 creator_id 上，认领给当前 guest —— 之后 `(creator_id, title)` 判定重新对齐，不再产生副本。
+
+自愈是幂等的：guest 若再被删，下次启动会重新收敛，不需要手工清库。
+
+**顺带**：`StoryService.SetStatus` 发布前新增空标题拦截。库里那两张空标题的已发布作品就是从这个缺口进去的，在首页渲染成无字白卡（`ValidateWorldConfig` 只管 world_config，管不到标题）。
+
+存量已按「作者是否还在」分别处置（一次性订正，跑完即删脚本，不留死代码）：
+- 作者仍在 users 表 → **降为草稿**，作品与其游玩会话全部保留，作者补上标题即可重新发布；
+- 作者已删号（孤儿）→ **删除**，级联清掉会话/节点。
+
+若日后又发现空标题的已发布作品，说明拦截被绕过（例如直接改库），按同一规则处理即可：
+`SELECT id, creator_id FROM stories WHERE status='published' AND btrim(title)=''`，
+再逐条判断 `creator_id` 是否存在于 users。
+
+### 13.1 双态落地后的一轮修正（真实数据 vs 原型假数据）
+
+原型里的占位一度跟着搬进了产品页，这轮清掉，并把「靠猜」的地方换成有事实源的：
+
+- **作者署名**：卡片/详情页原本一律写死「佚名作者」。改为后端 `stories` 查询 `LEFT JOIN users` 投影 `creator_name`（`model.Story.CreatorName`，`gorm:"->;-:migration"` 只读、不建列），前端 `creator_name` 为空则**整块不渲染**——统一挂个假作者名比不署名更伤。注意 join 后 `users` 也有 `status`/`created_at`，`listWhere` 里所有列名必须带 `stories.` 前缀。
+- **详情页「分支 ∞」**已删：它坐在真实 play/like 数字旁边会被读成统计值，而后端没有分支数。
+- **题材 chip**：原本把 8 个作品主题铺满当分类，实际在架作品几乎全是 `star`，7 个 chip 点进去全空。改为从**实际在架作品**派生（`buildCats`，带计数，少于两类则整条不出），并在作品重载后把已失效的选中项回落「全部」。真正的 genre 待后端补字段。
+- **hidden 属性不再出现在详情页**：它的契约是「仅供 AI 参考、玩家端永不展示」，连存在都不该让玩家知道；`reveal` 门控相反，明说「会在剧情里显现」是钩子，只是不泄露初值。
+- **属性进度条**改由 `attributes[k].max` 决定（见 CLAUDE.md「Display bound」）：声明了上限才画条，否则只显示数字。编辑器属性表多一列「上限」，`pkg.ValidateWorldConfig` 规则 8 卡「正数 + 仅 number」。
+- **窄屏（≤1080px）不再隐藏属性轨**：属性是「选哪一项」的依据。左轨改成正文上方一条可横滑的状态带，右轨（回合/已探索 + 星图入口）收起，星图入口顶栏已有。
+- **注册不再由前端派生 username**：`email.split("@")[0]` 会让 `a@x` 与 `a@y` 撞车，且报错对不上用户填过的任何一栏。前端传空串，`service.generateUsername` 从邮箱本地部分清洗后加数字后缀直到可用；邮箱唯一性改为**先查**，冲突文案改中文。
+- **生成中保留选项列表**（禁用 + 选中项高亮 + genbar 垫底），不再整片换成一条进度条——原来玩家看不到自己刚点了什么，`.choice.committed` 样式也永远没机会出现。
+- `/create`·`/edit` 补上 `AppHeader`（DESIGN §2：编辑器属管理态），未登录改跳 `/login?next=/create` 而非甩回首页。

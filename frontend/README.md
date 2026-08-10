@@ -2,7 +2,12 @@
 
 AI 互动剧情的**游玩前端**：作品选择 → 作品详情/过渡页 → 游玩体验（选项/自由行动/回溯）、历史会话读档续玩+删档。
 
-技术栈：Next.js 14（App Router）+ React 18 + TypeScript + Zustand。样式为单份全局 CSS（`app/globals.css`），采用**「星图」主题**——深空藏蓝底 + 星光双主色（冷蓝 `--glow` 表结构/连线，暖金 `--star` 表"你所在/主线"）；显示字体 Space Grotesk（`next/font`），正文用衬线（Songti/Noto Serif）。签名件是发光的剧情星图树。
+技术栈：Next.js 14（App Router）+ React 18 + TypeScript + Zustand。样式为单份全局 CSS（`app/globals.css`），落地 `docs/design` 的**双态设计体系**：
+
+- **管理态**（默认 `:root`，白底 + Inter 无衬线 + 结构化）：发现/书库、我的创作、社区、个人主页/设置、创作编辑器、登录表单、admin。全局导航头 `AppHeader`（sticky 毛玻璃 + 分支节点品牌）。
+- **阅读态**（`.od-reading`，暖深色 + Noto Serif SC 衬线 + 半透明阅读遮罩）：作品详情、游玩、登录左氛围栏。分层 CSS 场景背景 + 遮罩浓度/昼夜可调（存 localStorage）。
+
+字体：Inter（`--font-sans`）+ Noto Serif SC（`--font-serif`），均经 `next/font`。**作品主题皮肤**（8 套：star/ink/horror/sci/love/xian/heal/radio，见 `lib/types.ts` 的 `THEMES`）仅在阅读态整页换肤（`lib/useReadingTheme.ts` 把 `od-reading` + `data-work-theme` 挂到 `<html>`，离开清除）；管理态外壳永远中性，彩色只来自作品自身（封面渐变 / 阅读场景）。签名件是发光的剧情星图树（阅读态星图抽屉内）。
 
 > 登录/注册为**可选**：未登录沿用后端匿名 guest 用户，登录后迁移本浏览器 guest 会话到账号（见 `AuthWidget`/`store/authStore`）。
 
@@ -29,27 +34,36 @@ Windows 下也可用仓库根的 `.\scripts\dev.ps1`（默认一并拉起 AI/后
 
 | 路由 | 说明 |
 |------|------|
-| `/` | 首页：星图 hero + `GET /stories/` 作品列表 + `GET /play/sessions` 我的历史会话（读档）。点作品 → 跳**作品详情页** `/story/:id`；点会话 → 直接续玩；会话卡右上角 → 二次确认后 `DELETE /play/sessions/:id` 删档（乐观移除）。 |
-| `/story/[storyId]` | 作品详情/过渡页：`GET /stories/:id` 展示标题/简介 + 从 `world_config` 提炼的背景/风格/登场人物；「开始新游戏」→ `POST /play/sessions` 建**空会话**并跳转游玩（开局正文在游玩页流式生成）。 |
-| `/play/[sessionId]` | 游玩页（新开局与续玩共用）：挂载 `GET /play/sessions/:id`。顶栏显示**剧本名**（`playStore.storyTitle`）。布局为**左侧状态台（`AttrBar`）+ 中间正文/选项**两列；星图树移入**右侧抽屉**（顶栏「✦ 星图」切换，仅 >1 节点可用，遮罩/Esc/回溯后关闭）。若 `current_node=null`（空会话）→ 触发 `startOpening()` 流式生成开局（`…/opening/stream`）；选项/自由行动 → 流式 `…/choice/stream`；点星图历史节点 → `POST …/backtrack`。正文流式逐字显示（`streamingText`+光标）。 |
+| `/`（发现） | **管理态**：`AppHeader` 导航 + hero + 题材 chip（**前端过滤**，按作品主题）+ 顶栏搜索（前端过滤已加载列表）+ 书库**错落瀑布**（`StoryCard` 封面卡，封面用作品主题渐变）+ 「继续你的旅程」历史会话（`SessionCard`）。备加载(骨架)/空/错误三态（`components/State.tsx`）。 |
+| `/login` | 登录/注册页：左**阅读态**暗色氛围栏 + 右**管理态**表单（tab 切换、密码显隐、`role=alert` 校验、「先以匿名身份进入」）。接 `authStore.login/register`（注册后自动登录 + guest 会话迁移）。 |
+| `/community` | 社区占位（后端 stub）：管理态外壳 + 空态 + 去发现出路。 |
+| `/mine`·`/me`·`/admin`·`/create`·`/edit/[id]` | 管理态：均挂 `AppHeader`。我的创作、个人主页 + BYOK 连接、平台 AI 设置、创作编辑器（AI 优先流程 + 结构化属性表 + 8 主题 swatch）。 |
+| `/story/[storyId]` | **阅读态**作品详情/过场：`useReadingTheme(theme)` 整页换肤 + 背景三层 + 居中 `scrim` 面板（kicker/衬线标题/世界观/登场人物/**属性预览**（hidden/reveal 门控作锁定占位）/生成设置折叠 `StoryLLMConfigPanel`）；「开始新游戏」→ `POST /play/sessions` 建**空会话**跳游玩。 |
+| `/play/[sessionId]` | **阅读态**游玩页：`GET /play/sessions/:id`。三栏对称舞台（左 `AttrBar` 状态轨 + 中 `scrim` 正文 + 右旅程轨）+ 悬浮控制条（遮罩浓度滑块→`--scrim-alpha`、昼/夜→`data-mode` 存 localStorage、星图按钮）+ 底部选项坞（编号选项 + **1/2/3 键盘快捷键** + 自由输入）+ 右滑星图抽屉（`StoryTree` 回溯）。正文衬线逐字流式（`streamingText`+光标，**无首字下沉**）；生命周期指示 gen/done/error。`current_node=null` → `startOpening()` 流式开局；选项/自由行动 → `…/choice/stream`；点星图节点 → `…/backtrack`。 |
 
 ## 目录结构
 
 ```
 frontend/
 ├── app/
-│   ├── layout.tsx                 # 全局壳
-│   ├── globals.css                # 主题变量 + 全部样式
-│   ├── page.tsx                   # 首页（作品 + 读档）
-│   ├── story/[storyId]/page.tsx   # 作品详情/过渡页
-│   └── play/[sessionId]/page.tsx  # 游玩页（状态台 + 正文 + 星图抽屉）
+│   ├── layout.tsx                 # 全局壳（Inter + Noto Serif SC 字体注入）
+│   ├── globals.css                # 双态 token + 管理态组件层 + 阅读态组件层
+│   ├── page.tsx                   # 发现/书库（管理态瀑布）
+│   ├── login/page.tsx             # 登录/注册（双栏）
+│   ├── community/page.tsx         # 社区占位
+│   ├── mine|me|admin|create|edit  # 管理态页（均挂 AppHeader）
+│   ├── story/[storyId]/page.tsx   # 作品详情/过场（阅读态）
+│   └── play/[sessionId]/page.tsx  # 游玩页（阅读态三栏 + 星图抽屉）
 ├── lib/
 │   ├── api.ts                     # fetch 封装（解 {success,data,error} 信封）
-│   ├── types.ts                   # 与后端 DTO 对齐的类型
+│   ├── types.ts                   # 后端 DTO 类型 + THEMES(8) + themeAccent/Gradient/Label
 │   ├── state.ts                   # JSON 字符串字段解析 + 当前路径 buildPath 重建
-│   └── tree.ts                    # 剧情线树布局（buildChildrenMap / layoutTree）
-├── store/playStore.ts             # Zustand 游玩状态机（load/choose/backtrack，常驻 allNodes）
-└── components/                    # StoryCard / SessionCard / AttrBar / StoryPane / OptionList / StoryTree
+│   ├── tree.ts                    # 剧情线树布局（buildChildrenMap / layoutTree）
+│   └── useReadingTheme.ts         # 阅读态挂载 hook（od-reading + 昼夜/作品主题）
+├── store/                         # playStore / editorStore / authStore
+└── components/                    # AppHeader / State(三态) / StoryCard / SessionCard
+                                   # AttrBar / StoryPane / OptionList / StoryTree
+                                   # AuthWidget / LLMSettings / StoryLLMConfigPanel / editor/*
 ```
 
 ## 与后端契约的要点

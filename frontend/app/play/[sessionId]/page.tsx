@@ -3,11 +3,29 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { usePlayStore } from "@/store/playStore";
-import { useDocumentTheme } from "@/lib/useDocumentTheme";
+import {
+  useReadingTheme,
+  getReadingMode,
+  setReadingMode,
+  getScrimAlpha,
+  setScrimAlpha,
+  SCRIM_MIN,
+  SCRIM_MAX,
+  SCRIM_DEFAULT,
+  SCENES,
+  setReadingScene,
+} from "@/lib/useReadingTheme";
 import AttrBar from "@/components/AttrBar";
 import StoryPane from "@/components/StoryPane";
 import OptionList from "@/components/OptionList";
 import StoryTree from "@/components/StoryTree";
+import { IconClose } from "@/components/icons";
+
+const MapIcon = (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+    <circle cx="5" cy="6" r="2" /><circle cx="19" cy="9" r="2" /><circle cx="9" cy="18" r="2" /><path d="M6.7 7 17 8.4M8 16l9-6" />
+  </svg>
+);
 
 export default function PlayPage() {
   const router = useRouter();
@@ -15,52 +33,56 @@ export default function PlayPage() {
   const sessionId = params.sessionId;
 
   const {
-    session,
-    currentNode,
-    allNodes,
-    storyTitle,
-    theme,
-    hiddenAttrs,
-    revealGated,
-    busy,
-    streamingText,
-    loading,
-    error,
-    load,
-    choose,
-    backtrack,
-    reset,
+    session, currentNode, allNodes, storyTitle, theme,
+    hiddenAttrs, revealGated, attrMax, busy, streamingText, loading, error,
+    load, choose, backtrack, reset,
   } = usePlayStore();
 
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [mode, setMode] = useState<"day" | "night">("night");
+  const [scrim, setScrim] = useState(SCRIM_DEFAULT);
+  const [scene, setScene] = useState(""); // 氛围场景（不持久化，见 useReadingTheme.SCENES）
 
-  useDocumentTheme(theme); // 作品主题：整页换肤，离开恢复星图
+  useReadingTheme(theme); // 作品主题：整页阅读态换肤（含挂载时套用已存的昼夜/遮罩偏好）
+
+  // 控件态从持久化偏好初始化——hook 已把值套到 <html>，这里只是让滑块/分段与之对齐。
+  useEffect(() => {
+    setMode(getReadingMode());
+    setScrim(getScrimAlpha());
+  }, []);
 
   useEffect(() => {
     if (sessionId) load(sessionId);
     return () => reset();
   }, [sessionId, load, reset]);
 
-  // 星图树至少要有一个分叉（>1 节点）才有内容；早期禁用「星图」入口，避免空抽屉。
   const treeReady = allNodes.length > 1;
 
-  // Esc 关闭抽屉。
   useEffect(() => {
     if (!drawerOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setDrawerOpen(false);
-    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setDrawerOpen(false);
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [drawerOpen]);
 
-  // 回溯后收起抽屉，回到正文看结果。
   const handleBacktrack = (nodeId: string) => {
     backtrack(nodeId);
     setDrawerOpen(false);
   };
 
-  // 本会话已揭示的门控属性键（后端以 JSON 字符串数组返回）。
+  const changeScrim = (v: number) => setScrim(setScrimAlpha(v));
+  // 在三档氛围间循环。CSS 的 [data-scene] 早就写好了，此前一直没有触发入口。
+  const cycleScene = () => {
+    const i = SCENES.findIndex((x) => x.id === scene);
+    const next = SCENES[(i + 1) % SCENES.length];
+    setScene(next.id);
+    setReadingScene(next.id);
+  };
+  const toggleMode = (m: "day" | "night") => {
+    setMode(m);
+    setReadingMode(m);
+  };
+
   let revealedAttrs: string[] = [];
   try {
     revealedAttrs = JSON.parse(session?.revealed_attrs || "[]");
@@ -68,87 +90,138 @@ export default function PlayPage() {
     revealedAttrs = [];
   }
 
+  // 章节标签：后端没有章节概念，用当前节点在这条线上的深度当「第几节」——
+  // 比凭空编一个章节名诚实，也让玩家对「走了多远」有感。根节点为序章。
+  const chapterLabel = currentNode
+    ? currentNode.depth === 0
+      ? "序章"
+      : `第 ${currentNode.depth} 节`
+    : undefined;
+
+  // 生命周期指示：载入期不能报「已交付」——那时正文还没到，绿灯会骗人。
+  const lifecycle = error
+    ? ""
+    : loading
+    ? "载入会话中…"
+    : busy
+    ? streamingText
+      ? "逐字生成中…"
+      : "正在生成…"
+    : "已交付";
+  const lifeCls = error ? "degrade" : loading || busy ? "gen" : "done";
+
   return (
-    <div className="wrap play-wrap">
-      <div className="topbar">
-        <h1>{storyTitle || "载入中…"}</h1>
-        <div className="topbar-actions">
+    <>
+      <div className="od-bg" />
+      <div className="od-grain" />
+      <div className="od-vignette" />
+
+      {/* 顶部悬浮控制条 */}
+      <div className="od-top">
+        <button className="od-back" onClick={() => router.push("/")}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+          书库
+        </button>
+        {/* 作品名就是这一屏的主标题：用 h1 而不是 span，样式不变 */}
+        <h1 className="od-title">{storyTitle || "载入中…"}</h1>
+        <div className="od-controls">
+          <div className="od-ctl" title="调整正文遮罩浓淡（已设可读性下限）">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3" /><path d="M3 12h18" /></svg>
+            <input type="range" min={SCRIM_MIN} max={SCRIM_MAX} value={scrim} aria-label="遮罩浓度"
+              onChange={(e) => changeScrim(Number(e.target.value))} />
+          </div>
+          <div className="od-seg" role="group" aria-label="昼夜">
+            <button className={mode === "day" ? "on" : ""} onClick={() => toggleMode("day")}>昼</button>
+            <button className={mode === "night" ? "on" : ""} onClick={() => toggleMode("night")}>夜</button>
+          </div>
           <button
-            className="ghost-btn"
-            disabled={!treeReady}
-            aria-expanded={drawerOpen}
-            onClick={() => setDrawerOpen(true)}
+            className="icon-btn"
+            aria-label={`切换氛围（当前：${SCENES.find((x) => x.id === scene)?.label ?? "原色"}）`}
+            onClick={cycleScene}
           >
-            ✦ 星图
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <circle cx="12" cy="12" r="4" /><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4" />
+            </svg>
           </button>
-          <span className="back" onClick={() => router.push("/")}>
-            ← 返回作品
-          </span>
+          <button className="icon-btn" aria-label="剧情星图" disabled={!treeReady} aria-expanded={drawerOpen}
+            onClick={() => setDrawerOpen(true)}>
+            {MapIcon}
+          </button>
         </div>
       </div>
 
-      {loading ? (
-        <div className="story loading pulse">载入会话中…</div>
-      ) : (
-        <div className="play-grid">
-          <AttrBar
-            stateJSON={session?.current_state ?? null}
-            deltaJSON={currentNode?.state_delta ?? null}
-            hiddenAttrs={hiddenAttrs}
-            revealGated={revealGated}
-            revealedAttrs={revealedAttrs}
-            turn={session?.node_count}
-            explored={allNodes.length || undefined}
-          />
-
-          <div className="stage">
-            <StoryPane
-              node={currentNode}
-              busy={busy}
-              streamingText={streamingText}
-              opening={currentNode ? !currentNode.parent_id : true}
+      {/* 三栏舞台 */}
+      <div className="od-stage">
+        <aside className="od-rail left">
+          {!loading && (
+            <AttrBar
+              stateJSON={session?.current_state ?? null}
+              deltaJSON={currentNode?.state_delta ?? null}
+              hiddenAttrs={hiddenAttrs}
+              revealGated={revealGated}
+              revealedAttrs={revealedAttrs}
+              attrMax={attrMax}
             />
-            <OptionList node={currentNode} busy={busy} onChoose={choose} />
-            <div className={`status${error ? " err" : busy ? " pulse" : ""}`}>
-              {error
-                ? `出错：${error} · 可再次选择或输入以重试`
-                : busy
-                ? "AI 正在生成剧情…"
-                : ""}
-            </div>
-          </div>
-        </div>
-      )}
+          )}
+        </aside>
 
-      {/* 星图抽屉：从右侧滑出，展示已探索的剧情轨迹，点节点回溯 */}
+        <main className="reader">
+          <div className="scrim">
+            <div className={`lifecycle ${lifeCls}`}><span className="ld" aria-hidden="true" />{lifecycle}</div>
+            {error && (
+              <div className="notice err">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M12 9v4M12 17h.01M10.3 3.9 2 18a2 2 0 0 0 1.7 3h16.6A2 2 0 0 0 22 18L13.7 3.9a2 2 0 0 0-3.4 0z" /></svg>
+                出错：{error} · 可再次选择或输入以重试
+              </div>
+            )}
+            {loading ? (
+              <p className="prose loading">载入会话中…</p>
+            ) : (
+              <StoryPane
+                node={currentNode}
+                busy={busy}
+                streamingText={streamingText}
+                chapter={chapterLabel}
+              />
+            )}
+          </div>
+        </main>
+
+        <aside className="od-rail right">
+          <div className="panel">
+            <h2>旅程</h2>
+            <div className="od-jrow"><span>回合</span><b>{session?.node_count ?? 0}</b></div>
+            <div className="od-jrow"><span>已探索</span><b>{allNodes.length || 0}</b></div>
+            <button className="btn secondary sm od-mini" disabled={!treeReady} onClick={() => setDrawerOpen(true)}>
+              {MapIcon} 剧情星图
+            </button>
+          </div>
+        </aside>
+      </div>
+
+      {/* 底部选项坞 */}
+      <div className="dock">
+        <div className="dock-inner">
+          {!loading && <OptionList node={currentNode} busy={busy} onChoose={choose} />}
+        </div>
+      </div>
+
+      {/* 星图抽屉 */}
       {treeReady && (
         <>
-          <div
-            className={`drawer-backdrop${drawerOpen ? " open" : ""}`}
-            onClick={() => setDrawerOpen(false)}
-          />
-          <aside className={`drawer${drawerOpen ? " open" : ""}`} aria-hidden={!drawerOpen}>
-            <div className="drawer-head">
-              <span className="eyebrow">✦ 已探索的轨迹</span>
-              <button className="ghost-btn" onClick={() => setDrawerOpen(false)}>
-                收起 ✕
-              </button>
-            </div>
+          {/* 遮罩退化为纯装饰：点击关闭对键盘用户不可达，而关闭动作 Esc 与抽屉内的 .close 都已覆盖。
+              保留鼠标点击体验，但不让它成为唯一入口，也不假装自己是控件。 */}
+          <div className={`od-overlay${drawerOpen ? " on" : ""}`} aria-hidden="true" onClick={() => setDrawerOpen(false)} />
+          <aside className={`od-drawer${drawerOpen ? " open" : ""}`} aria-hidden={!drawerOpen}>
+            <button className="close" aria-label="收起星图" onClick={() => setDrawerOpen(false)}><IconClose size={18} /></button>
+            <h2>剧情星图</h2>
+            <p className="sub">你走过的每一步都留在这里 · 点亮的节点可回溯续玩</p>
             <ul className="tree-legend">
-              <li>
-                <i className="lg cur" />当前
-              </li>
-              <li>
-                <i className="lg on" />主线
-              </li>
-              <li>
-                <i className="lg dim" />已放弃
-              </li>
-              <li>
-                <i className="lg end" />结局
-              </li>
+              <li><i className="lg cur" />当前</li>
+              <li><i className="lg on" />主线</li>
+              <li><i className="lg dim" />已放弃</li>
+              <li><i className="lg end" />结局</li>
             </ul>
-            <p className="drawer-hint">点任一节点，即可回溯到那里、另辟一条命运线。</p>
             <StoryTree
               nodes={allNodes}
               currentNodeId={session?.current_node_id ?? null}
@@ -160,6 +233,6 @@ export default function PlayPage() {
           </aside>
         </>
       )}
-    </div>
+    </>
   );
 }

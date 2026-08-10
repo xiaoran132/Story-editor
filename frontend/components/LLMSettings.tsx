@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { LLM_PROVIDERS, type LLMConnection, type TestResult } from "@/lib/types";
+import { IconPlus } from "@/components/icons";
+import Dialog from "@/components/Dialog";
 
 // BYOK 连接管理（账号级）：增删改多个 LLM 连接（供应商/base_url/key/默认模型）。
 // 各作品用哪个模型在「作品详情页」按作品单独配（此处只管连接本身）。key 只写不回显。
@@ -30,6 +32,7 @@ const providerLabel = (p: string) =>
 
 export default function LLMSettings({ flash }: { flash: (m: string) => void }) {
   const [conns, setConns] = useState<LLMConnection[]>([]);
+  const [loading, setLoading] = useState(true); // 未加载完不能说「还没有连接」——那是假空态
   const [form, setForm] = useState<ConnForm | null>(null);
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -38,7 +41,9 @@ export default function LLMSettings({ flash }: { flash: (m: string) => void }) {
   const load = () => api.get<LLMConnection[]>("/llm/connections").then((c) => setConns(c || []));
 
   useEffect(() => {
-    load().catch((e) => setError((e as Error).message));
+    load()
+      .catch((e) => setError((e as Error).message))
+      .finally(() => setLoading(false));
   }, []);
 
   const pickProvider = (p: string) => {
@@ -121,11 +126,16 @@ export default function LLMSettings({ flash }: { flash: (m: string) => void }) {
         添加你自己的 LLM 连接（任意 OpenAI 兼容端点，key 加密存储、绝不回显）。
         <span className="ed-hint">每部作品「用哪个模型」在作品详情页里单独配；这里只管连接本身。</span>
       </p>
-      {error && <div className="status err">出错：{error}</div>}
+      {/* 弹窗打开时错误改在弹窗内显示——留在这里会被遮罩挡住，用户只会看到「保存」毫无反应 */}
+      {error && form === null && <div className="status err" role="alert">出错：{error}</div>}
 
       {/* 连接列表 */}
       <div className="llm-conn-list">
-        {conns.length === 0 && <div className="ed-hint">还没有连接，添加一个开始。</div>}
+        {loading ? (
+          <div className="ed-hint pulse">载入连接…</div>
+        ) : (
+          conns.length === 0 && !error && <div className="ed-hint">还没有连接，添加一个开始。</div>
+        )}
         {conns.map((c) => (
           <div className="llm-conn-row" key={c.id}>
             <div className="llm-conn-meta">
@@ -135,10 +145,10 @@ export default function LLMSettings({ flash }: { flash: (m: string) => void }) {
               {c.has_key && <span className="ed-hint">{c.key_hint}</span>}
             </div>
             <div className="llm-conn-ops">
-              <button className="ghost-btn" onClick={() => openEdit(c)} disabled={busy}>
+              <button className="btn secondary sm" onClick={() => openEdit(c)} disabled={busy}>
                 编辑
               </button>
-              <button className="ed-del" onClick={() => delConn(c.id)} disabled={busy}>
+              <button className="btn ghost sm ed-del" onClick={() => delConn(c.id)} disabled={busy}>
                 删除
               </button>
             </div>
@@ -146,49 +156,66 @@ export default function LLMSettings({ flash }: { flash: (m: string) => void }) {
         ))}
       </div>
 
-      {form ? (
-        <div className="llm-conn-form">
-          <label className="ed-field">
-            <span className="ed-label">名称</span>
-            <input className="ed-input" value={form.name} placeholder="如 我的 DeepSeek"
-              onChange={(e) => setForm({ ...form, name: e.target.value })} />
-          </label>
-          <label className="ed-field">
-            <span className="ed-label">供应商</span>
-            <select className="ed-input ed-select" value={form.provider} onChange={(e) => pickProvider(e.target.value)}>
-              {LLM_PROVIDERS.map((p) => (
-                <option key={p.key} value={p.key}>{p.label}</option>
-              ))}
-            </select>
-          </label>
-          <label className="ed-field">
-            <span className="ed-label">Base URL</span>
-            <input className="ed-input" value={form.base_url} placeholder="https://api.example.com/v1"
-              onChange={(e) => setForm({ ...form, base_url: e.target.value })} />
-          </label>
-          <label className="ed-field">
-            <span className="ed-label">默认模型</span>
-            <input className="ed-input" value={form.default_model} placeholder="如 deepseek-chat"
-              onChange={(e) => setForm({ ...form, default_model: e.target.value })} />
-          </label>
-          <label className="ed-field">
-            <span className="ed-label">API Key {form.id && <span className="ed-hint">（留空则保留原 key）</span>}</span>
-            <input className="ed-input" type="password" value={form.api_key} placeholder="sk-..." autoComplete="off"
-              onChange={(e) => setForm({ ...form, api_key: e.target.value })} />
-          </label>
-          <div className="me-key-actions">
-            <button className="primary-btn" disabled={busy} onClick={saveConn}>
-              {busy ? "保存中…" : "保存连接"}
-            </button>
-            <button className="ghost-btn" disabled={testing} onClick={testForm}>
+      <button className="btn secondary sm ed-add" onClick={openNew}>
+        <IconPlus /> 添加连接
+      </button>
+
+      {/* 原型（settings.html:186-200）这里是模态对话框；此前用内联表单顶替，
+          展开时会把下方内容整块推走。Dialog 自带焦点陷阱 / Esc / 背景滚动锁定。 */}
+      <Dialog
+        open={form !== null}
+        title={form?.id ? "编辑连接" : "添加连接"}
+        desc="任意 OpenAI 兼容端点。Key 加密存储、绝不回显。"
+        labelledBy="llm-conn-dialog-title"
+        onClose={() => setForm(null)}
+        actions={
+          <>
+            <button className="btn secondary sm" disabled={testing || busy} onClick={testForm}>
               {testing ? "测试中…" : "测试连接"}
             </button>
-            <button className="ed-del" onClick={() => setForm(null)}>取消</button>
-          </div>
-        </div>
-      ) : (
-        <button className="ghost-btn ed-add" onClick={openNew}>+ 添加连接</button>
-      )}
+            <button className="btn ghost sm" disabled={busy} onClick={() => setForm(null)}>
+              取消
+            </button>
+            <button className="btn primary sm" disabled={busy} onClick={saveConn}>
+              {busy ? "保存中…" : "保存"}
+            </button>
+          </>
+        }
+      >
+        {form && (
+          <>
+            {error && <div className="status err" role="alert" style={{ marginBottom: 12 }}>出错：{error}</div>}
+            <label className="ed-field">
+              <span className="ed-label">名称</span>
+              <input className="ed-input" value={form.name} placeholder="如 我的 DeepSeek"
+                onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            </label>
+            <label className="ed-field">
+              <span className="ed-label">供应商</span>
+              <select className="ed-input ed-select" value={form.provider} onChange={(e) => pickProvider(e.target.value)}>
+                {LLM_PROVIDERS.map((p) => (
+                  <option key={p.key} value={p.key}>{p.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="ed-field">
+              <span className="ed-label">Base URL</span>
+              <input className="ed-input" value={form.base_url} placeholder="https://api.example.com/v1"
+                onChange={(e) => setForm({ ...form, base_url: e.target.value })} />
+            </label>
+            <label className="ed-field">
+              <span className="ed-label">默认模型</span>
+              <input className="ed-input" value={form.default_model} placeholder="如 deepseek-chat"
+                onChange={(e) => setForm({ ...form, default_model: e.target.value })} />
+            </label>
+            <label className="ed-field">
+              <span className="ed-label">API Key {form.id && <span className="ed-hint">（留空则保留原 key）</span>}</span>
+              <input className="ed-input" type="password" value={form.api_key} placeholder="sk-..." autoComplete="off"
+                onChange={(e) => setForm({ ...form, api_key: e.target.value })} />
+            </label>
+          </>
+        )}
+      </Dialog>
     </section>
   );
 }

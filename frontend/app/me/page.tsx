@@ -5,9 +5,29 @@ import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/store/authStore";
 import LLMSettings from "@/components/LLMSettings";
+import AppHeader from "@/components/AppHeader";
+import { useToast } from "@/components/Toast";
+import Switch from "@/components/Switch";
+import {
+  SCRIM_MIN,
+  SCRIM_MAX,
+  getReduceMotion,
+  setReduceMotion,
+  getScrimAlpha,
+  setScrimAlpha,
+} from "@/lib/useReadingTheme";
 import type { UserProfile } from "@/lib/types";
 
-// 个人主页：资料展示 + 编辑昵称/简介 + BYOK 设置（多连接 + 环节绑定，见 LLMSettings）。
+// 设置页（对齐原型 settings.html）：左侧分区导航 + 四个分区
+// —— 个人资料 / 账号与安全 / AI 连接(BYOK) / 偏好。
+// 改密码需要后端接口，本期只做退出登录；偏好三项全走 localStorage，零后端。
+const SECTIONS = [
+  { id: "profile", label: "个人资料" },
+  { id: "account", label: "账号与安全" },
+  { id: "llm", label: "AI 连接" },
+  { id: "prefs", label: "偏好" },
+] as const;
+type SectionId = (typeof SECTIONS)[number]["id"];
 export default function MePage() {
   const router = useRouter();
   const initAuth = useAuthStore((s) => s.init);
@@ -19,7 +39,17 @@ export default function MePage() {
   const [loading, setLoading] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const { show: flash, node: toastNode } = useToast();
+  const [section, setSection] = useState<SectionId>("profile");
+  // 偏好：初值必须在 effect 里读，localStorage 在服务端渲染时不存在。
+  const [reduceMotion, setRM] = useState(false);
+  const [scrim, setScrim] = useState(74);
+  const logout = useAuthStore((s) => s.logout);
+
+  useEffect(() => {
+    setRM(getReduceMotion());
+    setScrim(getScrimAlpha());
+  }, []);
 
   useEffect(() => {
     initAuth();
@@ -40,11 +70,6 @@ export default function MePage() {
       .catch((e) => setError((e as Error).message))
       .finally(() => setLoading(false));
   }, [router]);
-
-  const flash = (msg: string) => {
-    setToast(msg);
-    setTimeout(() => setToast(null), 2400);
-  };
 
   const saveProfile = async () => {
     setSavingProfile(true);
@@ -70,64 +95,180 @@ export default function MePage() {
   const isAdmin = useAuthStore((s) => s.user?.role === "admin");
 
   return (
-    <div className="wrap">
+    <>
+    <AppHeader />
+    <main className="wrap">
       <div className="topbar">
-        <span className="back" onClick={() => router.push("/")}>
-          ← 返回首页
-        </span>
+        <h1 className="ed-h1" style={{ margin: 0 }}>设置</h1>
         <div className="topbar-actions">
           {isAdmin && (
-            <button className="ghost-btn" onClick={() => router.push("/admin")}>
+            <button className="btn secondary sm" onClick={() => router.push("/admin")}>
               平台设置
             </button>
           )}
-          <button className="ghost-btn" onClick={() => router.push("/mine")}>
-            我的作品
-          </button>
         </div>
       </div>
 
-      <h1 className="ed-h1">个人主页</h1>
-      {error && <div className="status err">出错：{error}</div>}
+      {error && <div className="status err" role="alert">出错：{error}</div>}
 
       {loading ? (
         <div className="empty pulse">载入中…</div>
       ) : (
-        <>
-          {/* 资料 */}
-          <section className="ed-section">
-            <span className="eyebrow">资料</span>
-            {profile && (
-              <div className="me-meta">
-                <span>用户名 {profile.username}</span>
-                <span>作品 {profile.work_count}</span>
-                <span>注册于 {new Date(profile.created_at).toLocaleDateString("zh-CN")}</span>
-              </div>
-            )}
-            <label className="ed-field">
-              <span className="ed-label">昵称</span>
-              <input className="ed-input" value={nickname} onChange={(e) => setNickname(e.target.value)} />
-            </label>
-            <label className="ed-field">
-              <span className="ed-label">简介</span>
-              <textarea
-                className="ed-textarea"
-                rows={3}
-                value={bio}
-                onChange={(e) => setBio(e.target.value)}
-              />
-            </label>
-            <button className="primary-btn" disabled={savingProfile} onClick={saveProfile}>
-              {savingProfile ? "保存中…" : "保存资料"}
-            </button>
-          </section>
+        <div className="settings-shell">
+          {/* 左侧分区导航（原型 settings.html:120-125）。单列时横向滚动，不塞进折叠里。 */}
+          <nav className="menu" aria-label="设置分区">
+            {SECTIONS.map((sec) => (
+              <button
+                key={sec.id}
+                type="button"
+                aria-current={section === sec.id ? "true" : undefined}
+                onClick={() => setSection(sec.id)}
+              >
+                {sec.label}
+              </button>
+            ))}
+          </nav>
 
-          {/* AI 连接（BYOK）：多连接 + 环节绑定 */}
-          <LLMSettings flash={flash} />
-        </>
+          <div className="settings-body">
+            {section === "profile" && (
+              <section className="ed-section">
+                <span className="eyebrow lead">个人资料</span>
+                {profile && (
+                  <div className="me-meta">
+                    <span>用户名 {profile.username}</span>
+                    <span>作品 {profile.work_count}</span>
+                    <span>注册于 {new Date(profile.created_at).toLocaleDateString("zh-CN")}</span>
+                  </div>
+                )}
+                <label className="ed-field">
+                  <span className="ed-label">昵称</span>
+                  <input className="ed-input" value={nickname} onChange={(e) => setNickname(e.target.value)} />
+                </label>
+                <label className="ed-field">
+                  <span className="ed-label">
+                    简介
+                    <span className="ed-hint">{bio.length}/200</span>
+                  </span>
+                  <textarea
+                    className="ed-textarea"
+                    rows={3}
+                    maxLength={200}
+                    value={bio}
+                    onChange={(e) => setBio(e.target.value)}
+                  />
+                </label>
+                <div className="me-key-actions">
+                  <button className="btn primary" disabled={savingProfile} onClick={saveProfile}>
+                    {savingProfile ? "保存中…" : "保存资料"}
+                  </button>
+                  <button
+                    className="btn ghost sm"
+                    disabled={savingProfile}
+                    onClick={() => {
+                      setNickname(profile?.nickname ?? "");
+                      setBio(profile?.bio ?? "");
+                    }}
+                  >
+                    撤销修改
+                  </button>
+                </div>
+              </section>
+            )}
+
+            {section === "account" && (
+              <section className="ed-section">
+                <span className="eyebrow lead">账号与安全</span>
+                <div className="prefrow">
+                  <div className="t">
+                    邮箱
+                    <small>登录账号，暂不支持修改</small>
+                  </div>
+                  <div className="ctl ed-hint">已绑定</div>
+                </div>
+                <div className="prefrow">
+                  <div className="t">
+                    密码
+                    <small>改密需要后端接口，尚未开放</small>
+                  </div>
+                  <div className="ctl">
+                    <button className="btn secondary sm" disabled>
+                      修改密码
+                    </button>
+                  </div>
+                </div>
+                <div className="prefrow">
+                  <div className="t">
+                    退出登录
+                    <small>退出后本机的匿名进度仍在，登录回来可继续领取</small>
+                  </div>
+                  <div className="ctl">
+                    <button
+                      className="btn danger sm"
+                      onClick={() => {
+                        logout();
+                        router.push("/");
+                      }}
+                    >
+                      退出登录
+                    </button>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {section === "llm" && <LLMSettings flash={flash} />}
+
+            {section === "prefs" && (
+              <section className="ed-section">
+                <span className="eyebrow lead">偏好</span>
+                <div className="prefrow">
+                  <div className="t">
+                    减少动效
+                    <small>关掉封面的缓慢漂移等循环动效；系统若已开启「减弱动态效果」则始终生效</small>
+                  </div>
+                  <div className="ctl">
+                    <Switch
+                      label="减少动效"
+                      checked={reduceMotion}
+                      onChange={(v) => {
+                        setRM(v);
+                        setReduceMotion(v);
+                        flash(v ? "已减少动效" : "已恢复动效");
+                      }}
+                    />
+                  </div>
+                </div>
+                <div className="prefrow">
+                  <div className="t">
+                    默认遮罩浓度
+                    <small>阅读时正文底衬的深浅；已设可读性下限，再淡会看不清字</small>
+                  </div>
+                  <div className="ctl">
+                    <input
+                      type="range"
+                      min={SCRIM_MIN}
+                      max={SCRIM_MAX}
+                      value={scrim}
+                      aria-label="默认遮罩浓度"
+                      onChange={(e) => setScrim(setScrimAlpha(Number(e.target.value)))}
+                    />
+                  </div>
+                </div>
+                <div className="prefrow">
+                  <div className="t">
+                    昼夜与氛围
+                    <small>在游玩页顶栏随时切换，会记住你的选择</small>
+                  </div>
+                  <div className="ctl ed-hint">游玩页内调整</div>
+                </div>
+              </section>
+            )}
+          </div>
+        </div>
       )}
 
-      {toast && <div className="ed-toast">{toast}</div>}
-    </div>
+      {toastNode}
+    </main>
+    </>
   );
 }

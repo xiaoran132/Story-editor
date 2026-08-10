@@ -26,6 +26,9 @@ interface EditorForm {
   recWriteModel: string; // 作者推荐的续写模型（仅标注展示给玩家，不自动套用）
   recReviewModel: string; // 作者推荐的审校模型
   theme: string; // 作品级主题 id（star/ink/horror…），玩家进详情/游玩页整页换肤
+  // 题材标签。约定 tags[0] 是主题材（首页 chip 按它归类），其余作展示。
+  // 与 theme 是两回事：theme 只决定配色，别拿它当题材（见 CLAUDE.md「Genre tags」）。
+  tags: string[];
 }
 
 interface EditorState extends EditorForm {
@@ -76,6 +79,7 @@ const EMPTY_FORM: EditorForm = {
   recWriteModel: "",
   recReviewModel: "",
   theme: "star",
+  tags: [],
 };
 
 // 按类型给属性初值一个合理默认（切换 type 时重置，避免残留错型值）。
@@ -106,6 +110,8 @@ function deriveAttrs(rows: AttrRowData[]) {
     if (!key) continue;
     const initial = coerceInitial(a);
     const spec: Record<string, unknown> = { type: a.type, initial };
+    // max 只对 number 有意义，后端校验也是这么卡的；其余类型即使填了也不落盘。
+    if (a.type === "number" && typeof a.max === "number" && a.max > 0) spec.max = a.max;
     if (a.hidden) spec.hidden = true;
     if (a.reveal) spec.reveal = true;
     attributes[key] = spec;
@@ -130,6 +136,7 @@ function worldObject(f: EditorForm) {
     initial_state,
     attributes,
     theme: f.theme || "star",
+    ...(f.tags.length ? { tags: f.tags } : {}),
     ...(Object.keys(rec).length ? { recommended_models: rec } : {}),
   };
 }
@@ -153,6 +160,7 @@ function attrsToRows(
       key,
       type,
       initial,
+      max: typeof spec?.max === "number" && spec.max > 0 ? spec.max : null,
       hidden: spec?.hidden === true,
       reveal: spec?.reveal === true,
     };
@@ -232,6 +240,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           ((w.recommended_models as Record<string, { model?: string }>)?.review?.model) ?? ""
         ),
         theme: String(w.theme ?? "star") || "star",
+        tags: Array.isArray(w.tags) ? (w.tags as unknown[]).map(String).filter(Boolean) : [],
         loading: false,
       });
     } catch (e) {
@@ -254,7 +263,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set((s) => ({
       attributes: [
         ...s.attributes,
-        { key: "", type: "number", initial: 0, hidden: false, reveal: false },
+        { key: "", type: "number", initial: 0, max: null, hidden: false, reveal: false },
       ],
     })),
   updateAttr: (i, patch) =>

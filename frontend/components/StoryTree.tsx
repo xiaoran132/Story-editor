@@ -89,20 +89,34 @@ export default function StoryTree({
             const clickable = !busy && !p.isCurrent;
             const cls = p.isCurrent ? "cur" : p.onPath ? "on" : "dim";
             const r = p.isCurrent ? 7 : p.onPath ? 5.5 : 4.5;
+            const title = p.node.is_ending
+              ? `结局${p.node.ending_type ? "：" + p.node.ending_type : ""}`
+              : label(p.node);
             return (
+              // 回溯会改写会话进度，是破坏性动作，必须键盘可达（§6：不用 div/g 冒充按钮）。
+              // SVG 的 <g> 不是原生可聚焦元素，靠 role+tabIndex+键盘处理补齐。
               <g
                 key={p.id}
                 className={`tree-node ${cls}${clickable ? " clickable" : ""}`}
+                role={clickable ? "button" : undefined}
+                tabIndex={clickable ? 0 : undefined}
+                aria-label={clickable ? `回溯到：${title}` : undefined}
                 onClick={() => {
                   if (clickable) onBacktrack(p.id);
                 }}
+                onKeyDown={(e) => {
+                  if (!clickable) return;
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onBacktrack(p.id);
+                  }
+                }}
               >
-                <title>
-                  {p.node.is_ending
-                    ? `结局${p.node.ending_type ? "：" + p.node.ending_type : ""}`
-                    : label(p.node)}
-                </title>
+                <title>{title}</title>
                 {p.node.is_ending && <circle className="ring" cx={p.x} cy={p.y} r={r + 4} />}
+                {/* 透明命中圈：视觉半径 4.5–7px 远低于 24px 触控下限。
+                    注意必须是 fill="transparent"，fill="none" 收不到指针事件。 */}
+                {clickable && <circle className="hit" cx={p.x} cy={p.y} r={12} fill="transparent" />}
                 <circle className="dot" cx={p.x} cy={p.y} r={r} />
                 <text className="label" x={p.x} y={p.y + NODE_H / 2} textAnchor="middle">
                   {labelLines(p.node).map((ln, i) => (

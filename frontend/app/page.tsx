@@ -1,150 +1,195 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/store/authStore";
-import type { SessionListItem, Story } from "@/lib/types";
+import type { Story } from "@/lib/types";
+import AppHeader from "@/components/AppHeader";
 import StoryCard from "@/components/StoryCard";
-import SessionCard from "@/components/SessionCard";
-import AuthWidget from "@/components/AuthWidget";
+import { SkeletonWall, EmptyState, ErrorState } from "@/components/State";
+
+// 作品题材存 world_config.tags（与 theme 同法透传，后端固定 struct 忽略未知键）。
+// 约定：tags[0] 是主题材（首页 chip 按它归类），其余作展示标签。
+// 注意别拿 theme 充题材——theme 只决定配色，两者语义不同。
+function storyTags(worldConfig: string): string[] {
+  try {
+    const t = JSON.parse(worldConfig || "{}").tags;
+    return Array.isArray(t) ? t.map(String).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+const primaryTag = (s: Story) => storyTags(s.world_config)[0] ?? "";
+
+// chip 从**实际在架作品**的主题材派生，按作品数从多到少排；没标题材的作品不产生 chip。
+// 只有一类（或没有）时整条筛选没意义，直接不渲染。
+function buildCats(stories: Story[]): { id: string; label: string; count: number }[] {
+  const count = new Map<string, number>();
+  stories.forEach((s) => {
+    const t = primaryTag(s);
+    if (t) count.set(t, (count.get(t) ?? 0) + 1);
+  });
+  const present = [...count.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "zh"))
+    .map(([id, n]) => ({ id, label: id, count: n }));
+  if (present.length < 2) return [];
+  return [{ id: "all", label: "全部", count: stories.length }, ...present];
+}
 
 export default function HomePage() {
-  const router = useRouter();
-  const user = useAuthStore((s) => s.user);
   const initAuth = useAuthStore((s) => s.init);
+
   const [stories, setStories] = useState<Story[]>([]);
-  const [sessions, setSessions] = useState<SessionListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [cat, setCat] = useState("all");
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     initAuth();
   }, [initAuth]);
 
-  // 作品只需拉一次。
-  useEffect(() => {
+  const loadStories = () => {
+    setLoading(true);
+    setError(null);
     api
       .get<Story[]>("/stories/")
       .then((st) => setStories(st ?? []))
       .catch((e) => setError((e as Error).message))
       .finally(() => setLoading(false));
-  }, []);
-
-  // 历史会话随登录态变化重取（登录+迁移后归到账号、退出后回到匿名）。
-  useEffect(() => {
-    api
-      .get<SessionListItem[]>("/play/sessions")
-      .then((se) => setSessions(se ?? []))
-      .catch(() => {});
-  }, [user]);
-
-  // 删除会话：乐观移除，失败则回滚并提示。
-  const deleteSession = async (id: string) => {
-    const prev = sessions;
-    setSessions((list) => list.filter((s) => s.id !== id));
-    try {
-      await api.del(`/play/sessions/${id}`);
-    } catch (e) {
-      setSessions(prev);
-      setError((e as Error).message);
-    }
   };
 
-  return (
-    <div className="wrap">
-      <div className="topbar">
-        <span className="eyebrow">Story Editor</span>
-        <div className="topbar-actions">
-          {user && (
-            <>
-              <button className="ghost-btn" onClick={() => router.push("/mine")}>
-                我的作品
-              </button>
-              <button className="ghost-btn" onClick={() => router.push("/create")}>
-                + 创作
-              </button>
-            </>
-          )}
-          <AuthWidget />
-        </div>
-      </div>
+  useEffect(loadStories, []);
 
-      <header className="hero">
-        <div>
-          <span className="eyebrow">AI 互动剧情共创</span>
-          <h1 className="hero-title">
-            你的每个选择，
-            <br />
-            都是一颗<span className="accent">星</span>
+  const cats = useMemo(() => buildCats(stories), [stories]);
+
+  // 作品重新加载后，原选中的题材可能已不在架 —— 回落「全部」，否则会卡在空列表。
+  useEffect(() => {
+    if (cat !== "all" && !cats.some((c) => c.id === cat)) setCat("all");
+  }, [cats, cat]);
+
+  // 前端过滤：题材（作品主题）+ 搜索（标题/简介/题材名）。
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return stories.filter((s) => {
+      if (cat !== "all" && primaryTag(s) !== cat) return false;
+      if (!q) return true;
+      const hay = `${s.title}${s.description}${storyTags(s.world_config).join("")}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [stories, cat, query]);
+
+  // 入场错落 + reduced-motion 兜底：交给 CSS 的 .reveal，进入视口加 .in。
+  useEffect(() => {
+    if (loading) return;
+    const rm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const cards = Array.from(document.querySelectorAll<HTMLElement>(".work-card.reveal"));
+    if (rm) {
+      cards.forEach((c) => c.classList.add("in"));
+      return;
+    }
+    const io = new IntersectionObserver(
+      (es, obs) => {
+        es.forEach((e) => {
+          if (e.isIntersecting) {
+            e.target.classList.add("in");
+            obs.unobserve(e.target);
+          }
+        });
+      },
+      { rootMargin: "0px 0px -6% 0px" }
+    );
+    cards.forEach((c) => io.observe(c));
+    return () => io.disconnect();
+  }, [loading, filtered]);
+
+  return (
+    <>
+      <AppHeader search={query} onSearch={setQuery} />
+
+      <main>
+        <section className="hero page">
+          <p className="eyebrow lead">自由创作 · AI 共创</p>
+          <h1>
+            在这里，剧情有<span className="em">无穷种</span>可能
           </h1>
-          <p className="hero-sub">
-            与 AI 共同生成剧情，沿分支探索、回溯改写。每一次抉择都在星图上留下一条轨迹。
+          <p>每个人都是玩家，也是创作者。挑一个世界走进去，或者亲手写一个——AI 陪你把它讲完。</p>
+          {cats.length > 0 && (
+            <div className="toolbar">
+              <div className="filters" role="group" aria-label="题材筛选">
+                {cats.map((c) => (
+                  <button
+                    key={c.id}
+                    className="chip"
+                    type="button"
+                    aria-pressed={cat === c.id}
+                    onClick={() => setCat(c.id)}
+                  >
+                    {c.label}
+                    <span className="n">{c.count}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+
+        <div className="page">
+          <p className="resultbar" aria-live="polite">
+            {loading
+              ? "正在加载…"
+              : error
+              ? ""
+              : `共 ${filtered.length} 部作品${cat !== "all" ? ` · ${cat}` : ""}`}
           </p>
         </div>
-        <Constellation />
-      </header>
 
-      {error && <div className="status err">出错：{error}</div>}
-
-      {sessions.length > 0 && (
-        <>
-          <h2>继续你的旅程</h2>
-          <div className="grid">
-            {sessions.map((s) => (
-              <SessionCard
-                key={s.id}
-                item={s}
-                onClick={() => router.push(`/play/${s.id}`)}
-                onDelete={() => deleteSession(s.id)}
-              />
-            ))}
+        {loading ? (
+          <div className="page">
+            <SkeletonWall />
           </div>
-        </>
-      )}
-
-      <h2>选择一部作品启程</h2>
-      {loading ? (
-        <div className="empty pulse">载入中…</div>
-      ) : stories.length === 0 ? (
-        <div className="empty">暂无可玩的作品</div>
-      ) : (
-        <div className="grid">
-          {stories.map((s) => (
-            <StoryCard
-              key={s.id}
-              story={s}
-              onClick={() => router.push(`/story/${s.id}`)}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// 首页装饰星座：静态 SVG，一条主线串起几颗星，末端为暖金"目标星"。
-function Constellation() {
-  return (
-    <svg
-      className="hero-constellation"
-      viewBox="0 0 240 200"
-      role="img"
-      aria-label="星座装饰"
-    >
-      <polyline
-        className="c-line"
-        points="30,150 80,110 120,140 165,70 210,40"
-        fill="none"
-      />
-      <polyline className="c-line" points="80,110 95,60 130,45" fill="none" />
-      <circle className="c-star" cx="30" cy="150" r="3" />
-      <circle className="c-star" cx="80" cy="110" r="3.5" />
-      <circle className="c-star" cx="120" cy="140" r="2.5" />
-      <circle className="c-star" cx="95" cy="60" r="2.5" />
-      <circle className="c-star" cx="130" cy="45" r="2.5" />
-      <circle className="c-star" cx="165" cy="70" r="3" />
-      <circle className="c-star lead" cx="210" cy="40" r="5" />
-    </svg>
+        ) : error ? (
+          <ErrorState
+            action={
+              <button className="btn primary sm" onClick={loadStories}>
+                重试
+              </button>
+            }
+          />
+        ) : filtered.length === 0 ? (
+          <EmptyState
+            title="没有找到匹配的作品"
+            desc="换个题材，或清空搜索词试试。也可以由你来写下这个世界的第一行。"
+            action={
+              <>
+                <button
+                  className="btn secondary sm"
+                  onClick={() => {
+                    setCat("all");
+                    setQuery("");
+                  }}
+                >
+                  清空筛选
+                </button>
+                <Link className="btn primary sm" href="/create">
+                  去创作
+                </Link>
+              </>
+            }
+          />
+        ) : (
+          <div className="page">
+            {/* 卡片标题是 h3，页面只有 h1 —— 补一个不可见的 h2 消除跳级 */}
+            <h2 className="sr-only">作品列表</h2>
+            <div className="wall">
+              {filtered.map((s, i) => (
+                <StoryCard key={s.id} story={s} index={i} />
+              ))}
+            </div>
+          </div>
+        )}
+      </main>
+    </>
   );
 }

@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useParams } from "next/navigation";
 import { useEditorStore } from "@/store/editorStore";
 import { useAuthStore } from "@/store/authStore";
+import AppHeader from "@/components/AppHeader";
 import StoryEditor from "@/components/editor/StoryEditor";
 
 export default function EditPage() {
@@ -19,9 +20,13 @@ export default function EditPage() {
     if (storyId) loadStory(storyId);
   }, [storyId, loadStory, reset, initAuth]);
 
+  // 编辑器属管理态（DESIGN §2：只有「走进作品之后」才是阅读态），沿用全局导航头。
   return (
-    <div className="wrap">
-      <StoryEditor />
-    </div>
+    <>
+      <AppHeader />
+      <main className="page-narrow section-space">
+        <StoryEditor />
+      </main>
+    </>
   );
 }

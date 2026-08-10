@@ -98,6 +98,8 @@
 
 ## 10. 现状与待办
 
-- **已知副本漂移**:11 个页面目前各自在 `:root` 内联了一份 token(历史原因)。`tokens.css` 已是权威源;**下一步应把各页 `:root` 替换为 `@import "tokens.css";`**(逐页验证,勿一次性盲改)。新页面请直接 @import,不要再复制内联。
+- **已知副本漂移**:11 个原型页目前各自在 `:root` 内联了一份 token(历史原因)。`tokens.css` 已是权威源;**下一步应把各页 `:root` 替换为 `@import "tokens.css";`**(逐页验证,勿一次性盲改)。新页面请直接 @import,不要再复制内联。
+  - Next 实现侧(`frontend/app/globals.css`)的 token 层已与本文件对齐,新增变量一律**先回写 tokens.css 再落地**。已修掉的两处副本:品牌 glyph(曾在 AppHeader 与 login 各一份、颜色各写死一套,现为 `components/BrandGlyph.tsx` 单一来源 + currentColor)、sci 主题色值(CSS 与 `lib/types.ts` 两份,现已同步且不再用 Tailwind indigo)。
+  - 仍存在的一份副本:作品主题色板同时存在于 tokens.css 注释、`globals.css` 的 `[data-work-theme]` 块、`lib/types.ts` 的 `THEMES`。前两者是阅读态场景色,后者是书库封面渐变,用途不同故未强行合并——改主题时三处都要看。
 - 未做的产品页:管理后台(`/admin`,边缘)。
 - 品牌:无正式 logo,现用「分支节点」占位标记(见 tokens.css 底部),可整体替换。

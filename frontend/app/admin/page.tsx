@@ -4,6 +4,9 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/store/authStore";
+import AppHeader from "@/components/AppHeader";
+import { IconChevronLeft } from "@/components/icons";
+import { useToast } from "@/components/Toast";
 import {
   LLM_PROVIDERS,
   LLM_STAGES,
@@ -23,7 +26,7 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const { show: flash, node: toastNode } = useToast();
 
   useEffect(() => {
     initAuth();
@@ -48,11 +51,6 @@ export default function AdminPage() {
       .catch((e) => setError((e as Error).message))
       .finally(() => setLoading(false));
   }, []);
-
-  const flash = (m: string) => {
-    setToast(m);
-    setTimeout(() => setToast(null), 2400);
-  };
 
   const patch = (stage: string, p: Partial<Row>) =>
     setRows((rs) => rs.map((r) => (r.stage === stage ? { ...r, ...p } : r)));
@@ -103,11 +101,13 @@ export default function AdminPage() {
   const stageDesc = (stage: string) => LLM_STAGES.find((s) => s.key === stage)?.desc || "";
 
   return (
-    <div className="wrap">
+    <>
+    <AppHeader />
+    <main className="wrap">
       <div className="topbar">
-        <span className="back" onClick={() => router.push("/me")}>
-          ← 个人主页
-        </span>
+        <button className="back" onClick={() => router.push("/me")}>
+          <IconChevronLeft size={14} /> 个人主页
+        </button>
       </div>
       <h1 className="ed-h1">平台 AI 设置</h1>
       <p className="me-desc">
@@ -117,6 +117,9 @@ export default function AdminPage() {
 
       {loading ? (
         <div className="empty pulse">载入中…</div>
+      ) : rows.length === 0 ? (
+        // 后端按 LLM_STAGES 补齐空壳，正常不会为空；真为空时给句人话，别只剩一个标题
+        <div className="empty">尚未初始化任何环节配置，请检查后端 /admin/llm/platform 是否可用。</div>
       ) : (
         rows.map((r) => (
           <section className="ed-section" key={r.stage}>
@@ -156,10 +159,10 @@ export default function AdminPage() {
                 onChange={(e) => patch(r.stage, { api_key: e.target.value })} />
             </label>
             <div className="me-key-actions">
-              <button className="primary-btn" disabled={busy === r.stage} onClick={() => save(r)}>
+              <button className="btn secondary" disabled={busy === r.stage} onClick={() => save(r)}>
                 {busy === r.stage ? "保存中…" : "保存"}
               </button>
-              <button className="ghost-btn" disabled={busy === r.stage} onClick={() => test(r)}>
+              <button className="btn secondary sm" disabled={busy === r.stage} onClick={() => test(r)}>
                 测试连接
               </button>
             </div>
@@ -167,7 +170,8 @@ export default function AdminPage() {
         ))
       )}
 
-      {toast && <div className="ed-toast">{toast}</div>}
-    </div>
+      {toastNode}
+    </main>
+    </>
   );
 }
