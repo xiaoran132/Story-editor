@@ -29,6 +29,32 @@ async function safeFetch(path: string, init: RequestInit): Promise<Response> {
   }
 }
 
+const EXPIRED_ERR = "登录已过期，请重新登录";
+
+/**
+ * 401 统一处置：清掉失效凭据并跳登录。
+ *
+ * 为什么必须有：token 有效期 72h，且换过 JWT_SECRET 后旧 token 一律失效。而
+ * `user` 是从 localStorage 直接读的、从不校验，所以过期后界面**仍显示已登录**
+ * （顶栏有头像、有账户菜单），每个接口却默默 401——表现为"哪儿都用不了"，
+ * 且没有任何线索提示该重新登录。线上踩过一次。
+ *
+ * 用 location.href 硬跳而不是调 authStore.logout()：api.ts 被 authStore 依赖，
+ * 反向 import 会成环；硬跳顺带让整个应用从空 localStorage 重新初始化。
+ */
+function handleUnauthorized(path: string): void {
+  if (typeof window === "undefined") return;
+  // 登录/注册自身的 401 是"账号密码不对"，要把错误显示在表单上，不能跳走。
+  if (path.startsWith("/auth/login") || path.startsWith("/auth/register")) return;
+  if (!localStorage.getItem("token")) return; // 本来就没登录：让调用方自己处理
+  localStorage.removeItem("token");
+  localStorage.removeItem("user");
+  const here = window.location.pathname + window.location.search;
+  if (window.location.pathname !== "/login") {
+    window.location.href = `/login?next=${encodeURIComponent(here)}`;
+  }
+}
+
 async function request<T>(
   method: string,
   path: string,
@@ -41,6 +67,11 @@ async function request<T>(
   if (body !== undefined) opt.body = JSON.stringify(body);
 
   const res = await safeFetch(path, opt);
+
+  if (res.status === 401) {
+    handleUnauthorized(path);
+    throw new Error(EXPIRED_ERR);
+  }
 
   // 204 No Content（如 DELETE）无响应体，直接视为成功。
   if (res.status === 204) {
@@ -73,6 +104,11 @@ async function upload(kind: string, file: File | Blob, filename = "image"): Prom
     headers: authHeaders(), // 注意：不设 Content-Type
     body: fd,
   });
+
+  if (res.status === 401) {
+    handleUnauthorized("/uploads/image");
+    throw new Error(EXPIRED_ERR);
+  }
 
   let env: Envelope<{ url: string }>;
   try {
@@ -124,6 +160,10 @@ export async function postStream<T>(
     },
     body: JSON.stringify(body),
   });
+  if (res.status === 401) {
+    handleUnauthorized(path);
+    throw new Error(EXPIRED_ERR);
+  }
   if (!res.ok || !res.body) {
     throw new Error(httpErr(res.status));
   }
