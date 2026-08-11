@@ -76,6 +76,7 @@
 - **按钮**:主(黑 `--fg`) > 强调(`--accent`,高信号动作) > 次级(描边) > 幽灵;危险用 `--danger`。每屏一个主按钮。齐 hover/active/focus/disabled。
 - **卡片**:14px 圆角 + 细描边 + 静止投影 `box-shadow:var(--shadow-card)`;悬停上浮 4px 并换 `var(--shadow-card-hover)`。**不要**再把阴影字面量写进页面。
 - **表单/开关/Chip/Badge/对话框/Toast**:见 `design-system.html` 实样,复制其结构与 token。
+- **组件跨双态复用前,先核对它引用了哪些 token**。管理态组件默认只用 `--surface-2/--border/--fg/--bg`,这四个在 `.od-reading` 中**没有重定义**——搬进阅读态会静默失效:`Switch` 就因此在作品详情页"消失"(开启态的 `--fg` 近黑,融进暗底面板)。复用时给该组件补一段 `.od-reading .xxx` 覆盖,换成 `--panel-fill(-2)`/`--panel-border`/`--ink(-soft)`,强调态用 `--accent-read` + `--on-accent-read`。**已跨态的:`Switch`。待办隐患:`Dialog`**(现仅用于 `/me` 的 BYOK 弹窗,搬进阅读态会踩同一个坑)。
 - **图标**:1.6–2px 单线 SVG + `currentColor`;**禁 emoji 当图标**。
 - **状态三件套**:任何异步列表必须备**加载(骨架)/ 空 / 错误**三态;空/错误给明确出路。
 - **图片上传**(`components/ImageUpload.tsx`):隐藏原生 `<input type=file>`,由旁边一个真 `<button>` 触发(可访问名与键盘可达性都挂在它上面);预览框 chrome 恒中性(`--surface-2` + `--border`),圆形用于头像、`--r-md` 矩形用于封面;备齐上传中/未上传/失败三态,错误用 `role="alert"`;必须有「移除」路径——**没有图时一律回落原有占位(昵称首字母 / 主题渐变),不放默认灰头像那类无信息占位**。
