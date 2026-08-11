@@ -34,9 +34,9 @@ func main() {
 		log.Fatalf("failed to migrate: %v", err)
 	}
 
-	// 预置 guest 用户 + demo 作品（幂等）
-	guestID, err := seed(db)
-	if err != nil {
+	// 预置 guest 用户 + demo 作品（幂等）。guest 只是演示作品的作者，
+	// 不再是匿名游玩的身份来源——游玩已全量要求登录。
+	if _, err := seed(db); err != nil {
 		log.Fatalf("failed to seed: %v", err)
 	}
 
@@ -53,7 +53,6 @@ func main() {
 	creditSvc := service.NewCreditService(llmRepo)                    // 平台额度（注册赠 1 元）扣费
 	userSvc := service.NewUserService(userRepo, cfg.JWTSecret, cfg.EncryptionKey)
 	storySvc := service.NewStoryService(storyRepo)
-	nodeSvc := service.NewNodeService(nodeRepo, storyRepo)
 	llmSvc := service.NewLLMService(llmRepo, agentClient, cfg.EncryptionKey, llmResolver)
 	playSvc := service.NewPlayService(sessionRepo, nodeRepo, storyRepo, agentClient, llmResolver, creditSvc)
 	uploadSvc := service.NewUploadService(cfg.UploadDir, cfg.UploadMaxBytes())
@@ -61,9 +60,7 @@ func main() {
 	// Handlers
 	userH := handler.NewUserHandler(userSvc)
 	storyH := handler.NewStoryHandler(storySvc)
-	nodeH := handler.NewNodeHandler(nodeSvc)
-	communityH := handler.NewCommunityHandler()
-	playH := handler.NewPlayHandler(playSvc, guestID)
+	playH := handler.NewPlayHandler(playSvc)
 	assistH := handler.NewAssistHandler(agentClient, llmResolver)
 	llmH := handler.NewLLMHandler(llmSvc)
 	uploadH := handler.NewUploadHandler(uploadSvc)
@@ -100,25 +97,19 @@ func main() {
 		stories.POST("/", middleware.AuthRequired(cfg.JWTSecret), storyH.Create)
 		stories.GET("/", storyH.List)
 		stories.GET("/mine", middleware.AuthRequired(cfg.JWTSecret), storyH.ListMine)
-		stories.GET("/:id", storyH.Get)
+		// AuthOptional 而非公开：作者要能读到自己的草稿，service 靠 viewerID 分流；
+		// 未登录拿 uuid.Nil，只看得到 published。
+		stories.GET("/:id", middleware.AuthOptional(cfg.JWTSecret), storyH.Get)
 		stories.PUT("/:id", middleware.AuthRequired(cfg.JWTSecret), storyH.Update)
 		stories.PUT("/:id/status", middleware.AuthRequired(cfg.JWTSecret), storyH.SetStatus)
 		stories.DELETE("/:id", middleware.AuthRequired(cfg.JWTSecret), storyH.Delete)
-		stories.POST("/:id/nodes", middleware.AuthRequired(cfg.JWTSecret), nodeH.Create)
 	}
 
-	nodes := api.Group("/nodes")
-	{
-		nodes.GET("/:id/children", nodeH.GetChildren)
-		nodes.PUT("/:id", middleware.AuthRequired(cfg.JWTSecret), nodeH.Update)
-		nodes.DELETE("/:id", middleware.AuthRequired(cfg.JWTSecret), nodeH.Delete)
-	}
-
-	// 游玩：匿名可玩，但挂 AuthOptional——带 token 则归属登录用户，否则回退 guest。
-	play := api.Group("/play", middleware.AuthOptional(cfg.JWTSecret))
+	// 游玩：一律需登录。匿名曾共用同一个 guest 身份，导致任意匿名者可读/删他人存档；
+	// 且生成必须解析到模型，平台额度从不发给匿名调用者——AuthOptional 已无存在理由。
+	play := api.Group("/play", middleware.AuthRequired(cfg.JWTSecret))
 	{
 		play.POST("/sessions", playH.Start)
-		play.POST("/sessions/migrate", middleware.AuthRequired(cfg.JWTSecret), playH.Migrate)
 		play.POST("/sessions/:id/opening/stream", playH.OpeningStream)
 		play.GET("/sessions", playH.List)
 		play.GET("/sessions/:id", playH.Get)
@@ -157,13 +148,8 @@ func main() {
 		adminLLM.POST("/platform/test", llmH.TestPlatform)
 	}
 
-	community := api.Group("/community")
-	{
-		community.GET("/stories", communityH.ListStories)
-		community.GET("/stories/:id", communityH.GetStoryDetail)
-		community.POST("/stories/:id/like", middleware.AuthRequired(cfg.JWTSecret), communityH.Like)
-		community.POST("/stories/:id/comments", middleware.AuthRequired(cfg.JWTSecret), communityH.Comment)
-	}
+	// 社区（点赞/评论/榜单）尚未实现，路由不注册——未注册即 404，比返回
+	// success:true 的空壳诚实。实现时按 docs/prd.md 的路线图加回。
 
 	addr := cfg.ServerPort
 	fmt.Printf("Server starting on %s\n", addr)

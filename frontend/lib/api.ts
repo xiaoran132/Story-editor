@@ -6,7 +6,7 @@ const API_BASE =
 const CONNECT_ERR = "无法连接后端服务，请确认后端已启动";
 const httpErr = (status: number) => `请求失败（HTTP ${status}）`;
 
-// 登录 token 存 localStorage；每次请求带上 Authorization（未登录则为空、按匿名 guest 处理）。
+// 登录 token 存 localStorage；每次请求带上 Authorization（未登录则为空：只读接口照常，/play 一律 401）。
 function authHeaders(): Record<string, string> {
   if (typeof window === "undefined") return {};
   const t = localStorage.getItem("token");

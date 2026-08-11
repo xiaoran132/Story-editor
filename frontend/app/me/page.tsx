@@ -216,7 +216,7 @@ export default function MePage() {
                 <div className="prefrow">
                   <div className="t">
                     退出登录
-                    <small>退出后本机的匿名进度仍在，登录回来可继续领取</small>
+                    <small>存档存在账号上，登录回来即可继续</small>
                   </div>
                   <div className="ctl">
                     <button

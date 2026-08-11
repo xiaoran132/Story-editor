@@ -41,7 +41,8 @@ func (h *StoryHandler) Get(c *gin.Context) {
 		return
 	}
 
-	story, err := h.svc.Get(id)
+	// 路由挂 AuthOptional：未登录时 GetUserID 返回 uuid.Nil，service 据此按非作者处理。
+	story, err := h.svc.Get(id, middleware.GetUserID(c))
 	if err != nil {
 		pkg.Error(c, err)
 		return

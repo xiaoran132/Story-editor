@@ -74,7 +74,7 @@ function LoginForm() {
             都有回声。
           </h1>
           <p>
-            登录后，你的存档、创作与关注会跨设备同步。还没准备好？也可以先以匿名身份走进任意一个故事。
+            登录后即赠 1 元额度，存档与创作跨设备同步。还没准备好？也可以先去书库随便看看。
           </p>
         </div>
         <div className="foot">© Story Editor · 自由创作的 AI 互动剧情社区</div>
@@ -136,7 +136,7 @@ function LoginForm() {
             <>
               <div className="divider">或</div>
               <Link className="btn secondary block" href="/" style={{ height: 46 }}>
-                先以匿名身份进入
+                先去书库看看
               </Link>
             </>
           )}

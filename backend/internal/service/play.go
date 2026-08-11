@@ -50,14 +50,26 @@ func (s *PlayService) resolvePlay(ctx context.Context, playerID, storyID uuid.UU
 	if s.resolver == nil {
 		return nil, nil, noLLMConfigErr()
 	}
-	write, _ = s.resolver.ResolveForPlay(ctx, playerID, storyID, StageWrite)
+	// 存储故障原样上抛（resolver 已区分「查库失败」与「没配置」）：
+	// 把 DB 抖动说成「你没配模型」，玩家会照着去配一遍，然后发现还是不行。
+	write, err = s.resolver.ResolveForPlay(ctx, playerID, storyID, StageWrite)
+	if err != nil {
+		return nil, nil, err
+	}
 	if write == nil {
 		return nil, nil, noLLMConfigErr()
 	}
-	if !s.resolver.ReviewEnabled(ctx, playerID, storyID) {
+	reviewOn, err := s.resolver.ReviewEnabled(ctx, playerID, storyID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !reviewOn {
 		return write, nil, nil
 	}
-	review, _ = s.resolver.ResolveForPlay(ctx, playerID, storyID, StageReview)
+	review, err = s.resolver.ResolveForPlay(ctx, playerID, storyID, StageReview)
+	if err != nil {
+		return nil, nil, err
+	}
 	if review == nil {
 		return nil, nil, pkg.NewBusinessErrorWithMessage(pkg.CodeNoLLMConfig,
 			"你为本作品开启了质量审校，但没有为它选择模型连接。请在作品详情页的「生成设置」里补上，或关闭审校。")
@@ -87,8 +99,8 @@ func (s *PlayService) StartSession(playerID, storyID uuid.UUID) (*SessionResult,
 	if err != nil {
 		return nil, err
 	}
-	if story == nil {
-		return nil, pkg.NotFound("story not found")
+	if err := canPlay(story, playerID); err != nil {
+		return nil, err
 	}
 
 	world := parseWorld(story.WorldConfig)
@@ -393,12 +405,6 @@ func deltaEqual(stored, fresh string) bool {
 		return true
 	}
 	return dumpState(parseState(stored)) == dumpState(parseState(fresh))
-}
-
-// MigrateSessions 把一批 guest 会话领取到 userID 名下（登录后迁移匿名进度）。
-// 只迁移当前归属 guestID 且 id 命中的会话，返回实际迁移条数。
-func (s *PlayService) MigrateSessions(userID, guestID uuid.UUID, sessionIDs []uuid.UUID) (int64, error) {
-	return s.sessions.MigrateGuestSessions(context.Background(), userID, guestID, sessionIDs)
 }
 
 // Backtrack 回溯到某历史节点：不删数据，恢复该节点的状态快照，从该点继续分叉。

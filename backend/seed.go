@@ -10,8 +10,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// seed 幂等地预置一个 guest 用户和一部 demo 作品，
-// 让 MVP 阶段无需创作模块即可直接开玩。返回 guest 用户 ID。
+// seed 幂等地预置一个 guest 用户和一批 demo 作品，让首页开箱就有内容可看。
+// guest 仅作为演示作品的**作者**存在；游玩需登录，它不再承载匿名会话。
+// 返回 guest 用户 ID。
 func seed(db *gorm.DB) (uuid.UUID, error) {
 	// 1. guest 用户
 	var guest model.User

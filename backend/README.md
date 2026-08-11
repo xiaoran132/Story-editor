@@ -13,7 +13,7 @@
 
 | 后端负责 | 后端不负责 |
 |---|---|
-| 鉴权（JWT）、会话归属、匿名 guest 回退与迁移 | 生成剧情正文、选项、`state_delta`、`summary`（Agent 做） |
+| 鉴权（JWT）、会话归属、草稿访问边界 | 生成剧情正文、选项、`state_delta`、`summary`（Agent 做） |
 | 作品、节点树、游玩会话的持久化与查询 | 决定文本质量、审校重写（Agent 做） |
 | `state_delta` 合并、节点语义合并去重的落库 | 前端展示、状态字段的中文映射（前端做） |
 | 把生成请求编排给 Agent、SSE 转发给前端 | 直连大模型（凭证下沉在 `agent/.env`） |
@@ -79,25 +79,24 @@ Windows 下可用仓库根的 `.\scripts\dev.ps1`（默认一并拉起 Agent/后
 | 分组 | 鉴权 | 端点 |
 |---|---|---|
 | `/auth` | 部分 | `POST /register`、`POST /login`、`GET·PUT /profile`（AuthRequired） |
-| `/stories` | 写需登录 | `POST·PUT·DELETE /`·`/:id`（AuthRequired）、`GET /`·`/:id`、`POST /:id/nodes` |
-| `/nodes` | 写需登录 | `GET /:id/children`、`PUT·DELETE /:id`（AuthRequired） |
-| `/play` | **AuthOptional** | 见下方 |
-| `/community` | 写需登录 | `GET /stories`·`/:id`、`POST /:id/like`·`/comments`（**handler 桩，全 TODO**） |
+| `/stories` | 写需登录 | `POST·PUT·DELETE /`·`/:id`（AuthRequired）、`GET /`、`GET /:id`（AuthOptional：作者可读自己的草稿，其他人只读 published、越权 404） |
+| `/play` | **AuthRequired** | 见下方 |
 
-### `/play`（游玩，匿名可玩）
+> 创作侧节点 CRUD（`/stories/:id/nodes`、`/nodes/*`）与社区路由已下线，不再注册；原因见 `docs/handoff.md` §9.2。
 
-挂 `AuthOptional`——带 token 归属登录用户，否则回退匿名 guest。
+### `/play`（游玩，需登录）
+
+全组 `AuthRequired`。匿名游玩曾让所有访客共用同一个 guest 身份、彼此可读可删存档，已连同 `/sessions/migrate` 一并移除。
 
 | 方法 | 路径 | 作用 |
 |---|---|---|
-| `POST` | `/sessions` | 建**空会话**（不同步生成开局，开局在游玩页触发） |
-| `POST` | `/sessions/migrate` | **AuthRequired**：登录后领取匿名进度（只迁本浏览器上报且 guest 名下的会话） |
+| `POST` | `/sessions` | 建**空会话**（不同步生成开局，开局在游玩页触发；草稿仅作者可开） |
 | `POST` | `/sessions/:id/opening/stream` | **SSE**：流式生成开局（幂等，见 `current_node=null` 时触发） |
-| `GET` | `/sessions` | 读档列表（当前玩家/guest 历史会话，含 `story_title`） |
+| `GET` | `/sessions` | 读档列表（当前玩家的历史会话，含 `story_title`） |
 | `GET` | `/sessions/:id` | 会话详情（全部节点 + `current_node_id`，供重建剧情树） |
 | `DELETE` | `/sessions/:id` | 删档（校验归属，事务级联删该局全部节点） |
 | `POST` | `/sessions/:id/choice/stream` | **SSE**：流式选择/自由行动（delta/revise/done/error） |
-| `POST` | `/sessions/:id/backtrack` | 回溯到历史节点（匿名可玩） |
+| `POST` | `/sessions/:id/backtrack` | 回溯到历史节点 |
 
 ## 关键设计约定
 

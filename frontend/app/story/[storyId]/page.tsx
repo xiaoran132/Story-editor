@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api, assetUrl } from "@/lib/api";
-import { trackGuestSession } from "@/lib/guestSessions";
 import { useAuthStore } from "@/store/authStore";
 import { useReadingTheme } from "@/lib/useReadingTheme";
 import { formatAttrValue } from "@/lib/state";
@@ -95,7 +94,6 @@ export default function StoryDetailPage() {
     setError(null);
     try {
       const r = await api.post<SessionResult>("/play/sessions", { story_id: story.id });
-      if (!user) trackGuestSession(r.session.id);
       router.push(`/play/${r.session.id}`);
     } catch (e) {
       setError((e as Error).message);

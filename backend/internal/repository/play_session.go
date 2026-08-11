@@ -45,18 +45,6 @@ func (r *PlaySessionRepository) Update(ctx context.Context, s *model.PlaySession
 	return r.db.WithContext(ctx).Save(s).Error
 }
 
-// MigrateGuestSessions 把 guest 名下、且 id 在 ids 内的会话改归 userID（登录后领取匿名进度）。
-// 只动 guest 的会话（避免误领他人），返回实际迁移条数。
-func (r *PlaySessionRepository) MigrateGuestSessions(ctx context.Context, userID, guestID uuid.UUID, ids []uuid.UUID) (int64, error) {
-	if len(ids) == 0 {
-		return 0, nil
-	}
-	res := r.db.WithContext(ctx).Model(&model.PlaySession{}).
-		Where("player_id = ? AND id IN ?", guestID, ids).
-		Update("player_id", userID)
-	return res.RowsAffected, res.Error
-}
-
 // CreateNodeAndUpdateSession 在一个事务内落一个新节点并让会话指向它：
 // 先 Create(node)（回填其 ID），再把 session.CurrentNodeID 指向新节点后 Save(session)。
 // 会话的其余字段（NodeCount / CurrentState / RevealedAttrs / Status / LastPlayedAt）

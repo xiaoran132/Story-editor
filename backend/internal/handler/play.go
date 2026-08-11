@@ -13,20 +13,17 @@ import (
 )
 
 type PlayHandler struct {
-	svc     *service.PlayService
-	guestID uuid.UUID // 匿名游玩时的回退用户
+	svc *service.PlayService
 }
 
-func NewPlayHandler(svc *service.PlayService, guestID uuid.UUID) *PlayHandler {
-	return &PlayHandler{svc: svc, guestID: guestID}
+func NewPlayHandler(svc *service.PlayService) *PlayHandler {
+	return &PlayHandler{svc: svc}
 }
 
-// player 取当前登录用户；匿名则回退到 guest 用户。
+// player 取当前玩家。/play 全组挂 AuthRequired，到这里必定非 Nil。
+// （曾经匿名回退到共享 guest ID，使 checkSessionOwner 形同虚设——已移除。）
 func (h *PlayHandler) player(c *gin.Context) uuid.UUID {
-	if uid := middleware.GetUserID(c); uid != uuid.Nil {
-		return uid
-	}
-	return h.guestID
+	return middleware.GetUserID(c)
 }
 
 type startSessionReq struct {
@@ -110,30 +107,6 @@ func (h *PlayHandler) OpeningStream(c *gin.Context) {
 		return
 	}
 	send("done", result)
-}
-
-type migrateReq struct {
-	SessionIDs []uuid.UUID `json:"session_ids" binding:"required"`
-}
-
-// Migrate 登录后领取匿名进度：把前端上报的（本浏览器创建的）guest 会话迁到当前用户名下。
-func (h *PlayHandler) Migrate(c *gin.Context) {
-	userID := middleware.GetUserID(c)
-	if userID == uuid.Nil {
-		pkg.Error(c, pkg.Unauthorized("login required"))
-		return
-	}
-	var req migrateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		pkg.Error(c, pkg.BadRequest(err.Error()))
-		return
-	}
-	n, err := h.svc.MigrateSessions(userID, h.guestID, req.SessionIDs)
-	if err != nil {
-		pkg.Error(c, err)
-		return
-	}
-	pkg.Success(c, gin.H{"migrated": n})
 }
 
 type backtrackReq struct {

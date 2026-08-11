@@ -9,7 +9,7 @@ AI 互动剧情的**游玩前端**：作品选择 → 作品详情/过渡页 →
 
 字体：Inter（`--font-sans`）+ Noto Serif SC（`--font-serif`），均经 `next/font`。**作品主题皮肤**（8 套：star/ink/horror/sci/love/xian/heal/radio，见 `lib/types.ts` 的 `THEMES`）仅在阅读态整页换肤（`lib/useReadingTheme.ts` 把 `od-reading` + `data-work-theme` 挂到 `<html>`，离开清除）；管理态外壳永远中性，彩色只来自作品自身（封面渐变 / 阅读场景）。签名件是发光的剧情星图树（阅读态星图抽屉内）。
 
-> 登录/注册为**可选**：未登录沿用后端匿名 guest 用户，登录后迁移本浏览器 guest 会话到账号（见 `AuthWidget`/`store/authStore`）。
+> **游玩必须登录**：未登录只能浏览已发布作品，详情页拦截并引导登录（额度挂账号）。匿名会话与登录后迁移已移除，见 `docs/handoff.md` §9.2。
 
 ## 快速开始
 
@@ -35,8 +35,8 @@ Windows 下也可用仓库根的 `.\scripts\dev.ps1`（默认一并拉起 AI/后
 | 路由 | 说明 |
 |------|------|
 | `/`（发现） | **管理态**：`AppHeader` 导航 + hero + 题材 chip（**前端过滤**，按作品主题）+ 顶栏搜索（前端过滤已加载列表）+ 书库**错落瀑布**（`StoryCard` 封面卡，封面用作品主题渐变）+ 「继续你的旅程」历史会话（`SessionCard`）。备加载(骨架)/空/错误三态（`components/State.tsx`）。 |
-| `/login` | 登录/注册页：左**阅读态**暗色氛围栏 + 右**管理态**表单（tab 切换、密码显隐、`role=alert` 校验、「先以匿名身份进入」）。接 `authStore.login/register`（注册后自动登录 + guest 会话迁移）。 |
-| `/community` | 社区占位（后端 stub）：管理态外壳 + 空态 + 去发现出路。 |
+| `/login` | 登录/注册页：左**阅读态**暗色氛围栏 + 右**管理态**表单（tab 切换、密码显隐、`role=alert` 校验、「先以匿名身份进入」）。接 `authStore.login/register`（注册后自动登录）。 |
+| `/community` | 社区占位（**后端路由未注册**）：管理态外壳 + 空态 + 去发现出路。 |
 | `/mine`·`/me`·`/admin`·`/create`·`/edit/[id]` | 管理态：均挂 `AppHeader`。我的创作、个人主页 + BYOK 连接、平台 AI 设置、创作编辑器（AI 优先流程 + 结构化属性表 + 8 主题 swatch）。 |
 | `/story/[storyId]` | **阅读态**作品详情/过场：`useReadingTheme(theme)` 整页换肤 + 背景三层 + 居中 `scrim` 面板（kicker/衬线标题/世界观/登场人物/**属性预览**（hidden/reveal 门控作锁定占位）/生成设置折叠 `StoryLLMConfigPanel`）；「开始新游戏」→ `POST /play/sessions` 建**空会话**跳游玩。 |
 | `/play/[sessionId]` | **阅读态**游玩页：`GET /play/sessions/:id`。三栏对称舞台（左 `AttrBar` 状态轨 + 中 `scrim` 正文 + 右旅程轨）+ 悬浮控制条（遮罩浓度滑块→`--scrim-alpha`、昼/夜→`data-mode` 存 localStorage、星图按钮）+ 底部选项坞（编号选项 + **1/2/3 键盘快捷键** + 自由输入）+ 右滑星图抽屉（`StoryTree` 回溯）。正文衬线逐字流式（`streamingText`+光标，**无首字下沉**）；生命周期指示 gen/done/error。`current_node=null` → `startOpening()` 流式开局；选项/自由行动 → `…/choice/stream`；点星图节点 → `…/backtrack`。 |

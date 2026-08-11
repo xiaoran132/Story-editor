@@ -70,31 +70,48 @@ func NewLLMResolver(llm llmStore, encKey string) *LLMResolver {
 
 // ResolveForPlay 解析某玩家在某作品下某环节（write/review）的配置。
 // 优先级：作品级配置（玩家选的连接+模型）→ 平台该环节设置（需额度）→ nil（调用方须报错）。
+//
+// **存储故障一律上抛，不伪装成「没配置」**：查库失败和用户真没配置是两回事，
+// 前者静默降级到平台档 = 拿平台的钱替一次数据库抖动买单，且排障时看到的是
+// 「未配置模型」这种指向完全错误的提示。只有「查到但没绑定 / 连接不属于该用户 /
+// 密钥解不开」这类**确定的配置问题**才继续往下一档回退。
 func (r *LLMResolver) ResolveForPlay(ctx context.Context, userID, storyID uuid.UUID, stage string) (*AgentLLMConfig, error) {
 	if userID != uuid.Nil && storyID != uuid.Nil {
-		if sc, err := r.llm.FindStoryConfig(ctx, userID, storyID); err == nil && sc != nil {
+		sc, err := r.llm.FindStoryConfig(ctx, userID, storyID)
+		if err != nil {
+			return nil, err
+		}
+		if sc != nil {
 			b := parseBindings(sc.Bindings)[stage]
 			if b.Conn != "" {
 				if connID, err := uuid.Parse(b.Conn); err == nil {
-					if cfg := r.fromConnection(ctx, userID, connID, b.Model); cfg != nil {
+					cfg, err := r.fromConnection(ctx, userID, connID, b.Model)
+					if err != nil {
+						return nil, err
+					}
+					if cfg != nil {
 						return cfg, nil
 					}
 				}
 			}
 		}
 	}
-	return r.platformIfCredit(ctx, userID, stage), nil
+	return r.platformIfCredit(ctx, userID, stage)
 }
 
 // ResolveForAssist 解析创作者在创作侧（world 环节）的配置。
 // 优先级：编辑器显式覆盖连接 → 平台 world 设置 → nil。（创作侧无作品级配置，连接由编辑器现选。）
 func (r *LLMResolver) ResolveForAssist(ctx context.Context, userID uuid.UUID, overrideConnID *uuid.UUID) (*AgentLLMConfig, error) {
 	if overrideConnID != nil && userID != uuid.Nil {
-		if cfg := r.fromConnection(ctx, userID, *overrideConnID, ""); cfg != nil {
+		cfg, err := r.fromConnection(ctx, userID, *overrideConnID, "")
+		if err != nil {
+			return nil, err
+		}
+		if cfg != nil {
 			return cfg, nil
 		}
 	}
-	return r.platformIfCredit(ctx, userID, StageWorld), nil
+	return r.platformIfCredit(ctx, userID, StageWorld)
 }
 
 // platformIfCredit 取某环节平台设置并解密，**但只在该用户还有额度时才给**。
@@ -102,38 +119,47 @@ func (r *LLMResolver) ResolveForAssist(ctx context.Context, userID uuid.UUID, ov
 //
 // 匿名（uuid.Nil）一律不给：额度挂在账号上，而且所有匿名玩家目前共享同一个 seed
 // guest id（handoff §9.2），给了等于让第一个匿名访客花光所有人的额度。
-func (r *LLMResolver) platformIfCredit(ctx context.Context, userID uuid.UUID, stage string) *AgentLLMConfig {
+func (r *LLMResolver) platformIfCredit(ctx context.Context, userID uuid.UUID, stage string) (*AgentLLMConfig, error) {
 	if userID == uuid.Nil {
-		return nil
+		return nil, nil
 	}
 	credit, err := r.llm.GetCredit(ctx, userID)
-	if err != nil || credit <= 0 {
-		return nil
+	if err != nil {
+		return nil, err // 查不到余额 ≠ 余额为零，不能当「额度耗尽」处理
+	}
+	if credit <= 0 {
+		return nil, nil
 	}
 	ps, err := r.llm.FindPlatform(ctx, stage)
-	if err != nil || ps == nil {
-		return nil
+	if err != nil {
+		return nil, err
+	}
+	if ps == nil {
+		return nil, nil // admin 没配这个环节，是确定的配置缺失
 	}
 	key, err := pkg.Decrypt(ps.APIKeyCipher, r.encKey)
 	if err != nil || key == "" {
-		return nil
+		return nil, nil // 解密失败属配置问题（换过 ENCRYPTION_KEY），不是存储故障
 	}
 	return &AgentLLMConfig{
 		Provider: ps.Provider, BaseURL: ps.BaseURL, APIKey: key, Model: ps.Model,
 		Source: SourcePlatform, PriceInPerMTok: ps.PriceInPerMTok, PriceOutPerMTok: ps.PriceOutPerMTok,
-	}
+	}, nil
 }
 
 // fromConnection 从一条连接构造下发配置：校验归属 + 解密 key（失败/无 key 返回 nil）。
 // modelOverride 非空时覆盖连接的 DefaultModel（环节级模型粒度）。
-func (r *LLMResolver) fromConnection(ctx context.Context, userID, connID uuid.UUID, modelOverride string) *AgentLLMConfig {
+func (r *LLMResolver) fromConnection(ctx context.Context, userID, connID uuid.UUID, modelOverride string) (*AgentLLMConfig, error) {
 	conn, err := r.llm.FindConnByID(ctx, connID)
-	if err != nil || conn == nil || conn.UserID != userID {
-		return nil
+	if err != nil {
+		return nil, err
+	}
+	if conn == nil || conn.UserID != userID {
+		return nil, nil // 连接已删或不属于该用户：确定的配置问题，回退下一档
 	}
 	key, err := pkg.Decrypt(conn.APIKeyCipher, r.encKey)
 	if err != nil || key == "" {
-		return nil
+		return nil, nil
 	}
 	model := modelOverride
 	if model == "" {
@@ -143,7 +169,7 @@ func (r *LLMResolver) fromConnection(ctx context.Context, userID, connID uuid.UU
 	return &AgentLLMConfig{
 		Provider: conn.Provider, BaseURL: conn.BaseURL, APIKey: key, Model: model,
 		Source: SourceUser,
-	}
+	}, nil
 }
 
 // ReviewEnabled 读某玩家在某作品的「质量审校」开关（默认关）。
@@ -151,19 +177,25 @@ func (r *LLMResolver) fromConnection(ctx context.Context, userID, connID uuid.UU
 // 默认关是刻意的：开启要求单独配 review 的连接，若默认开，新玩家配了 write 还是玩不了。
 // 代价是默认质量下限低于以前（以前人人都过审校，真实拒绝率约 18%），
 // 这个权衡在前端开关旁写明。
-func (r *LLMResolver) ReviewEnabled(ctx context.Context, userID, storyID uuid.UUID) bool {
+// 存储故障同样上抛：静默返回 false 会让玩家以为审校在生效，而实际整段被跳过。
+func (r *LLMResolver) ReviewEnabled(ctx context.Context, userID, storyID uuid.UUID) (bool, error) {
 	if userID == uuid.Nil || storyID == uuid.Nil {
-		return false
+		return false, nil
 	}
 	sc, err := r.llm.FindStoryConfig(ctx, userID, storyID)
-	if err != nil || sc == nil {
-		return false
+	if err != nil {
+		return false, err
 	}
-	return sc.ReviewEnabled
+	if sc == nil {
+		return false, nil
+	}
+	return sc.ReviewEnabled, nil
 }
 
 // PlatformAvailable 回答「平台档现在可不可选」：有额度 + admin 配了该环节的 key。
 // 供前端把「平台」这一档显示成可选或禁用（并说明原因）。
+// 纯展示探针，查库出错就当不可选——这里不会替玩家花钱，无需上抛。
 func (r *LLMResolver) PlatformAvailable(ctx context.Context, userID uuid.UUID, stage string) bool {
-	return r.platformIfCredit(ctx, userID, stage) != nil
+	cfg, err := r.platformIfCredit(ctx, userID, stage)
+	return err == nil && cfg != nil
 }

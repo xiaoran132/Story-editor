@@ -217,7 +217,11 @@ func (s *LLMService) GetStoryConfig(userID, storyID uuid.UUID) (*StoryLLMConfigR
 	// 「能不能开玩」与真实的解析链保持一致：作品级用户连接 → 平台档（需额度）。
 	// 这里复用 resolver 而不是自己再判一遍，免得两处逻辑漂移。
 	if s.resolver != nil {
-		if write, _ := s.resolver.ResolveForPlay(ctx, userID, storyID, StageWrite); write != nil {
+		write, err := s.resolver.ResolveForPlay(ctx, userID, storyID, StageWrite)
+		if err != nil {
+			return nil, err
+		}
+		if write != nil {
 			out.Ready = true
 		}
 		if p := s.resolver.PlatformAvailable(ctx, userID, StageWrite); p {

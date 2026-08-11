@@ -66,7 +66,9 @@ func (s *StoryService) Create(creatorID uuid.UUID, input *StoryCreateInput) (*mo
 	return story.ToResponse(), nil
 }
 
-func (s *StoryService) Get(storyID uuid.UUID) (*model.StoryResponse, error) {
+// Get 读取作品详情。viewerID 是访问者（未登录传 uuid.Nil）：
+// 非作者只能读 published，读草稿一律 404（不泄露存在性）；且拿到的是脱敏 world_config。
+func (s *StoryService) Get(storyID, viewerID uuid.UUID) (*model.StoryResponse, error) {
 	ctx := context.Background()
 
 	story, err := s.repo.FindByID(ctx, storyID)
@@ -76,8 +78,11 @@ func (s *StoryService) Get(storyID uuid.UUID) (*model.StoryResponse, error) {
 	if story == nil {
 		return nil, nil
 	}
+	if err := canViewStory(story, viewerID); err != nil {
+		return nil, err
+	}
 
-	return story.ToResponse(), nil
+	return storyViewFor(story, viewerID), nil
 }
 
 func (s *StoryService) Update(storyID, userID uuid.UUID, input *StoryUpdateInput) (*model.StoryResponse, error) {
