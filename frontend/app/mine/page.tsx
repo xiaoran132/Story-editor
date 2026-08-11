@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { api, assetUrl } from "@/lib/api";
 import { useAuthStore } from "@/store/authStore";
@@ -13,7 +13,12 @@ import { coverStyle, type SessionListItem, type Story, type UserProfile } from "
 
 // 「我的空间」（对齐原型 my-space.html）：资料头 + 两个页签——我的创作 / 我在读。
 // 「我在读」原先寄居在首页，会让书库首屏被个人数据挤占；按原型迁到这里，
-// 导航入口在 AppHeader（/mine#reading）。
+// 导航入口在 AppHeader（/mine?tab=reading）。
+//
+// 页签状态挂在 **查询参数**而不是 hash 上：两个导航项指向同一个路由，Next 用
+// history.pushState 做客户端跳转，而 pushState **不触发 hashchange**，Next 的
+// 路由 hook 也压根不暴露 hash——用 hash 的话点哪个都停在原页签（线上踩过）。
+// useSearchParams 是响应式的，同路由内切换能正确重渲染。
 type Tab = "works" | "reading";
 
 function parseTheme(worldConfig: string): string {
@@ -24,12 +29,25 @@ function parseTheme(worldConfig: string): string {
   }
 }
 
+// useSearchParams 要求外层有 Suspense（否则静态预渲染会构建报错）。
 export default function MinePage() {
+  return (
+    <Suspense fallback={<div className="empty pulse">载入中…</div>}>
+      <MineInner />
+    </Suspense>
+  );
+}
+
+function MineInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const user = useAuthStore((s) => s.user);
   const initAuth = useAuthStore((s) => s.init);
 
-  const [tab, setTab] = useState<Tab>("works");
+  // 页签由 URL 决定（唯一事实源），切换即改 URL —— 这样刷新/分享/前进后退都对得上。
+  const tab: Tab = searchParams.get("tab") === "reading" ? "reading" : "works";
+  const setTab = (t: Tab) =>
+    router.replace(t === "reading" ? "/mine?tab=reading" : "/mine", { scroll: false });
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [stories, setStories] = useState<Story[]>([]);
   const [sessions, setSessions] = useState<SessionListItem[]>([]);
@@ -43,11 +61,6 @@ export default function MinePage() {
   useEffect(() => {
     initAuth();
   }, [initAuth]);
-
-  // URL 带 #reading 直接落在「我在读」（原型 my-space.html:225 的直达锚点）
-  useEffect(() => {
-    if (typeof window !== "undefined" && window.location.hash === "#reading") setTab("reading");
-  }, []);
 
   const reload = () => {
     setLoading(true);
