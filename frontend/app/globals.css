@@ -520,6 +520,13 @@ html[data-motion="off"] .cover.alive { animation: none; background-size: 100% 10
 .sw input:checked + .track { background: var(--fg); border-color: var(--fg); }
 .sw input:checked + .track::after { transform: translateX(16px); }
 .sw input:focus-visible + .track { box-shadow: var(--ring); }
+/* 阅读态覆盖：上面那套只用了管理态 token（--surface-2/--border/--fg/--bg），
+   而作品详情页的「生成设置」面板在阅读态里。--fg 在阅读态没有重定义，仍是近黑，
+   于是开关一打开就融进暗底面板、看起来像消失了。这里改用面板与作品主题色。 */
+.od-reading .sw .track { background: var(--panel-fill-2); border-color: var(--panel-border); }
+.od-reading .sw .track::after { background: var(--ink-soft); box-shadow: none; }
+.od-reading .sw input:checked + .track { background: var(--accent-read); border-color: var(--accent-read); }
+.od-reading .sw input:checked + .track::after { background: var(--on-accent-read); }
 
 /* ---- 我的空间（对齐原型 my-space.html：资料头 + 双页签 + 作品/存档列表） ---- */
 .profile {

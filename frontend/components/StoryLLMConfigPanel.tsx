@@ -127,7 +127,7 @@ export default function StoryLLMConfigPanel({
               　（仅供参考，不会自动套用）
             </p>
           )}
-          {error && <p className="od-note" style={{ color: "#f0a3a3" }} role="alert">出错：{error}</p>}
+          {error && <p className="od-note" style={{ color: "var(--read-err-ink)" }} role="alert">出错：{error}</p>}
 
           {!loggedIn ? (
             <p className="od-note">登录即赠 1 元体验额度，可直接用平台模型开玩；也可以配置自己的连接。</p>
@@ -211,7 +211,7 @@ export default function StoryLLMConfigPanel({
               </div>
 
               {reviewIncomplete && (
-                <p className="od-note" style={{ color: "#f0a3a3" }} role="alert">
+                <p className="od-note" style={{ color: "var(--read-err-ink)" }} role="alert">
                   开启了审校但没为它选连接。请选一条，或关掉这个开关。
                 </p>
               )}
