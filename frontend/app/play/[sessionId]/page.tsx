@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { usePlayStore } from "@/store/playStore";
 import { assetUrl } from "@/lib/api";
@@ -46,6 +46,25 @@ export default function PlayPage() {
 
   // 作品主题：整页阅读态换肤（含挂载时套用已存的昼夜/遮罩偏好）；封面作阅读背景图
   useReadingTheme(theme, assetUrl(coverUrl));
+
+  // 选项坞是 position:fixed 浮在正文之上，舞台必须留出等高的底部空白，否则最后一段
+  // 正文被压在坞下面。这个高度**不能写死**：选项 3~4 条、文字会换行、生成中还会多出
+  // 一条 genbar，实测能从 ~200px 变到 400px+。用 ResizeObserver 把实测值写进 --dock-h，
+  // 由 .od-stage 的 padding-bottom 消费（见 globals.css）。
+  const dockRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = dockRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const apply = () =>
+      document.documentElement.style.setProperty("--dock-h", `${el.offsetHeight}px`);
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      document.documentElement.style.removeProperty("--dock-h"); // 别漏到别的页面
+    };
+  }, []);
 
   // 控件态从持久化偏好初始化——hook 已把值套到 <html>，这里只是让滑块/分段与之对齐。
   useEffect(() => {
@@ -202,7 +221,7 @@ export default function PlayPage() {
       </div>
 
       {/* 底部选项坞 */}
-      <div className="dock">
+      <div className="dock" ref={dockRef}>
         <div className="dock-inner">
           {!loading && <OptionList node={currentNode} busy={busy} onChoose={choose} />}
         </div>

@@ -10,7 +10,10 @@
    ============================================================ */
 :root {
   /* ---- 字体（layout.tsx 经 next/font 注入 --font-sans-inter / --font-serif-noto，
-         此处只负责接系统回退栈；两边变量名必须错开，同名会被本文件覆盖掉） ---- */
+         此处只负责接系统回退栈；两边变量名必须错开，同名会被本文件覆盖掉）。
+         IDE 报「无法解析 --font-sans-inter / --font-serif-noto」是**正常的**：
+         它们由 next/font 在运行时生成一个类挂到 <html> 上（layout.tsx），
+         CSS 文件里没有声明可供索引。var() 已带回退字体名，不要"修"这个告警。 ---- */
   --font-sans: var(--font-sans-inter, "Inter"), system-ui, -apple-system,
     "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   --font-serif: var(--font-serif-noto, "Noto Serif SC"), Georgia, "Songti SC",
@@ -701,7 +704,11 @@ html[data-motion="off"] .cover.alive { animation: none; background-size: 100% 10
 /* ---- 三栏舞台 ---- */
 .od-stage {
   display: grid; grid-template-columns: 1fr minmax(0, 660px) 1fr; column-gap: 28px;
-  justify-content: center; align-items: start; max-width: 1360px; margin: 0 auto; padding: 76px 40px 220px;
+  justify-content: center; align-items: start; max-width: 1360px; margin: 0 auto;
+  /* 底部留白必须让开固定定位的 .dock。曾经写死 220px —— 那是原型两条短选项时量的，
+     真实 AI 出 3~4 条、还会换行、生成中再加一条 genbar，实际能到 400px+，于是正文被压住。
+     现在由游玩页用 ResizeObserver 把实测高度写进 --dock-h，这里只加一段呼吸留白。 */
+  padding: 76px 40px calc(var(--dock-h, 320px) + 40px);
 }
 .od-rail { width: 168px; position: sticky; top: 86px; display: flex; flex-direction: column; gap: 14px; }
 .od-rail.left { justify-self: start; }
