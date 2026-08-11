@@ -41,18 +41,23 @@ const EXPIRED_ERR = "登录已过期，请重新登录";
  *
  * 用 location.href 硬跳而不是调 authStore.logout()：api.ts 被 authStore 依赖，
  * 反向 import 会成环；硬跳顺带让整个应用从空 localStorage 重新初始化。
+ *
+ * 返回值 = 是否已处置。**未处置时调用方必须放行到正常的信封解析**，把后端的真实
+ * 原因显示出来——否则登录密码错（后端同样回 401）会被盖成「登录已过期」，
+ * 用户对着正确的密码一脸茫然。这个坑刚踩过。
  */
-function handleUnauthorized(path: string): void {
-  if (typeof window === "undefined") return;
+function handleUnauthorized(path: string): boolean {
+  if (typeof window === "undefined") return false;
   // 登录/注册自身的 401 是"账号密码不对"，要把错误显示在表单上，不能跳走。
-  if (path.startsWith("/auth/login") || path.startsWith("/auth/register")) return;
-  if (!localStorage.getItem("token")) return; // 本来就没登录：让调用方自己处理
+  if (path.startsWith("/auth/login") || path.startsWith("/auth/register")) return false;
+  if (!localStorage.getItem("token")) return false; // 本来就没登录：让调用方自己处理
   localStorage.removeItem("token");
   localStorage.removeItem("user");
   const here = window.location.pathname + window.location.search;
   if (window.location.pathname !== "/login") {
     window.location.href = `/login?next=${encodeURIComponent(here)}`;
   }
+  return true;
 }
 
 async function request<T>(
@@ -68,8 +73,7 @@ async function request<T>(
 
   const res = await safeFetch(path, opt);
 
-  if (res.status === 401) {
-    handleUnauthorized(path);
+  if (res.status === 401 && handleUnauthorized(path)) {
     throw new Error(EXPIRED_ERR);
   }
 
@@ -105,8 +109,7 @@ async function upload(kind: string, file: File | Blob, filename = "image"): Prom
     body: fd,
   });
 
-  if (res.status === 401) {
-    handleUnauthorized("/uploads/image");
+  if (res.status === 401 && handleUnauthorized("/uploads/image")) {
     throw new Error(EXPIRED_ERR);
   }
 
@@ -160,8 +163,7 @@ export async function postStream<T>(
     },
     body: JSON.stringify(body),
   });
-  if (res.status === 401) {
-    handleUnauthorized(path);
+  if (res.status === 401 && handleUnauthorized(path)) {
     throw new Error(EXPIRED_ERR);
   }
   if (!res.ok || !res.body) {

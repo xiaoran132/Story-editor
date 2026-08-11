@@ -149,15 +149,15 @@ func (s *UserService) Login(input *LoginInput) (string, *model.UserResponse, err
 		return "", nil, pkg.Internal("database error")
 	}
 	if cred == nil {
-		return "", nil, pkg.Unauthorized("invalid email or password")
+		return "", nil, pkg.Unauthorized("邮箱或密码不正确")
 	}
 
 	if cred.Secret == nil {
-		return "", nil, pkg.Unauthorized("invalid email or password")
+		return "", nil, pkg.Unauthorized("邮箱或密码不正确")
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(*cred.Secret), []byte(input.Password)); err != nil {
-		return "", nil, pkg.Unauthorized("invalid email or password")
+		return "", nil, pkg.Unauthorized("邮箱或密码不正确")
 	}
 
 	user, err := s.repo.FindByID(ctx, cred.UserID)
