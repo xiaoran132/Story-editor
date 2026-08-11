@@ -100,7 +100,7 @@ event: error   data: {"detail":"…"}
 - **有记忆写手修订**：审校拒绝时把「上一稿 + issues」追加进写手对话（`writer_msgs`），令其在上一稿基础上**修订**而非从头重写——减少来回震荡、更快收敛。审校本身无记忆、每次新鲜评判。
 - **超限降级交付**：达 `AI_REVIEW_MAX_RETRIES` 仍未过，则交付最后一稿（打 `degraded=1` 埋点），**绝不硬失败**。理由：属性/`state_delta` 只是辅助 AI 分析与玩家参考的手段，轻微不精确可容忍，但玩家的操作失败不可接受。真失败只剩「LLM 非法 JSON 重试耗尽 / 网络异常」。
 
-**隐藏属性**（`attributes[k].hidden`）：仅供 AI 把控走向的幕后仪表（怀疑度/警戒度等）。照常进 `current_state`、喂给 AI，但 `_write_hidden` 指示 LLM 不得在正文/选项点名或报数；前端 `AttrBar` 按 key 过滤不显示。
+**隐藏属性**（`attributes[k].hidden`）与另两个标记：见下文「属性类型分类 → 三个可选标记」。agent 侧的落点是 `_write_hidden`。
 
 ## 数据库设计
 
@@ -160,24 +160,43 @@ CREATE INDEX idx_session_state ON play_sessions USING GIN(current_state);
 
 ## 属性类型分类（增量语义的边界）
 
-前面的 delta 累加只演示了 `hp/gold` 这类**数值属性**，但创作者可能定义**背包道具、布尔开关、身份标签**等，这些无法用「加减」表达。所以 `state_delta` 需要区分属性类型，创作者在 `world_config` 里声明每个属性键的类型：
+> 本节是属性系统的**权威说明**。`CLAUDE.md` 只保留必须每次遵守的不变式，细节看这里。
+
+属性完全由创作者定义，**后端不硬编码任何字段**。前面的 delta 累加只演示了 `hp/gold` 这类数值属性，但创作者还会定义背包道具、布尔开关、身份标签，这些无法用「加减」表达。所以类型要在 `world_config.attributes` 里逐键声明，它同时决定 **AI 必须产出的 delta 格式**与**后端的合并策略**：
 
 | 类型 | 例子 | delta 语义 | 合并方式 |
 |------|------|-----------|----------|
-| **数值累加（number）** | `hp`、`gold`、好感度 | `{"hp": -10}` 表示增减 | 路径累加 / 数值相加 |
-| **覆盖式（scalar）** | `location`、`chapter`、布尔 flag | `{"location": "王城"}` 表示置为新值 | 后值覆盖前值（JSONB `\|\|`） |
-| **集合式（set/list）** | 背包 `items`、已解锁成就 | `{"items": {"add": ["钥匙"], "remove": ["火把"]}}` | 按 add/remove 增删元素 |
+| **number** | `hp`、`gold`、好感度 | `{"hp": -10}` 表示增减 | 路径累加 / 数值相加 |
+| **scalar** | `location`、`chapter`、布尔 flag | `{"location": "王城"}` 表示置为新值 | 后值覆盖前值 |
+| **set** | 背包 `items`、已解锁成就 | `{"items": {"add": ["钥匙"], "remove": ["火把"]}}` | 按 add/remove 增删元素，去重 |
+| *未声明* | — | — | 两边都是数字→相加，否则覆盖（兼容早于 `attributes` 的老作品） |
 
 ```jsonc
 // world_config.attributes 声明（供后端选择合并策略、前端渲染面板）
 {
-  "hp":    { "type": "number", "initial": 100, "min": 0, "max": 100 },
-  "items": { "type": "set",    "initial": [] },
+  "hp":      { "type": "number", "initial": 100, "max": 100 },
+  "items":   { "type": "set",    "initial": [] },
   "married": { "type": "scalar", "initial": false }
 }
 ```
 
-> 关键结论：**只有 number 类型能用 SQL `SUM` / 路径累加**；覆盖式和集合式必须靠 `state_snapshot`（每节点完整快照）来回溯，无法从 delta 反推。这也是保留 `state_snapshot` 字段的根本原因，而不只是性能优化。
+**两处实现必须对齐**：Go 的 `service.mergeState`（`play.go`，类型取自 `WorldConfig.AttrTypes()`）与 agent 的 `normalize`（`graph/story_graph.py`，它还会丢弃非法键）。`backend/internal/service/play_merge_test.go` 是契约测试——改了任一边就跑它。
+
+> 关键结论：**只有 number 能用 SQL `SUM` / 路径累加**；scalar 和 set 必须靠 `state_snapshot`（每节点完整快照）回溯，无法从 delta 反推。这才是保留 `state_snapshot` 的根本原因，不只是性能优化。
+
+### 三个可选标记
+
+- **`"hidden": true`** —— 只给 AI 看的幕后仪表（怀疑度、天命）。照常并入 `current_state`、照常喂给 agent，区别在于前端 `AttrBar` 过滤掉它，且提示词要求 LLM 可以据此把控走向、**但不得在正文或选项里点名或报数**，只能通过叙事间接透出。
+- **`"reveal": true`** —— **在剧情让玩家发现之前**隐藏，之后显示；是一种由 AI 控制的、按会话计的可见性。数值全程照常跟踪，被门控的只有显示。状态存在 `play_sessions.revealed_attrs` + `story_nodes.revealed_snapshot`（按节点存，所以**回溯到发现之前会重新隐藏**）。写手产出 `revealed: [...]` 列表，`normalize` 按已声明的 reveal 键做白名单过滤，Go 侧做并集。`AttrBar` 的显示条件是 `非 hidden ∧ (非门控 ∨ 已揭示)`。这条机制是开场不会一次性剧透 `initial_state` 全部属性的原因。
+- **`"max": <正数>`**（仅 `number`）—— 纯**显示**上界：`AttrBar` 只对声明了它的键画进度条，其余显示纯数字。没有声明上界就没有「满」的含义——曾经硬编码 0–100，结果 `gold: 500` 永远满、`affinity: -20` 永远空，比不画还误导。不参与合并，不下发给 agent。由 `pkg.ValidateWorldConfig` 规则 8 约束。**没有 `min`**，代码里从不存在这个键。
+
+对非作者，作品详情接口会剥掉 `hidden` 属性的整条声明、剥掉未揭示 `reveal` 属性的初值（见 `CLAUDE.md`「Routes」）。会话与节点的实时数值目前**仍完整下发**，属已知缺口，见 [handoff.md](handoff.md) §9.2。
+
+### 题材标签（`world_config.tags: string[]`）
+
+`tags[0]` 是主题材（首页筛选 chip 按它分组），其余是纯展示标签。**必须与 `theme` 区分开——`theme` 只挑配色皮肤**：曾经拿主题的显示名当题材用，于是出现《孤岛探案》被标成「恐怖 · 怪谈」的卡片。`lib/types.ts` 里的 `GENRES`/`TONES` 是建议列表而非白名单，列表外的标签往返不会被改写。
+
+> `world_config` 的未知键原样透传（Go 的 `worldConfigShape` 结构体忽略它们）。这就是 `theme`/`tags` 零后端改动的原因——加字段前先想想能不能用它。
 
 ### 三份状态数据的一致性约定
 
@@ -269,6 +288,12 @@ LIMIT 20;
 - AI 服务只负责「给定世界观 + 历史路径 + 玩家输入 → 流式返回正文 + `{options, state_delta, summary, …}`」，**不碰数据库**（`agent_client.go`：非流式用带 90s 超时的 client，**流式用无超时 client + ctx 控时**）。`options` 落库到 `story_nodes.suggested_options`。**落库/去重只能在流结束后做**（依赖完整结果）。
 - 属性状态的**唯一事实来源是 `play_sessions.current_state`**；`state_delta` 是审计/回溯依据，`state_snapshot` 是回溯加速缓存。三者必须在同一事务写入，见本文「三份状态数据的一致性约定」一节。
 - 回溯：不删任何节点，以目标节点为新 `parent_id` 分叉；`current_state` 从目标节点 `state_snapshot` 恢复。
+
+### 节点语义合并与去重（`tryMerge`）
+
+`service/agent_client.go` 是独立 HTTP 客户端，调 agent 的 `/generate`、`/continue`、`/merge-check`，不依赖 repository 层；`CheckMerge` 走通用的 `postInto`（`post` 是它针对 `AIResult` 的特化包装）。
+
+`tryMerge`（`play.go`，在 `applyContinueResult` 内）在续写流结束之后、建新节点之前去重：取当前节点的同层子节点（`FindChildren`），先按 `state_delta` 的规范化 JSON 相等做**硬过滤**（`deltaEqual`，省一次 AI 调用），再对剩下的候选调 `CheckMerge` 判断语义等价。命中就复用该子节点（只挪会话指针，`NodeCount` 不变），否则建新节点。**策略保守：agent 拿不准就不合并。**
 
 ------
 
