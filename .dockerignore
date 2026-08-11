@@ -1,0 +1,40 @@
+# Docker 构建上下文过滤（三个 Dockerfile 的上下文都是仓库根，见 deploy/docker/*）。
+#
+# 为什么必须有这个文件：Dockerfile.frontend 里的 `COPY frontend ./` 会把开发机的
+# frontend/.next 一起拷进构建阶段，`npm run build` 随后复用其中 Next 的整页缓存，
+# 于是**预渲染 HTML 是旧的、静态资源是新的**——线上表现为 /_next/static/*.css 与
+# app/page-*.js 404、页面白屏（x-nextjs-cache: HIT 是这个故障的指纹）。
+# 顺带也免去把 700MB 无用文件传给 Docker daemon。
+
+# 构建产物与依赖（镜像内会重新装/重新构建）
+frontend/.next
+frontend/node_modules
+frontend/out
+agent/.venv
+agent/**/__pycache__
+agent/tools/out
+backend/backend
+*.exe
+
+# 运行时数据：上传的头像/封面挂在具名卷上，绝不进镜像
+backend/uploads
+
+# 版本库与本地杂物
+.git
+.gitignore
+.claude
+*.har
+*.log
+
+# 环境文件：只有 *.example 该进上下文，真实密钥绝不进镜像层
+.env
+**/.env
+**/.env.*
+!**/.env.example
+!deploy/docker/*.env.example
+
+# 文档与设计稿：镜像用不到（backend 需要 templates/，故不在此列）
+docs
+infa
+README.md
+CLAUDE.md
