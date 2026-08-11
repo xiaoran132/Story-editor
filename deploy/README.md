@@ -98,6 +98,10 @@ python agent/tools/aggregate_log.py agent.log   # 见 handoff §8.4
 ## 排错
 
 - **前端能开、API 连不上**:构建时没设 `NEXT_PUBLIC_API_BASE=/api/v1`(构建时固化)。Docker 见 compose 的 `args`;原生见 deploy.sh。
+- **部署后页面白屏、`/_next/static/*.css` 与 `app/page-*.js` 404**:两种成因,先按 `curl -s http://<域名>/ | grep -o '/_next/static/css/[a-z0-9]*\.css'` 与直连 `http://127.0.0.1:3000/` 的结果对比判定。
+  - 两侧哈希**不一致** → 宿主 nginx 缓存了旧 HTML。Next 给预渲染页发 `s-maxage=31536000`,任何开了 `proxy_cache` 的 nginx(**宝塔面板默认在 http 段全局开启**)都会缓一年。仓库配置已在 `location /` 加 `proxy_cache off`;若你的站点是面板生成的另一份配置,需自行补上,并清缓存:`nginx -T | grep proxy_cache_path` 找到目录 → `rm -rf <目录>/*` → `nginx -s reload`。
+  - 两侧哈希**一致但仍 404** → 镜像里 HTML 与 `.next/static` 不同源,多为构建上下文带进了开发机的 `frontend/.next`(仓库根的 `.dockerignore` 已排除)。用 `docker compose build --no-cache frontend` 重建。
+- **用 IP 能打开但接口全错**:确认 IP 命中的是哪个 server block(`nginx -T | grep -n server_name`)。面板常自带一个 `server_name <你的IP>` 的站点,它的 `location /api/` 会把 `/api/v1/*` 抢走转给别的项目。要么用域名访问,要么把 IP 并入本项目的 `server_name`,并挪开面板那个 block。
 - **上传图片报 413**:nginx 的 `client_max_body_size` 默认 1m。仓库配置已在 `/api/v1/` location 设 8m,自己改过配置的记得补回。
 - **图片传上去了、刷新就 404**:容器没挂持久卷,或 `backend.env` 的 `UPLOAD_DIR` 与 compose 的挂载点不一致。
 - **开局/续写不逐字(卡住)**:反代缓冲了 SSE。nginx 的 `/api/v1/` location 需 `proxy_buffering off` + `proxy_http_version 1.1` + `proxy_set_header Connection ''` + 大 `proxy_read_timeout`(仓库配置已含)。
