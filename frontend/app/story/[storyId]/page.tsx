@@ -8,7 +8,7 @@ import { useAuthStore } from "@/store/authStore";
 import { useReadingTheme } from "@/lib/useReadingTheme";
 import { formatAttrValue } from "@/lib/state";
 import StoryLLMConfigPanel from "@/components/StoryLLMConfigPanel";
-import type { RecommendedModels, SessionListItem, SessionResult, Story } from "@/lib/types";
+import type { RecommendedModels, SessionListItem, SessionResult, Story, StoryLLMConfig } from "@/lib/types";
 
 interface AttrSpec { type?: string; initial?: unknown; hidden?: boolean; reveal?: boolean }
 
@@ -47,6 +47,17 @@ export default function StoryDetailPage() {
   // 本作品的最近一次存档（原型 story-detail.html:164 的「继续上次」）。
   // /play/sessions 已返回带 story_id 的列表，前端过滤即可，无需新接口。
   const [lastSession, setLastSession] = useState<SessionListItem | null>(null);
+  // 本作品的模型配置 + 「能不能开玩」。后端在同一次请求里给 ready/blocked，
+  // 所以拦截不需要额外接口。未登录不请求（AuthRequired），cfg 恒为 null。
+  const [cfg, setCfg] = useState<StoryLLMConfig | null>(null);
+
+  useEffect(() => {
+    if (!storyId || !user) return;
+    api
+      .get<StoryLLMConfig>(`/llm/story-config/${storyId}`)
+      .then(setCfg)
+      .catch(() => setCfg(null)); // 拿不到就按"未就绪"处理，不假装能玩
+  }, [storyId, user]);
 
   useEffect(() => {
     if (!storyId) return;
@@ -69,6 +80,10 @@ export default function StoryDetailPage() {
       })
       .catch(() => {}); // 拿不到存档不影响开新局，静默
   }, [storyId, user]);
+
+  // 能不能开玩：必须登录（额度挂账号）且后端判定 ready。cfg 未到达时按不可玩处理——
+  // 宁可让按钮晚亮一瞬，也不要点下去才发现没模型。
+  const canPlay = !!user && !!cfg?.ready;
 
   const world = story ? parseWorld(story.world_config) : {};
   // 作品主题：整页阅读态换肤；封面（若有）作为阅读背景图注入 --reader-bg
@@ -200,27 +215,52 @@ export default function StoryDetailPage() {
               storyId={story.id}
               recommended={world.recommended_models || {}}
               loggedIn={!!user}
+              cfg={cfg}
+              onCfgChange={setCfg}
             />
 
             {error && <p className="notice err" style={{ marginTop: 16 }}>出错：{error}</p>}
+
+            {/* 墙撑在这里：没有可用模型就别让玩家进游玩页才吃一个流式报错。
+                未登录 → 引导登录（额度挂在账号上）；已登录未配 → 就地给原因与去路。 */}
+            {!user ? (
+              <div className="od-block">
+                <span><b>登录即赠 1 元体验额度</b>，可直接用平台模型开玩；也可以配置自己的模型连接。</span>
+                <button
+                  className="btn-read primary"
+                  onClick={() => router.push(`/login?next=/story/${storyId}`)}
+                >
+                  登录 / 注册
+                </button>
+              </div>
+            ) : cfg && !cfg.ready ? (
+              <div className="od-block" role="alert">
+                <span>{cfg.blocked}</span>
+                <button className="btn-read ghost" onClick={() => router.push("/me?section=llm")}>
+                  去添加连接
+                </button>
+              </div>
+            ) : null}
 
             <div className="od-cta">
               {lastSession && (
                 <button
                   className="btn-read ghost"
+                  disabled={!canPlay}
                   onClick={() => router.push(`/play/${lastSession.id}`)}
                 >
                   继续上次
                   <small>第 {Math.max(0, lastSession.node_count - 1)} 步</small>
                 </button>
               )}
-              <button className="btn-read primary" disabled={starting} onClick={start}>
+              <button className="btn-read primary" disabled={starting || !canPlay} onClick={start}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
                 {starting ? "正在生成开场…" : "开始新游戏"}
               </button>
             </div>
             <p className="od-cont-hint">
-              {lastSession ? "开新局不会覆盖存档，两条线各走各的。" : ""}未登录也能玩，登录后可跨设备续玩。
+              {lastSession ? "开新局不会覆盖存档，两条线各走各的。" : ""}
+              游玩消耗平台额度或你自己的模型连接；登录后可跨设备续玩。
             </p>
           </article>
         )}

@@ -110,14 +110,15 @@ flowchart LR
 
 ```bash
 cd agent
-copy .env.example .env  # Windows；填入 DEEPSEEK_API_KEY
+copy .env.example .env  # Windows；可选，全部变量都有默认值
 ```
+
+> **agent 不持有任何 LLM 凭据。** key / 端点 / 模型名由 Go 后端按环节解析后随每个请求
+> 下发（玩家自带连接，或平台额度）。请求里没带配置就是硬错误（`LLMConfigMissing`），
+> 不会回退到某个默认 key —— 那样等于让服务器悄悄替用户付费。
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
-| `DEEPSEEK_API_KEY` | 空 | 必填；缺失时接口生成会失败 |
-| `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | OpenAI 兼容服务地址 |
-| `DEEPSEEK_MODEL` | `deepseek-chat` | 模型名称 |
 | `AI_TEMPERATURE` | `0.8` | 正文生成随机性 |
 | `AI_TIMEOUT` | `60` | 单次 LLM 调用超时（秒） |
 | `AI_REVIEW_MAX_RETRIES` | `2` | 审校拒绝后的额外重写/修订次数 |

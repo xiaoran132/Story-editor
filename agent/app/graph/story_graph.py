@@ -15,7 +15,7 @@ from typing import Any
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from ..config import get_settings
-from ..llm import LLMParseError, chat_json, chat_stream
+from ..llm import LLMParseError, Usage, chat_json, chat_stream
 from ..prompts import (
     _SENTINEL,
     OPENING_COMPLETE_SYSTEM,
@@ -269,7 +269,8 @@ def review(state: StoryState) -> dict[str, Any]:
         f"{candidate}\n"
         "\n请仅按系统要求返回审校 JSON。"
     )
-    verdict = chat_json(REVIEW_SYSTEM, prompt, temperature=0.2, llm_cfg=state.get("llm_cfg"))
+    verdict = chat_json(REVIEW_SYSTEM, prompt, temperature=0.2, llm_cfg=state.get("llm_cfg"),
+                        usage_out=state.get("usage_out"))
     passed = verdict.get("passed") is True
     issues = verdict.get("issues") or []
     if isinstance(issues, list):
@@ -346,7 +347,8 @@ def normalize(state: StoryState) -> dict[str, Any]:
 # STRUCTURE_SYSTEM 兜底；再 normalize + review，拒绝则有记忆修订、超限则降级交付。
 # prepare/normalize/review 为共享纯函数；complete_opening 走非流式。
 
-def _structure_fallback(state: dict[str, Any], prose: str, llm_cfg: dict[str, Any] | None = None) -> dict[str, Any]:
+def _structure_fallback(state: dict[str, Any], prose: str, llm_cfg: dict[str, Any] | None = None,
+                        usage_out: Usage | None = None) -> dict[str, Any]:
     """哨兵后的 JSON 尾缺失/非法时，据已写好的正文补出结构化元数据（保住正文不重来）。"""
     prompt = (
         state["user_prompt"]
@@ -354,7 +356,7 @@ def _structure_fallback(state: dict[str, Any], prose: str, llm_cfg: dict[str, An
         + prose
         + "\n请只为上面这段正文输出结构化元数据 JSON（不要重写正文）。"
     )
-    return chat_json(STRUCTURE_SYSTEM, prompt, llm_cfg=llm_cfg)
+    return chat_json(STRUCTURE_SYSTEM, prompt, llm_cfg=llm_cfg, usage_out=usage_out)
 
 
 def _split_sentinel(buf: str) -> tuple[str, str]:
@@ -371,9 +373,15 @@ async def _stream_pipeline(mode: str, base_state: dict[str, Any]) -> AsyncIterat
     异常（LLMParseError/ReviewExhaustedError/其它）打点后原样抛出，由路由转 SSE error 帧。"""
     prep = prepare(base_state)
     state = {**base_state, **prep}
-    # BYOK：写手（正文/结构化兜底）用 llm_write，审校用 llm_review；缺则 agent 回退 .env 默认。
+    # 凭据：写手（正文/结构化兜底）用 llm_write，审校用 llm_review。两者都由 Go 下发，
+    # agent 没有任何默认可退——llm_write 缺失会在 chat_stream 里抛 LLMConfigMissing。
     llm_write = base_state.get("llm_write")
     llm_review = base_state.get("llm_review")
+    # llm_review 为 None = 玩家关掉了质量审校（作品级开关，默认关）。此时整段跳过审校，
+    # 首稿直接交付；埋点打 review=off，别让"没审校"伪装成 first_draft_pass=true。
+    review_on = bool(llm_review)
+    # 按环节分开累计 token 用量：两个环节可能是不同模型、不同单价，Go 要分别折算扣费。
+    usage_write, usage_review = Usage(), Usage()
     max_retries = max(0, get_settings().ai_review_max_retries)
     start = time.perf_counter()
     ttfb_ms: int | None = None
@@ -392,7 +400,7 @@ async def _stream_pipeline(mode: str, base_state: dict[str, Any]) -> AsyncIterat
             buf = ""
             emitted = 0
             hold = len(_SENTINEL) - 1  # 末尾暂留，避免把半个哨兵当正文发出
-            async for chunk in chat_stream(writer_msgs, llm_cfg=llm_write):
+            async for chunk in chat_stream(writer_msgs, llm_cfg=llm_write, usage_out=usage_write):
                 if ttfb_ms is None:
                     ttfb_ms = round((time.perf_counter() - start) * 1000)
                 buf += chunk
@@ -414,15 +422,20 @@ async def _stream_pipeline(mode: str, base_state: dict[str, Any]) -> AsyncIterat
                 except json.JSONDecodeError:
                     tail = None
             if not isinstance(tail, dict):
-                tail = _structure_fallback(state, prose, llm_write)  # 兜底：保住正文，补结构化尾
+                # 兜底：保住正文，补结构化尾。它也是写手环节的花费，计进 usage_write。
+                tail = _structure_fallback(state, prose, llm_write, usage_write)
 
             raw = {"content": prose, **tail}
             result = normalize(
                 {"raw": raw, "known_keys": state["known_keys"], "attr_types": state["attr_types"]}
             )["result"]
 
-            rv = review({"user_prompt": state["user_prompt"], "raw": raw,
-                         "review_failures": failures, "llm_cfg": llm_review})
+            if review_on:
+                rv = review({"user_prompt": state["user_prompt"], "raw": raw,
+                             "review_failures": failures, "llm_cfg": llm_review,
+                             "usage_out": usage_review})
+            else:
+                rv = {"review_passed": True, "review_failures": failures, "review_feedback": ""}
             failures = rv["review_failures"]
             feedback = rv["review_feedback"]
             # 通过 或 重写耗尽 → 都交付本稿（耗尽为降级交付，不硬失败）。
@@ -434,11 +447,17 @@ async def _stream_pipeline(mode: str, base_state: dict[str, Any]) -> AsyncIterat
                                    failures, feedback)
                 logger.info(
                     "gen mode=%s outcome=ok stream=1 elapsed_ms=%d ttfb_ms=%d "
-                    "review_failures=%d first_draft_pass=%s degraded=%s is_ending=%s",
+                    "review=%s review_failures=%d first_draft_pass=%s degraded=%s is_ending=%s "
+                    "tok_in=%d tok_out=%d usage_estimated=%s",
                     mode, elapsed_ms, ttfb_ms if ttfb_ms is not None else -1,
+                    "on" if review_on else "off",
                     failures, failures == 0, degraded, bool(result.get("is_ending")),
+                    usage_write["prompt_tokens"] + usage_review["prompt_tokens"],
+                    usage_write["completion_tokens"] + usage_review["completion_tokens"],
+                    usage_write["estimated"] or usage_review["estimated"],
                 )
-                yield {"type": "done", "result": result}
+                yield {"type": "done", "result": result,
+                       "usage": {"write": dict(usage_write), "review": dict(usage_review)}}
                 return
 
             # 拒绝且未超限：把上一稿(原样)与审校反馈追加进写手对话，令其"修订"而非重写。
@@ -502,7 +521,8 @@ def _drain(agen: AsyncIterator[dict[str, Any]]) -> dict[str, Any]:
         result: dict[str, Any] = {}
         async for ev in agen:
             if ev.get("type") == "done":
-                result = ev["result"]
+                # usage 一并带出：非流式路径（/assist/opening）同样要计费。
+                result = {**ev["result"], "usage": ev.get("usage") or {}}
         return result
     return asyncio.run(collect())
 
@@ -537,6 +557,9 @@ def complete_opening(
     _write_attr_types(lines, attr_types)
     lines.append("\n已写定的开场正文：\n" + content)
     lines.append("\n请为这段开场补出玩家的起始选项与前情提要（不要改写正文）。")
-    raw = chat_json(OPENING_COMPLETE_SYSTEM, "\n".join(lines), llm_cfg=llm_write)
+    usage = Usage()
+    raw = chat_json(OPENING_COMPLETE_SYSTEM, "\n".join(lines), llm_cfg=llm_write, usage_out=usage)
     raw["content"] = content
-    return normalize({"raw": raw, "known_keys": known, "attr_types": attr_types})["result"]
+    result = normalize({"raw": raw, "known_keys": known, "attr_types": attr_types})["result"]
+    # 补全也烧写手环节的 token，一并回传供 Go 扣费——预设开场不是免费的。
+    return {**result, "usage": {"write": dict(usage)}}

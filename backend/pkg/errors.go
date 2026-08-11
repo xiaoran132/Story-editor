@@ -41,9 +41,13 @@ func Internal(msg string) *AppError {
 //   10013 AI 服务不可用（assist 转发失败，见 handler/assist.go）
 //   10014 图片格式不支持（见 pkg/upload.go）
 //   10015 图片超出大小限制（见 internal/service/upload.go）
+//   10016 未配置模型（BYOK：解析不到可用连接，且平台额度也不可用）
+//   10017 平台额度已用尽（见 internal/service/credit.go）
 const (
 	CodeUnsupportedImage = 10014
 	CodeImageTooLarge    = 10015
+	CodeNoLLMConfig      = 10016
+	CodeCreditExhausted  = 10017
 )
 
 func NewBusinessError(code int) *AppError {

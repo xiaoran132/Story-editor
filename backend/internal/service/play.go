@@ -20,7 +20,8 @@ type PlayService struct {
 	nodes    *repository.NodeRepository
 	stories  StoryReader // 跨模块只读 story，经窄接口而非直接依赖 story repo（拆分接缝）
 	ai       *AgentClient
-	resolver *LLMResolver // BYOK：按玩家 write/review 环节解析下发配置
+	resolver *LLMResolver   // BYOK：按玩家 write/review 环节解析下发配置
+	credit   *CreditService // 平台额度扣费（只对走平台档的环节生效）
 }
 
 func NewPlayService(
@@ -29,19 +30,45 @@ func NewPlayService(
 	stories StoryReader,
 	ai *AgentClient,
 	resolver *LLMResolver,
+	credit *CreditService,
 ) *PlayService {
-	return &PlayService{sessions: sessions, nodes: nodes, stories: stories, ai: ai, resolver: resolver}
+	return &PlayService{
+		sessions: sessions, nodes: nodes, stories: stories,
+		ai: ai, resolver: resolver, credit: credit,
+	}
 }
 
 // resolvePlay 解析某玩家在某作品下的 write + review 下发配置（用于开场/续写）。
-// 按作品级配置解析（每玩家在每作品各配各的模型）；resolver 缺省或出错时回退 nil。
-func (s *PlayService) resolvePlay(ctx context.Context, playerID, storyID uuid.UUID) (write, review *AgentLLMConfig) {
+//
+// **解析不到 write 就是硬失败**：agent 已无任何默认凭据，发过去只会换来一个
+// 难读的内部错误；在这里失败才能给玩家一句能照着做的话。
+//
+// review 只在该作品的开关打开时解析。开关关着 → 返回 nil，agent 整段跳过审校
+// （省一半 token）。开关开着却解析不到 → 也报错：那是配置错误，不是可降级项，
+// 静默降级会让玩家以为审校在生效。
+func (s *PlayService) resolvePlay(ctx context.Context, playerID, storyID uuid.UUID) (write, review *AgentLLMConfig, err error) {
 	if s.resolver == nil {
-		return nil, nil
+		return nil, nil, noLLMConfigErr()
 	}
 	write, _ = s.resolver.ResolveForPlay(ctx, playerID, storyID, StageWrite)
+	if write == nil {
+		return nil, nil, noLLMConfigErr()
+	}
+	if !s.resolver.ReviewEnabled(ctx, playerID, storyID) {
+		return write, nil, nil
+	}
 	review, _ = s.resolver.ResolveForPlay(ctx, playerID, storyID, StageReview)
-	return write, review
+	if review == nil {
+		return nil, nil, pkg.NewBusinessErrorWithMessage(pkg.CodeNoLLMConfig,
+			"你为本作品开启了质量审校，但没有为它选择模型连接。请在作品详情页的「生成设置」里补上，或关闭审校。")
+	}
+	return write, review, nil
+}
+
+// noLLMConfigErr 是"没有可用模型"的统一文案。放一处，免得三个调用点各写一句。
+func noLLMConfigErr() error {
+	return pkg.NewBusinessErrorWithMessage(pkg.CodeNoLLMConfig,
+		"没有可用的模型：平台赠送额度已用尽或未开放。请在「个人主页 → AI 连接」添加你自己的模型连接，再回来游玩。")
 }
 
 // SessionResult 是游玩接口返回的组合 DTO：会话 + 当前节点（+ 可选整局节点列表）。
@@ -135,7 +162,10 @@ func (s *PlayService) StartOpeningStream(
 	}
 	world := parseWorld(story.WorldConfig)
 	initialState := parseState(session.CurrentState)
-	write, review := s.resolvePlay(ctx, playerID, session.StoryID) // BYOK：玩家在本作品的配置（未配回退平台/.env）
+	write, review, err := s.resolvePlay(ctx, playerID, session.StoryID)
+	if err != nil {
+		return nil, err // 没有可用模型：在开流生成之前就说清楚，别让玩家白等
+	}
 
 	// 生成开场：预设 opening_content 的作品正文固定（直接作为一帧 delta 外发，再补选项/摘要）；
 	// 否则走 agent 流式真生成。
@@ -156,6 +186,9 @@ func (s *PlayService) StartOpeningStream(
 			return nil, pkg.Internal("ai start story stream: " + err.Error())
 		}
 	}
+
+	// 扣平台额度（只对确实走了平台档的环节生效；玩家自带 key 不动额度）。
+	s.credit.ChargeAll(ctx, playerID, &session.StoryID, write, review, opening.Usage)
 
 	// 开场揭示（若 AI 在开场即揭示某门控属性）：并入会话与根节点快照。
 	revealedJSON := mergeRevealed(session.RevealedAttrs, opening.Revealed, world.RevealGatedAttrs())
@@ -301,11 +334,16 @@ func (s *PlayService) MakeChoiceStream(
 		return nil, err
 	}
 	currentState := parseState(session.CurrentState)
-	write, review := s.resolvePlay(ctx, playerID, session.StoryID) // BYOK：玩家在本作品的配置
+	write, review, err := s.resolvePlay(ctx, playerID, session.StoryID)
+	if err != nil {
+		return nil, err
+	}
 	result, err := s.ai.ContinueStream(ctx, world, history, currentState, choice, parseStrList(session.RevealedAttrs), write, review, onDelta, onRevise)
 	if err != nil {
 		return nil, pkg.Internal("ai continue stream: " + err.Error())
 	}
+	// 扣平台额度：token 已经烧掉了，所以无论后续落库成功与否都要记账。
+	s.credit.ChargeAll(ctx, playerID, &session.StoryID, write, review, result.Usage)
 	return s.applyContinueResult(ctx, session, pathNodes, world, choice, result)
 }
 

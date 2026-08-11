@@ -21,10 +21,13 @@ type LLMService struct {
 	llm    *repository.LLMRepository
 	agent  *AgentClient
 	encKey string
+	// resolver 复用同一条解析链来回答「这个玩家能不能开玩」，
+	// 免得判定逻辑在 service 与 resolver 里各写一份、日后漂移。
+	resolver *LLMResolver
 }
 
-func NewLLMService(llm *repository.LLMRepository, agent *AgentClient, encKey string) *LLMService {
-	return &LLMService{llm: llm, agent: agent, encKey: encKey}
+func NewLLMService(llm *repository.LLMRepository, agent *AgentClient, encKey string, resolver *LLMResolver) *LLMService {
+	return &LLMService{llm: llm, agent: agent, encKey: encKey, resolver: resolver}
 }
 
 // ----- 输入类型 -----
@@ -33,7 +36,7 @@ type ConnectionInput struct {
 	Name         string `json:"name"`
 	Provider     string `json:"provider"`
 	BaseURL      string `json:"base_url"`
-	APIKey       string `json:"api_key"`       // 创建必填；更新时空串=保留原 key
+	APIKey       string `json:"api_key"` // 创建必填；更新时空串=保留原 key
 	DefaultModel string `json:"default_model"`
 }
 
@@ -49,6 +52,10 @@ type PlatformInput struct {
 	BaseURL  string `json:"base_url"`
 	APIKey   string `json:"api_key"` // 空串=保留原 key
 	Model    string `json:"model"`
+	// 单价（元/百万 token）。用指针：0 是合法取值（免费模型），
+	// 不能像上面几个字符串那样用「空=不改」，否则 admin 永远改不回 0。
+	PriceInPerMTok  *float64 `json:"price_in_per_mtok"`
+	PriceOutPerMTok *float64 `json:"price_out_per_mtok"`
 }
 
 // ----- 连接 CRUD -----
@@ -177,23 +184,67 @@ const bizCodeAIUnavailableSvc = 10013
 
 // ----- 作品级模型配置（玩家在某作品各环节选自己的连接+模型） -----
 
-// GetStoryConfig 返回某玩家在某作品的环节配置（write/review → {conn, model}）。无则空映射。
-func (s *LLMService) GetStoryConfig(userID, storyID uuid.UUID) (StageBindings, error) {
-	sc, err := s.llm.FindStoryConfig(context.Background(), userID, storyID)
+// StoryLLMConfigResult 是作品级配置的外发信封。
+//
+// 不只回 bindings：作品详情页要在**同一次请求**里知道「这个玩家现在能不能开玩」，
+// 否则拦截逻辑得再多一个接口，或者只能等玩家点了开始才报错。
+type StoryLLMConfigResult struct {
+	Bindings      StageBindings `json:"bindings"`
+	ReviewEnabled bool          `json:"review_enabled"`
+	Ready         bool          `json:"ready"`             // write 环节可解析 → 能开玩
+	Blocked       string        `json:"blocked,omitempty"` // 不能开玩的原因，前端直接展示
+	// CreditMicroCNY 是平台额度余额（微元）。注册赠 1 元，见 model.User.CreditMicroCNY。
+	CreditMicroCNY int64 `json:"credit_micro_cny"`
+	// PlatformReady 表示「平台」这一档现在可不可选（有额度 + admin 配了该环节的 key）。
+	PlatformReady bool `json:"platform_ready"`
+}
+
+// GetStoryConfig 返回某玩家在某作品的环节配置 + 能否开玩的判定。
+func (s *LLMService) GetStoryConfig(userID, storyID uuid.UUID) (*StoryLLMConfigResult, error) {
+	ctx := context.Background()
+	sc, err := s.llm.FindStoryConfig(ctx, userID, storyID)
 	if err != nil {
 		return nil, pkg.Internal("database error")
 	}
-	if sc == nil {
-		return StageBindings{}, nil
+
+	out := &StoryLLMConfigResult{Bindings: StageBindings{}}
+	if sc != nil {
+		out.Bindings = parseBindings(sc.Bindings)
+		out.ReviewEnabled = sc.ReviewEnabled
 	}
-	return parseBindings(sc.Bindings), nil
+	out.CreditMicroCNY, _ = s.llm.GetCredit(ctx, userID)
+
+	// 「能不能开玩」与真实的解析链保持一致：作品级用户连接 → 平台档（需额度）。
+	// 这里复用 resolver 而不是自己再判一遍，免得两处逻辑漂移。
+	if s.resolver != nil {
+		if write, _ := s.resolver.ResolveForPlay(ctx, userID, storyID, StageWrite); write != nil {
+			out.Ready = true
+		}
+		if p := s.resolver.PlatformAvailable(ctx, userID, StageWrite); p {
+			out.PlatformReady = true
+		}
+	}
+	if !out.Ready {
+		if out.CreditMicroCNY <= 0 {
+			out.Blocked = "平台赠送额度已用尽。请在「个人主页 → AI 连接」添加你自己的模型连接后继续。"
+		} else {
+			out.Blocked = "还没有可用的模型。请为「续写」环节选择一条连接，或在「个人主页 → AI 连接」先添加一条。"
+		}
+	}
+	return out, nil
+}
+
+// StoryLLMConfigInput 是保存作品级配置的入参。
+type StoryLLMConfigInput struct {
+	Bindings      StageBindings `json:"bindings"`
+	ReviewEnabled bool          `json:"review_enabled"`
 }
 
 // SetStoryConfig 整体覆盖某玩家在某作品的配置：校验环节 ∈ {write,review} + 连接归属本人。
-func (s *LLMService) SetStoryConfig(userID, storyID uuid.UUID, in StageBindings) (StageBindings, error) {
+func (s *LLMService) SetStoryConfig(userID, storyID uuid.UUID, in StoryLLMConfigInput) (*StoryLLMConfigResult, error) {
 	ctx := context.Background()
 	clean := StageBindings{}
-	for stage, b := range in {
+	for stage, b := range in.Bindings {
 		if !PlayStages[stage] {
 			return nil, pkg.BadRequest("非法环节（作品级仅 write/review）：" + stage)
 		}
@@ -210,13 +261,20 @@ func (s *LLMService) SetStoryConfig(userID, storyID uuid.UUID, in StageBindings)
 		}
 		clean[stage] = StageBinding{Conn: b.Conn, Model: strings.TrimSpace(b.Model)}
 	}
+	// 开着审校却没给它选连接 = 配置错误，当场拒绝。
+	// 不静默降级成"关掉审校"：那会让玩家以为审校在生效，而它并没有。
+	if in.ReviewEnabled && clean[StageReview].Conn == "" {
+		return nil, pkg.BadRequest("开启质量审校需要为「审校」环节选择一条连接，或关闭该开关")
+	}
+
 	raw, _ := json.Marshal(clean)
 	if err := s.llm.UpsertStoryConfig(ctx, &model.UserStoryLLMConfig{
 		UserID: userID, StoryID: storyID, Bindings: string(raw),
+		ReviewEnabled: in.ReviewEnabled,
 	}); err != nil {
 		return nil, pkg.Internal("failed to save story config")
 	}
-	return clean, nil
+	return s.GetStoryConfig(userID, storyID)
 }
 
 // ----- 模型列表（拉取连接端点的 /models，供下拉选择） -----
@@ -274,6 +332,7 @@ func (s *LLMService) ListModels(userID, connID uuid.UUID) ([]string, error) {
 func (s *LLMService) toPlatformResponse(p *model.PlatformLLMSetting) model.PlatformLLMSettingResponse {
 	res := model.PlatformLLMSettingResponse{
 		Stage: p.Stage, Provider: p.Provider, BaseURL: p.BaseURL, Model: p.Model,
+		PriceInPerMTok: p.PriceInPerMTok, PriceOutPerMTok: p.PriceOutPerMTok,
 	}
 	if plain, err := pkg.Decrypt(p.APIKeyCipher, s.encKey); err == nil && plain != "" {
 		res.HasKey = true
@@ -327,6 +386,18 @@ func (s *LLMService) UpsertPlatform(stage string, in *PlatformInput) (*model.Pla
 	}
 	if strings.TrimSpace(in.Model) != "" {
 		p.Model = strings.TrimSpace(in.Model)
+	}
+	if in.PriceInPerMTok != nil {
+		if *in.PriceInPerMTok < 0 {
+			return nil, pkg.BadRequest("单价不能为负")
+		}
+		p.PriceInPerMTok = *in.PriceInPerMTok
+	}
+	if in.PriceOutPerMTok != nil {
+		if *in.PriceOutPerMTok < 0 {
+			return nil, pkg.BadRequest("单价不能为负")
+		}
+		p.PriceOutPerMTok = *in.PriceOutPerMTok
 	}
 	if strings.TrimSpace(in.APIKey) != "" { // 空串=保留原 key
 		cipher, err := pkg.Encrypt(strings.TrimSpace(in.APIKey), s.encKey)

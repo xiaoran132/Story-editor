@@ -8,6 +8,9 @@ from app.prompts import REVIEW_SYSTEM, STRUCTURE_SYSTEM
 
 WORLD = {"background": "测试世界"}
 STATE = {"hp": 10}
+# review 现在是**作品级开关**（默认关）：只有下发了 llm_review 才会审校。
+# 要测审校行为就必须显式给一份配置——内容随意，chat_json 在测试里是假的。
+REVIEW_CFG = {"api_key": "k", "base_url": "https://x.invalid", "model": "m"}
 
 
 def make_stream(calls_chunks):
@@ -88,7 +91,8 @@ class StreamPipelineTest(unittest.IsolatedAsyncioTestCase):
 
         with patch.object(sg, "chat_stream", make_stream(chunks)), \
              patch.object(sg, "chat_json", fake_json):
-            events = await collect(run_continue_stream(WORLD, [], STATE, "go"))
+            events = await collect(
+                run_continue_stream(WORLD, [], STATE, "go", None, None, REVIEW_CFG))
 
         types = [e["type"] for e in events]
         self.assertIn("revise", types)  # 第一稿被拒 → 通知前端清空
@@ -102,12 +106,36 @@ class StreamPipelineTest(unittest.IsolatedAsyncioTestCase):
         chunks = [["稿。", tail]]  # 每次都同样，review 永远拒
         with patch.object(sg, "chat_stream", make_stream(chunks)), \
              patch.object(sg, "chat_json", lambda system, user, **kw: {"passed": False, "issues": ["x"]}):
-            events = await collect(run_continue_stream(WORLD, [], STATE, "go"))
+            events = await collect(
+                run_continue_stream(WORLD, [], STATE, "go", None, None, REVIEW_CFG))
 
         done = [e for e in events if e["type"] == "done"]
         self.assertEqual(len(done), 1)  # 交付而非抛错
         self.assertEqual(done[0]["result"]["content"], "稿。")
         self.assertIn("revise", [e["type"] for e in events])  # 期间确实重试过
+
+
+    async def test_review_off_skips_audit(self) -> None:
+        """未下发 llm_review（玩家关掉了质量审校）→ 一次审校都不该发生，首稿直接交付。
+
+        这是「关掉审校省一半 token」的实现依据：不能只是不看结果，而是根本不调用。
+        """
+        tail = ('<<<META>>>{"options":[{"text":"A","hint":"h"}],"state_delta":{},'
+                '"summary":"s","is_ending":false,"ending_type":""}')
+        chunks = [["首稿。", tail]]
+
+        def boom(system, user, **kw):  # 任何 chat_json 调用都算失败
+            raise AssertionError("review 已关闭，不应发生任何 chat_json 调用")
+
+        with patch.object(sg, "chat_stream", make_stream(chunks)),              patch.object(sg, "chat_json", boom):
+            events = await collect(run_continue_stream(WORLD, [], STATE, "go"))
+
+        types = [e["type"] for e in events]
+        self.assertNotIn("revise", types)
+        done = [e for e in events if e["type"] == "done"][0]
+        self.assertEqual(done["result"]["content"], "首稿。")
+        # usage 分环节回传：review 关着，它那份必须是零
+        self.assertEqual(done["usage"]["review"]["completion_tokens"], 0)
 
 
 if __name__ == "__main__":

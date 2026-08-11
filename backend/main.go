@@ -30,7 +30,7 @@ func main() {
 	// 先启用 pgcrypto 扩展
 	db.Exec("CREATE EXTENSION IF NOT EXISTS pgcrypto")
 
-	if err := db.AutoMigrate(&model.User{}, &model.UserCredential{}, &model.Story{}, &model.StoryNode{}, &model.PlaySession{}, &model.LLMConnection{}, &model.PlatformLLMSetting{}, &model.UserStoryLLMConfig{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.UserCredential{}, &model.Story{}, &model.StoryNode{}, &model.PlaySession{}, &model.LLMConnection{}, &model.PlatformLLMSetting{}, &model.UserStoryLLMConfig{}, &model.LLMUsageLog{}); err != nil {
 		log.Fatalf("failed to migrate: %v", err)
 	}
 
@@ -50,11 +50,12 @@ func main() {
 	// Services
 	agentClient := service.NewAgentClient(cfg.AgentURL)
 	llmResolver := service.NewLLMResolver(llmRepo, cfg.EncryptionKey) // BYOK：按环节解析下发配置
+	creditSvc := service.NewCreditService(llmRepo)                    // 平台额度（注册赠 1 元）扣费
 	userSvc := service.NewUserService(userRepo, cfg.JWTSecret, cfg.EncryptionKey)
 	storySvc := service.NewStoryService(storyRepo)
 	nodeSvc := service.NewNodeService(nodeRepo, storyRepo)
-	llmSvc := service.NewLLMService(llmRepo, agentClient, cfg.EncryptionKey)
-	playSvc := service.NewPlayService(sessionRepo, nodeRepo, storyRepo, agentClient, llmResolver)
+	llmSvc := service.NewLLMService(llmRepo, agentClient, cfg.EncryptionKey, llmResolver)
+	playSvc := service.NewPlayService(sessionRepo, nodeRepo, storyRepo, agentClient, llmResolver, creditSvc)
 	uploadSvc := service.NewUploadService(cfg.UploadDir, cfg.UploadMaxBytes())
 
 	// Handlers

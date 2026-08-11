@@ -114,14 +114,9 @@ if (-not $SkipChecks) {
             Ok '依赖安装完成。'
         }
 
-        # DeepSeek 密钥检查（.env 与环境变量都没有才告警；服务仍可启动，但 /generate 会 502）
-        $agentEnv = Read-DotEnv (Join-Path $agentDir '.env')
-        $key = $agentEnv['DEEPSEEK_API_KEY']
-        $fromEnv = (-not [string]::IsNullOrWhiteSpace($key)) -and ($key -ne 'your-key-here')
-        $fromOs = -not [string]::IsNullOrWhiteSpace($env:DEEPSEEK_API_KEY)
-        if (-not ($fromEnv -or $fromOs)) {
-            Warn 'DEEPSEEK_API_KEY 未配置（.env 与环境变量均无）——AI 生成接口会返回 502，请在 agent\.env 填入真实密钥。'
-        }
+        # 这里不再检查 LLM 密钥：agent 已不持有任何凭据（key/端点/模型由 Go 随请求下发）。
+        # 「有没有可用的模型」是账号级的事——注册即赠 1 元平台额度，用尽后在
+        # 「个人主页 → AI 连接」配自己的连接；平台 key 由 admin 在 /admin 里配。
     }
 
     # 后端：.env + PostgreSQL 可达性

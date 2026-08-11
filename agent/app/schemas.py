@@ -62,8 +62,26 @@ class PathStep(BaseModel):
     summary: str = ""  # 截至该节点的滚动前情提要（④节点树增量摘要）；老数据为空时回退滑动窗口
 
 
+class StageUsage(BaseModel):
+    """单个环节的 token 用量。
+
+    estimated=True 表示端点没在响应里回 usage、数字是按字符估算的——Go 据此打埋点。
+    「扣费全靠估算」是需要知道的事实，不该被一个精确的数字掩盖。
+    """
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    estimated: bool = False
+
+
+class Usage(BaseModel):
+    """按环节分开的用量（两个环节可能是不同模型、不同单价，Go 要分别折算）。"""
+    write: StageUsage = Field(default_factory=StageUsage)
+    review: StageUsage = Field(default_factory=StageUsage)
+
+
 class AIResult(BaseModel):
     """一次生成的结构化结果（Go 侧 AIResult 的镜像）。"""
+    usage: Usage = Field(default_factory=Usage)  # 本次调用的 token 用量，供 Go 扣平台额度
     content: str = ""
     options: list[Option] = Field(default_factory=list)
     state_delta: dict[str, Any] = Field(default_factory=dict)

@@ -31,7 +31,7 @@ Internet → :80/:443 Nginx(宿主机, 域名)
 ### 一次性配置
 ```bash
 cd deploy/docker
-cp agent.env.example   agent.env     # 填 DEEPSEEK_API_KEY
+cp agent.env.example   agent.env     # 无必填项，全是可选的生成参数
 cp backend.env.example backend.env   # 填 DB_PASSWORD/JWT_SECRET/ENCRYPTION_KEY 等（DB_HOST=127.0.0.1）
 ```
 > `deploy/docker/*.env` 已被 .gitignore 忽略(含密钥),只提交 `*.example`。
@@ -87,7 +87,7 @@ python agent/tools/aggregate_log.py agent.log   # 见 handoff §8.4
 服务器上拉源码 + 装 Go 1.25 / Node 18-20 / Python 3.12,直接构建运行。产物在 `deploy/systemd/*.service`、`deploy/nginx/story-editor.conf`、`deploy/deploy.sh`。
 
 1. 建用户/目录:`useradd -r story`;代码放 `/opt/story-editor`(**保留仓库结构**,后端依赖 `../templates`)。
-2. `agent/.env`(DEEPSEEK)、`backend/.env`(DB_*/JWT/AGENT_URL/`SERVER_PORT=127.0.0.1:8080`,纯 KEY=value)。
+2. `agent/.env`(可选,无凭据)、`backend/.env`(DB_*/JWT/AGENT_URL/`SERVER_PORT=127.0.0.1:8080`,纯 KEY=value)。
 3. `cp deploy/systemd/story-*.service /etc/systemd/system/ && systemctl daemon-reload`。
 4. `cp deploy/nginx/story-editor.conf /etc/nginx/conf.d/` → 改域名 → `nginx -t && systemctl reload nginx`(对外前 `certbot --nginx -d <域名>`)。
 5. `APP_DIR=/opt/story-editor ./deploy/deploy.sh`(构建三端 + 重启);`systemctl enable story-agent story-backend story-frontend`。

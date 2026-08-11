@@ -129,7 +129,7 @@ func (h *LLMHandler) SetStoryConfig(c *gin.Context) {
 		pkg.Error(c, pkg.BadRequest("invalid story id"))
 		return
 	}
-	var in service.StageBindings
+	var in service.StoryLLMConfigInput
 	if err := c.ShouldBindJSON(&in); err != nil {
 		pkg.Error(c, pkg.BadRequest(err.Error()))
 		return

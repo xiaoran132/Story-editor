@@ -16,7 +16,10 @@ import {
 
 // 平台 LLM 设置（仅管理员）：每个生成环节配一套 provider/base_url/key/model，作为用户未配时的回退。
 // 权限双保险：前端按 role 守卫 + 后端 RequireAdmin。第一个 admin 靠手动改库提权后重新登录。
-type Row = { stage: string; provider: string; base_url: string; api_key: string; model: string; has_key: boolean; key_hint: string };
+type Row = {
+  stage: string; provider: string; base_url: string; api_key: string; model: string;
+  price_in_per_mtok: number; price_out_per_mtok: number; has_key: boolean; key_hint: string;
+};
 
 export default function AdminPage() {
   const router = useRouter();
@@ -46,7 +49,12 @@ export default function AdminPage() {
     api
       .get<PlatformSetting[]>("/admin/llm/platform")
       .then((list) =>
-        setRows(list.map((p) => ({ ...p, api_key: "" })))
+        setRows(list.map((p) => ({
+          ...p,
+          api_key: "",
+          price_in_per_mtok: p.price_in_per_mtok ?? 0,
+          price_out_per_mtok: p.price_out_per_mtok ?? 0,
+        })))
       )
       .catch((e) => setError((e as Error).message))
       .finally(() => setLoading(false));
@@ -70,6 +78,8 @@ export default function AdminPage() {
         base_url: r.base_url.trim(),
         api_key: r.api_key.trim(),
         model: r.model.trim(),
+        price_in_per_mtok: Number(r.price_in_per_mtok) || 0,
+        price_out_per_mtok: Number(r.price_out_per_mtok) || 0,
       });
       patch(r.stage, { ...saved, api_key: "" });
       flash("已保存");
@@ -158,6 +168,32 @@ export default function AdminPage() {
               <input className="ed-input" type="password" value={r.api_key} placeholder="sk-..." autoComplete="off"
                 onChange={(e) => patch(r.stage, { api_key: e.target.value })} />
             </label>
+            {/* 单价决定玩家那 1 元赠送额度怎么扣。为 0 = 永远扣不动 = 平台 key 无限量，
+                所以这里必须显式警告，而不是让它安静地是 0。 */}
+            <div className="ed-field">
+              <span className="ed-label">
+                单价 <span className="ed-hint">元 / 百万 token，照抄供应商定价页</span>
+              </span>
+              <div className="admin-price">
+                <label>
+                  <span className="ed-hint">输入</span>
+                  <input className="ed-input" type="number" min="0" step="0.01" value={r.price_in_per_mtok ?? 0}
+                    aria-label={`${stageLabel(r.stage)} · 输入单价（元/百万 token）`}
+                    onChange={(e) => patch(r.stage, { price_in_per_mtok: Number(e.target.value) })} />
+                </label>
+                <label>
+                  <span className="ed-hint">输出</span>
+                  <input className="ed-input" type="number" min="0" step="0.01" value={r.price_out_per_mtok ?? 0}
+                    aria-label={`${stageLabel(r.stage)} · 输出单价（元/百万 token）`}
+                    onChange={(e) => patch(r.stage, { price_out_per_mtok: Number(e.target.value) })} />
+                </label>
+              </div>
+              {!r.price_in_per_mtok && !r.price_out_per_mtok && (
+                <span className="up-err" role="alert">
+                  单价为 0：玩家用这个环节的平台 key 时不会扣任何额度，等于无限免费。请填上真实单价。
+                </span>
+              )}
+            </div>
             <div className="me-key-actions">
               <button className="btn secondary" disabled={busy === r.stage} onClick={() => save(r)}>
                 {busy === r.stage ? "保存中…" : "保存"}

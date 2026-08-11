@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"backend/internal/model"
@@ -17,6 +19,7 @@ type fakeLLM struct {
 	conns    map[uuid.UUID]*model.LLMConnection
 	platform map[string]*model.PlatformLLMSetting
 	story    map[string]*model.UserStoryLLMConfig // key: userID+"|"+storyID
+	credit   map[uuid.UUID]int64                  // 平台额度余额（微元）；缺省 = 0 = 没额度
 }
 
 func (f *fakeLLM) FindConnByID(_ context.Context, id uuid.UUID) (*model.LLMConnection, error) {
@@ -27,6 +30,10 @@ func (f *fakeLLM) FindPlatform(_ context.Context, stage string) (*model.Platform
 }
 func (f *fakeLLM) FindStoryConfig(_ context.Context, userID, storyID uuid.UUID) (*model.UserStoryLLMConfig, error) {
 	return f.story[userID.String()+"|"+storyID.String()], nil
+}
+
+func (f *fakeLLM) GetCredit(_ context.Context, userID uuid.UUID) (int64, error) {
+	return f.credit[userID], nil
 }
 
 func cipherOf(t *testing.T, plain string) string {
@@ -56,6 +63,8 @@ func TestResolveForPlay(t *testing.T) {
 			uid.String() + "|" + sid.String(): {UserID: uid, StoryID: sid,
 				Bindings: `{"write":{"conn":"` + connA.String() + `","model":"model-A"}}`},
 		},
+		// 平台档现在是「有额度才给」，所以想测回退必须先有余额（注册赠 1 元）。
+		credit: map[uuid.UUID]int64{uid: MicroPerCNY},
 	}
 	r := NewLLMResolver(f, testEncKey)
 	ctx := context.Background()
@@ -67,6 +76,13 @@ func TestResolveForPlay(t *testing.T) {
 	// 2) 作品未配 review → 回退平台
 	if cfg, _ := r.ResolveForPlay(ctx, uid, sid, StageReview); cfg == nil || cfg.APIKey != "plat-key" || cfg.Model != "plat-model" {
 		t.Fatalf("review 应回退平台: %+v", cfg)
+	}
+	// 来源标记决定要不要扣额度——标错了就是白送或错扣，必须锁住。
+	if cfg, _ := r.ResolveForPlay(ctx, uid, sid, StageReview); cfg.Source != SourcePlatform {
+		t.Fatalf("平台档 Source 应为 platform, 得 %q", cfg.Source)
+	}
+	if cfg, _ := r.ResolveForPlay(ctx, uid, sid, StageWrite); cfg.Source != SourceUser {
+		t.Fatalf("自带连接 Source 应为 user, 得 %q", cfg.Source)
 	}
 	// 3) 连接被删（作品配置指向不存在连接）+ 平台无 write → nil
 	delete(f.conns, connA)
@@ -107,7 +123,8 @@ func TestResolveForAssist(t *testing.T) {
 		platform: map[string]*model.PlatformLLMSetting{
 			StageWorld: {Stage: StageWorld, BaseURL: "https://p", Model: "plat-world", APIKeyCipher: cipherOf(t, "plat-key")},
 		},
-		story: map[string]*model.UserStoryLLMConfig{},
+		story:  map[string]*model.UserStoryLLMConfig{},
+		credit: map[uuid.UUID]int64{uid: MicroPerCNY},
 	}
 	r := NewLLMResolver(f, testEncKey)
 	ctx := context.Background()
@@ -119,5 +136,95 @@ func TestResolveForAssist(t *testing.T) {
 	// 2) 无覆盖 → 回退平台 world
 	if cfg, _ := r.ResolveForAssist(ctx, uid, nil); cfg == nil || cfg.APIKey != "plat-key" || cfg.Model != "plat-world" {
 		t.Fatalf("应回退平台 world: %+v", cfg)
+	}
+}
+
+// TestPlatformNeedsCredit 锁住这次改动的核心：平台档**不是无条件兜底**。
+//
+// 曾经的链路是「作品配置 → 平台 → agent 的 .env 默认 key」，最后那一档是看不见、
+// 无法限额的服务器成本，已删除；平台档本身也从"无条件"改为"要有额度"。
+// 没有这个测试，将来有人顺手把无条件回退加回去不会被任何东西拦住。
+func TestPlatformNeedsCredit(t *testing.T) {
+	uid, sid := uuid.New(), uuid.New()
+	newFake := func(credit int64) *fakeLLM {
+		return &fakeLLM{
+			conns: map[uuid.UUID]*model.LLMConnection{},
+			platform: map[string]*model.PlatformLLMSetting{
+				StageWrite: {Stage: StageWrite, BaseURL: "https://p", Model: "m", APIKeyCipher: cipherOf(t, "plat-key")},
+			},
+			story:  map[string]*model.UserStoryLLMConfig{},
+			credit: map[uuid.UUID]int64{uid: credit},
+		}
+	}
+	ctx := context.Background()
+
+	// 有额度 → 给平台档
+	r := NewLLMResolver(newFake(MicroPerCNY), testEncKey)
+	if cfg, _ := r.ResolveForPlay(ctx, uid, sid, StageWrite); cfg == nil || cfg.APIKey != "plat-key" {
+		t.Fatalf("有额度时应给平台档: %+v", cfg)
+	}
+
+	// 额度耗尽 → 不给（即便 admin 配了平台 key）
+	r = NewLLMResolver(newFake(0), testEncKey)
+	if cfg, _ := r.ResolveForPlay(ctx, uid, sid, StageWrite); cfg != nil {
+		t.Fatalf("额度为 0 时不应给平台档: %+v", cfg)
+	}
+
+	// 匿名 → 不给。额度挂在账号上，而且所有匿名玩家共享同一个 guest id，
+	// 给了等于让第一个访客花光所有人的额度。
+	r = NewLLMResolver(newFake(MicroPerCNY), testEncKey)
+	if cfg, _ := r.ResolveForPlay(ctx, uuid.Nil, sid, StageWrite); cfg != nil {
+		t.Fatalf("匿名不应给平台档: %+v", cfg)
+	}
+}
+
+// TestCostMicro 校验折算与向上取整：几百 token 的调用不能因为四舍五入而免费。
+func TestCostMicro(t *testing.T) {
+	// 1 元/百万输入 token、2 元/百万输出 token
+	got := costMicro(TokenUsage{PromptTokens: 1_000_000, CompletionTokens: 1_000_000}, 1, 2)
+	if got != 3*MicroPerCNY {
+		t.Fatalf("百万进+百万出应为 3 元 = %d 微元, 得 %d", 3*MicroPerCNY, got)
+	}
+	// 小额调用必须扣到至少 1 微元，不能归零（否则 1 元额度等于无限）
+	if got := costMicro(TokenUsage{PromptTokens: 1, CompletionTokens: 1}, 1, 2); got < 1 {
+		t.Fatalf("极小调用也应扣至少 1 微元, 得 %d", got)
+	}
+	// 零用量不扣
+	if got := costMicro(TokenUsage{}, 1, 2); got != 0 {
+		t.Fatalf("零用量应不扣, 得 %d", got)
+	}
+}
+
+// TestPlatformPriceRoundTrip 锁住一个真实踩过的坑：单价加了数据库列和前端输入框，
+// 却没接进 PlatformInput / PlatformLLMSettingResponse —— 保存看似成功，值被静默丢弃，
+// 返回体里也没有该字段，前端拿回 undefined 覆盖输入框，表现为「存不进去」。
+func TestPlatformPriceRoundTrip(t *testing.T) {
+	// 入参：JSON 标签必须对得上，且 0 与「未传」要能区分（0 是合法单价）。
+	var in PlatformInput
+	if err := json.Unmarshal([]byte(`{"price_in_per_mtok":1.5,"price_out_per_mtok":0}`), &in); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if in.PriceInPerMTok == nil || *in.PriceInPerMTok != 1.5 {
+		t.Fatalf("price_in 未解出: %+v", in.PriceInPerMTok)
+	}
+	if in.PriceOutPerMTok == nil || *in.PriceOutPerMTok != 0 {
+		t.Fatalf("显式的 0 必须能与「未传」区分，否则 admin 改不回免费: %+v", in.PriceOutPerMTok)
+	}
+	var empty PlatformInput
+	if err := json.Unmarshal([]byte(`{}`), &empty); err != nil || empty.PriceInPerMTok != nil {
+		t.Fatalf("未传单价时应为 nil（保留原值）")
+	}
+
+	// 出参：DTO 必须带回单价，否则前端保存后输入框被 undefined 覆盖。
+	s := &LLMService{encKey: testEncKey}
+	res := s.toPlatformResponse(&model.PlatformLLMSetting{
+		Stage: StageWrite, Model: "m", PriceInPerMTok: 1.5, PriceOutPerMTok: 8,
+	})
+	if res.PriceInPerMTok != 1.5 || res.PriceOutPerMTok != 8 {
+		t.Fatalf("响应 DTO 丢了单价: %+v", res)
+	}
+	blob, _ := json.Marshal(res)
+	if !strings.Contains(string(blob), `"price_in_per_mtok":1.5`) {
+		t.Fatalf("序列化后缺少 price_in_per_mtok: %s", blob)
 	}
 }

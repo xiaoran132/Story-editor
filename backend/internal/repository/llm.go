@@ -93,3 +93,30 @@ func (r *LLMRepository) FindPlatform(ctx context.Context, stage string) (*model.
 func (r *LLMRepository) UpsertPlatform(ctx context.Context, s *model.PlatformLLMSetting) error {
 	return r.db.WithContext(ctx).Save(s).Error
 }
+
+// ----- 平台额度（注册赠 1 元）与用量流水 -----
+
+// GetCredit 读某用户的平台额度余额（微元）。用户不存在返回 (0, nil)——
+// 匿名/已删号一律视为无额度，不用错误表达"没有余额"这件正常的事。
+func (r *LLMRepository) GetCredit(ctx context.Context, userID uuid.UUID) (int64, error) {
+	var credit int64
+	err := r.db.WithContext(ctx).Model(&model.User{}).
+		Where("id = ?", userID).Select("credit_micro_cny").Scan(&credit).Error
+	return credit, err
+}
+
+// ChargeCredit 扣减额度并记一行流水，两件事在同一事务里。
+//
+// 扣减用 GREATEST(0, ...) 在 **SQL 里**做，而不是先读后写：并发的两个回合各自读到
+// 同一个余额再各写回，会把一次消费吞掉。余额不足时扣到 0 为止——扣费发生在回合结束
+// 之后（此时 token 已经烧掉了），事前无法预知花多少，所以最后一回合允许略微透支。
+func (r *LLMRepository) ChargeCredit(ctx context.Context, log *model.LLMUsageLog) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.User{}).Where("id = ?", log.UserID).
+			Update("credit_micro_cny", gorm.Expr("GREATEST(0, credit_micro_cny - ?)", log.CostMicroCNY)).
+			Error; err != nil {
+			return err
+		}
+		return tx.Create(log).Error
+	})
+}

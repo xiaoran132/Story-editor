@@ -26,12 +26,24 @@ func NewAssistHandler(agent *service.AgentClient, resolver *service.LLMResolver)
 }
 
 // resolveWorld 解析当前创作者 world 环节的下发配置（connOverride 为前端可选覆盖连接）。
-func (h *AssistHandler) resolveWorld(c *gin.Context, connOverride *uuid.UUID) *service.AgentLLMConfig {
+//
+// 解析不到就返回错误，**不发那个注定失败的请求**：agent 已无任何默认凭据，
+// 发过去只会换来一句"AI 服务暂不可用"，而真正的原因是"你还没有可用的模型"。
+func (h *AssistHandler) resolveWorld(c *gin.Context, connOverride *uuid.UUID) (*service.AgentLLMConfig, error) {
 	if h.resolver == nil {
-		return nil
+		return nil, noModelErr()
 	}
 	cfg, _ := h.resolver.ResolveForAssist(context.Background(), middleware.GetUserID(c), connOverride)
-	return cfg
+	if cfg == nil {
+		return nil, noModelErr()
+	}
+	return cfg, nil
+}
+
+// noModelErr 是创作侧「没有可用模型」的文案，指向编辑器里的连接下拉。
+func noModelErr() *pkg.AppError {
+	return pkg.NewBusinessErrorWithMessage(pkg.CodeNoLLMConfig,
+		"没有可用的模型：平台赠送额度已用尽或未开放。请在「个人主页 → AI 连接」添加一条连接，并在上方「使用连接」里选中它。")
 }
 
 // aiErr 把 agent 调用失败包成统一业务错误（避免把内部 502/网络细节直接抛给前端）。
@@ -50,7 +62,12 @@ func (h *AssistHandler) World(c *gin.Context) {
 		pkg.Error(c, pkg.BadRequest("idea 不能为空"))
 		return
 	}
-	req.LLM = h.resolveWorld(c, req.ConnectionID) // 服务端填充，覆盖客户端任何传入
+	cfg, cfgErr := h.resolveWorld(c, req.ConnectionID)
+	if cfgErr != nil {
+		pkg.Error(c, cfgErr)
+		return
+	}
+	req.LLM = cfg // 服务端填充，覆盖客户端任何传入
 	draft, err := h.agent.AssistWorld(c.Request.Context(), req)
 	if err != nil {
 		pkg.Error(c, aiErr())
@@ -66,9 +83,15 @@ func (h *AssistHandler) Opening(c *gin.Context) {
 		pkg.Error(c, pkg.BadRequest(err.Error()))
 		return
 	}
-	// 开场走完整 play 管线：写手用 world 环节覆盖连接（编辑器语境统一按 world 归属），审校同源。
-	req.LLMWrite = h.resolveWorld(c, req.ConnectionID)
-	req.LLMReview = h.resolveWorld(c, req.ConnectionID)
+	// 开场走完整 play 管线：写手用 world 环节覆盖连接（编辑器语境统一按 world 归属）。
+	cfg, cfgErr := h.resolveWorld(c, req.ConnectionID)
+	if cfgErr != nil {
+		pkg.Error(c, cfgErr)
+		return
+	}
+	req.LLMWrite = cfg
+	// 创作侧不开审校：作者要的是快出草稿，且这里没有作品级开关可读。
+	req.LLMReview = nil
 	draft, err := h.agent.AssistOpening(c.Request.Context(), req)
 	if err != nil {
 		pkg.Error(c, aiErr())
@@ -88,7 +111,12 @@ func (h *AssistHandler) Polish(c *gin.Context) {
 		pkg.Error(c, pkg.BadRequest("text 不能为空"))
 		return
 	}
-	req.LLM = h.resolveWorld(c, req.ConnectionID)
+	cfg, cfgErr := h.resolveWorld(c, req.ConnectionID)
+	if cfgErr != nil {
+		pkg.Error(c, cfgErr)
+		return
+	}
+	req.LLM = cfg
 	draft, err := h.agent.AssistPolish(c.Request.Context(), req)
 	if err != nil {
 		pkg.Error(c, aiErr())
@@ -108,7 +136,12 @@ func (h *AssistHandler) Branches(c *gin.Context) {
 		pkg.Error(c, pkg.BadRequest("content 不能为空"))
 		return
 	}
-	req.LLM = h.resolveWorld(c, req.ConnectionID)
+	cfg, cfgErr := h.resolveWorld(c, req.ConnectionID)
+	if cfgErr != nil {
+		pkg.Error(c, cfgErr)
+		return
+	}
+	req.LLM = cfg
 	res, err := h.agent.AssistBranches(c.Request.Context(), req)
 	if err != nil {
 		pkg.Error(c, aiErr())

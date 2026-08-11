@@ -17,7 +17,7 @@ import {
   getScrimAlpha,
   setScrimAlpha,
 } from "@/lib/useReadingTheme";
-import type { UserProfile } from "@/lib/types";
+import { formatCredit, type UserProfile } from "@/lib/types";
 
 // 设置页（对齐原型 settings.html）：左侧分区导航 + 四个分区
 // —— 个人资料 / 账号与安全 / AI 连接(BYOK) / 偏好。
@@ -233,7 +233,23 @@ export default function MePage() {
               </section>
             )}
 
-            {section === "llm" && <LLMSettings flash={flash} />}
+            {section === "llm" && (
+              <>
+                {/* 平台额度：注册赠 1 元，按实际 token 用量扣。放在连接管理之前——
+                    用户先看到"我还有多少免费的"，才知道为什么要配自己的连接。 */}
+                <section className="ed-section">
+                  <span className="eyebrow lead">平台体验额度</span>
+                  <p className="me-desc">
+                    剩余 <b>{formatCredit(profile?.credit_micro_cny ?? 0)}</b>
+                    <span className="ed-hint">
+                      注册时赠送 1 元，按每次生成的实际 token 用量扣减。用尽后需要配置下方自己的模型连接才能继续游玩；
+                      自带连接不消耗额度。
+                    </span>
+                  </p>
+                </section>
+                <LLMSettings flash={flash} />
+              </>
+            )}
 
             {section === "prefs" && (
               <section className="ed-section">

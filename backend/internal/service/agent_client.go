@@ -35,19 +35,33 @@ func NewAgentClient(serviceURL string) *AgentClient {
 		httpClient: &http.Client{
 			Timeout: 90 * time.Second,
 		},
-		streamClient: &http.Client{},                        // 无 Timeout，靠 ctx 控时
+		streamClient: &http.Client{},                           // 无 Timeout，靠 ctx 控时
 		assistClient: &http.Client{Timeout: 180 * time.Second}, // 创作辅助更长超时
 	}
 }
 
+// 配置来源：决定这次调用花谁的钱。user = 玩家自带连接（不计费）；
+// platform = 平台 key（从注册赠送的 1 元额度里扣，见 credit.go）。
+const (
+	SourceUser     = "user"
+	SourcePlatform = "platform"
+)
+
 // AgentLLMConfig 是 Go 侧按环节解析出的有效 LLM 配置，随请求体下发给 agent。
-// agent 用它构造临时 ChatOpenAI（不进全局缓存）；字段全空/未下发时 agent 回退自己 .env 默认。
+// agent 用它构造临时 ChatOpenAI；**agent 没有任何默认凭据**，字段缺失即报错，
+// 所以解析不到配置时 Go 必须在发请求之前就失败（pkg.CodeNoLLMConfig）。
 // Provider 仅作标签（OpenAI 兼容端点只需 base_url+api_key+model）。
 type AgentLLMConfig struct {
 	Provider string `json:"provider,omitempty"`
 	BaseURL  string `json:"base_url,omitempty"`
 	APIKey   string `json:"api_key,omitempty"`
 	Model    string `json:"model,omitempty"`
+
+	// 以下字段**不下发给 agent**（json:"-"）：只供 Go 判断要不要扣费、按什么价扣。
+	// agent 不该知道钱的事，它只管调模型。
+	Source          string  `json:"-"`
+	PriceInPerMTok  float64 `json:"-"`
+	PriceOutPerMTok float64 `json:"-"`
 }
 
 // ----- 对外的输入/输出类型 -----
@@ -111,6 +125,9 @@ type Option struct {
 
 // AIResult 是一次生成的结构化结果（与 Python 服务响应对齐）。
 type AIResult struct {
+	// Usage 是 agent 回传的 token 用量（按环节分开）。只在走平台额度时用于扣费；
+	// 玩家用自己的 key 时同样会回传，Go 侧按 Source 判断忽略。
+	Usage      StageUsages    `json:"usage"`
 	Content    string         `json:"content"`
 	Options    []Option       `json:"options"`
 	StateDelta map[string]any `json:"state_delta"`
@@ -123,27 +140,27 @@ type AIResult struct {
 // ----- Python AI 服务请求体 -----
 
 type generateRequest struct {
-	World        WorldConfig    `json:"world"`
-	InitialState map[string]any `json:"initial_state,omitempty"`
-	RevealedAttrs []string      `json:"revealed_attrs,omitempty"` // 已揭示的门控属性（开局通常为空）
-	LLMWrite     *AgentLLMConfig `json:"llm_write,omitempty"`     // BYOK：写手配置（nil→agent 回退 .env）
-	LLMReview    *AgentLLMConfig `json:"llm_review,omitempty"`    // BYOK：审校配置
+	World         WorldConfig     `json:"world"`
+	InitialState  map[string]any  `json:"initial_state,omitempty"`
+	RevealedAttrs []string        `json:"revealed_attrs,omitempty"` // 已揭示的门控属性（开局通常为空）
+	LLMWrite      *AgentLLMConfig `json:"llm_write,omitempty"`      // BYOK：写手配置（nil→agent 回退 .env）
+	LLMReview     *AgentLLMConfig `json:"llm_review,omitempty"`     // BYOK：审校配置
 }
 
 type continueRequest struct {
-	World         WorldConfig    `json:"world"`
-	History       []PathStep     `json:"history,omitempty"`
-	CurrentState  map[string]any `json:"current_state,omitempty"`
-	Choice        string         `json:"choice"`
-	RevealedAttrs []string       `json:"revealed_attrs,omitempty"` // 已揭示的门控属性，供 agent 知道还剩哪些未揭示
+	World         WorldConfig     `json:"world"`
+	History       []PathStep      `json:"history,omitempty"`
+	CurrentState  map[string]any  `json:"current_state,omitempty"`
+	Choice        string          `json:"choice"`
+	RevealedAttrs []string        `json:"revealed_attrs,omitempty"` // 已揭示的门控属性，供 agent 知道还剩哪些未揭示
 	LLMWrite      *AgentLLMConfig `json:"llm_write,omitempty"`
 	LLMReview     *AgentLLMConfig `json:"llm_review,omitempty"`
 }
 
 type openingCompleteRequest struct {
-	World        WorldConfig    `json:"world"`
-	InitialState map[string]any `json:"initial_state,omitempty"`
-	Content      string         `json:"content"`
+	World        WorldConfig     `json:"world"`
+	InitialState map[string]any  `json:"initial_state,omitempty"`
+	Content      string          `json:"content"`
 	LLMWrite     *AgentLLMConfig `json:"llm_write,omitempty"`
 }
 

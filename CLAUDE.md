@@ -115,10 +115,11 @@ Registered directly in route groups in `main.go`. **The endpoint list lives in `
 | `/api/v1/community/*` | handler stubs, not usable |
 
 Constraints that are expensive to rediscover:
-- **`/play` is `AuthOptional` on purpose** — anonymous play must work; with a token the session belongs to the user, otherwise it falls back to the seeded guest. Every session-scoped route still verifies `session.PlayerID` (the anonymous-guest sharing weakness is `docs/handoff.md` §9.2).
+- **`/play` is `AuthOptional`, but anonymous players can no longer generate.** The mount stays optional so existing anonymous sessions remain readable and migratable, and with a token the session belongs to the user. But generation needs a resolvable model, and the platform key is never given to anonymous callers — so the story detail page blocks the CTA and points to login. Every session-scoped route still verifies `session.PlayerID` (the anonymous-guest sharing weakness in `docs/handoff.md` §9.2 is now unreachable, **not fixed**).
 - **The browser never calls the agent.** It has no CORS and no auth; Go forwards `/assist/*` through `AgentClient` (180s `assistClient`).
 - **`/uploads` is mounted under `/api/v1` deliberately** — prod nginx only proxies `/api/v1/` to the backend, a bare `/uploads` would go to Next.js. Upload type is decided by sniffing the file header, never by `Content-Type`/extension; SVG is excluded (inline script + same-origin static serving = stored XSS). Uploading only yields a URL — binding is a separate save (`avatar_url` / `cover_url`).
 - **BYOK: connection is account-level, model choice is per-work.** `world_config.recommended_models` is the creator's display-only annotation, never auto-applied to a player.
+- **There is no free fallback.** Resolution is *per-work user connection → platform key (only while the account has credit) → hard failure* (`pkg.CodeNoLLMConfig`). Every account gets ¥1 of credit at registration, metered by real token usage; anonymous callers never get the platform key. Fail **before** calling the agent — it holds no default credentials and would only return an unreadable error. Details and the credit math: `docs/handoff.md` §12.
 - **Publishing is the strict gate**: `PUT /stories/:id/status` runs strict `world_config` validation; drafts stay lenient. `GET /stories/` (homepage) returns published only.
 
 ### Unified Error Handling
@@ -216,13 +217,15 @@ The SQL files under `infa/sql/` are the **complete data model design blueprint, 
 A standalone process reached via `AGENT_URL` (default `http://localhost:8001`). Startup: `cd agent && pip install -r requirements.txt && uvicorn app.main:app --port 8001` (see `agent/README.md`).
 
 Hard boundaries — breaking these breaks the architecture, not just a feature:
-- **The agent never touches the database.** Everything it needs arrives in the request; LLM credentials are pushed down per request (`llm_write` / `llm_review` for play, `llm` for assist; absent → the agent's own `.env` default).
+- **The agent never touches the database, and holds no LLM credentials at all.** Everything arrives in the request (`llm_write` / `llm_review` for play, `llm` for assist); a missing key/base_url/model raises `LLMConfigMissing` rather than falling back. The old `DEEPSEEK_*` defaults were deleted on purpose — an invisible, unmeterable, un-admin-able server cost. Don't reintroduce one.
+- **`llm_review` absent means the player turned quality review off** (per-work toggle, default off): skip the audit entirely and say so in telemetry (`review=off`), rather than pretending the first draft passed.
+- **The agent reports token usage, never money.** It returns per-stage `usage` in the `done` frame; Go owns pricing, credit and deduction.
 - **The agent is not internet-facing** — no CORS, no auth. Go is the only caller.
 - **`_stream_pipeline` in `app/graph/story_graph.py` is the only generation orchestration.** The historical non-streaming langgraph graph is retired; `run_start`/`run_continue` are synchronous adapters that drain the same stream. Don't add a second path.
 - **Quality review must never fail the player's turn.** A rejected draft is revised by a memory-equipped writer at most `AI_REVIEW_MAX_RETRIES` times, then **delivered anyway** with `degraded=1` telemetry. Attributes/deltas are auxiliary; a flawed turn beats a blocked one.
 - **`normalize` passes through keys whose type isn't declared** in `attributes`, letting Go's `mergeState` infer — this is what keeps pre-`attributes` works playable.
 
-Files: `routers/generate.py` (`/generate/stream`, `/continue/stream`, `/opening/complete`, `/merge-check`), `routers/assist.py` (`/assist/world|opening|polish|branches`), `schemas.py` (contract mirror of the Go DTOs), `llm.py` (OpenAI-compatible client; `chat_json` forces `response_format=json_object`, `chat_stream` does not; `_build_ephemeral` makes the per-request uncached client BYOK needs).
+Files: `routers/generate.py` (`/generate/stream`, `/continue/stream`, `/opening/complete`, `/merge-check`), `routers/assist.py` (`/assist/world|opening|polish|branches`), `schemas.py` (contract mirror of the Go DTOs), `llm.py` (OpenAI-compatible client; `chat_json` forces `response_format=json_object`, `chat_stream` does not; `_build_ephemeral` is the only client constructor — per-request, uncached, no defaults).
 
 How the pipeline actually works (writer beats, `<<<META>>>` JSON tail, tiered review, incremental summary + recap window): `docs/handoff.md` §6.1–6.3. Design rationale and the unbuilt phases: `docs/design.md` "AI agent", `docs/context-strategy.md`.
 

@@ -13,10 +13,11 @@ class Settings(BaseSettings):
     ai_host: str = "0.0.0.0"
     ai_port: int = 8001
 
-    # DeepSeek（OpenAI 兼容）
-    deepseek_api_key: str = ""
-    deepseek_base_url: str = "https://api.deepseek.com"
-    deepseek_model: str = "deepseek-chat"
+    # 注意：这里**故意没有任何 LLM 凭据**。
+    # agent 不持有 key/端点/模型名——全部由 Go 按环节解析后随每个请求下发
+    # （llm_write / llm_review / llm）。曾经有一组 DEEPSEEK_* 默认值作兜底，
+    # 那是一层看不见、无法限额、也不归 admin 管的服务器成本，已删除。
+    # 解析不到配置时是明确报错，不是悄悄换一把 key。
 
     # 生成参数
     ai_temperature: float = 0.8

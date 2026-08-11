@@ -45,7 +45,9 @@ async def _sse_stream(events: AsyncIterator[dict]) -> AsyncIterator[str]:
             elif t == "revise":
                 yield _sse("revise", {})
             elif t == "done":
-                yield _sse("done", ev.get("result", {}))
+                # usage 与结构化结果同帧下发：Go 收到后按环节单价折算、从平台额度扣费。
+                # 平铺进 result 而不是另开一帧——Go 侧的 done 解码成一个结构体，加一层会更绕。
+                yield _sse("done", {**ev.get("result", {}), "usage": ev.get("usage") or {}})
     except Exception as e:  # noqa: BLE001 —— 流已开始，只能以 error 帧告知下游
         yield _sse("error", {"detail": f"{type(e).__name__}: {e}"})
 

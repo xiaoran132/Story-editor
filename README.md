@@ -101,7 +101,7 @@ DeepSeek（OpenAI 兼容接口）
 
 | 文件 | 关键变量 |
 |---|---|
-| `agent/.env` | `DEEPSEEK_API_KEY`、可选 `AI_REVIEW_MAX_RETRIES`（默认 `2`） |
+| `agent/.env` | 无必填项（agent 不持有 LLM 凭据，由 Go 随请求下发）；可选 `AI_REVIEW_MAX_RETRIES`（默认 `2`） |
 | `backend/.env` | `DB_*`、`JWT_SECRET`、`AGENT_URL` |
 | `frontend/.env.local` | `NEXT_PUBLIC_API_BASE`，默认 `http://localhost:8080/api/v1` |
 

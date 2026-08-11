@@ -33,12 +33,12 @@ app.include_router(assist.router)
 
 @app.get("/health", tags=["meta"])
 def health() -> dict[str, str]:
-    s = get_settings()
-    return {
-        "status": "ok",
-        "model": s.deepseek_model,
-        "key_configured": "true" if s.deepseek_api_key else "false",
-    }
+    """进程存活探针。
+
+    刻意不报告模型与 key 状态：agent 已不持有任何 LLM 凭据，凭据随每个请求
+    由 Go 下发，"配没配 key" 是 Go + 数据库那边的问题，这里无从回答。
+    """
+    return {"status": "ok"}
 
 
 def main() -> None:

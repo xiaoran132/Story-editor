@@ -899,6 +899,20 @@ html[data-motion="off"] .cover.alive { animation: none; background-size: 100% 10
 .od-sel:disabled, .od-inp:disabled { opacity: 0.5; }
 .od-note { font-size: 11.5px; color: var(--ink-soft); line-height: 1.6; }
 .od-note .rec { color: var(--accent-read); }
+.od-note b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+/* 「已开启审校，必选」这类就地补充说明，跟在环节名后面 */
+.od-req { color: var(--accent-read); font-weight: 500; }
+/* 开关行：可见标题在左、开关推到右（Switch 自身的 label 是 sr-only，供读屏） */
+.od-switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+.od-switch-title { font-size: 12.5px; color: var(--ink); font-weight: 500; letter-spacing: 0.01em; }
+/* 拦截提示：没有可用模型时压在 CTA 上方，给出原因与去路 */
+.od-block {
+  margin-top: 20px; padding: 13px 15px; border: 1px solid var(--panel-border); border-radius: var(--r-md);
+  background: var(--panel-fill); color: var(--ink-soft); font-size: 12.5px; line-height: 1.7;
+  display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap;
+}
+.od-block b { color: var(--ink); font-weight: 600; }
+.od-block .btn-read { height: 36px; padding: 0 14px; flex: none; font-size: 13px; }
 /* CTA */
 .od-cta { display: flex; gap: 12px; margin-top: 26px; }
 .od-cta .btn-read { flex: 1; height: 52px; border-radius: var(--r-read); border: 1px solid transparent; font-family: var(--font-sans); font-size: 15px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 9px; letter-spacing: 0.01em; transition: background var(--dur-fast) var(--ease), transform var(--dur-press), border-color var(--dur-fast); }
@@ -1082,6 +1096,10 @@ html[data-motion="off"] .cover.alive { animation: none; background-size: 100% 10
 .btn.ghost.up-remove { color: var(--muted); }
 .btn.ghost.up-remove:hover { color: var(--danger); background: var(--danger-bg); }
 .up-err { font-size: 12px; color: var(--danger); line-height: 1.6; }
+
+/* admin 平台单价：输入/输出两栏并排 */
+.admin-price { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.admin-price label { display: flex; flex-direction: column; gap: 4px; }
 
 /* 通用状态行 / 空 / 载入 */
 .status { color: var(--muted); font-size: 14px; margin: 12px 0; min-height: 20px; }

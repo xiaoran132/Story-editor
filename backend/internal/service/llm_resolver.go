@@ -48,10 +48,16 @@ type llmStore interface {
 	FindConnByID(ctx context.Context, id uuid.UUID) (*model.LLMConnection, error)
 	FindPlatform(ctx context.Context, stage string) (*model.PlatformLLMSetting, error)
 	FindStoryConfig(ctx context.Context, userID, storyID uuid.UUID) (*model.UserStoryLLMConfig, error)
+	GetCredit(ctx context.Context, userID uuid.UUID) (int64, error)
 }
 
 // LLMResolver 按环节解析出有效的下发配置（AgentLLMConfig）。
-// 连接/key 皆用户级；游玩配置按「作品级」——每玩家在每作品各配各的模型。
+//
+// 优先级：**作品级用户连接 → 平台档（需有额度） → nil**。
+// 返回 nil 时调用方必须**明确失败**（pkg.CodeNoLLMConfig）——agent 已不持有任何
+// 默认凭据，那层看不见、无法限额的 .env 兜底已被删除。
+//
+// 平台档要花注册赠送的 1 元额度（见 credit.go）；余额 ≤ 0 或匿名调用不给平台档。
 // 命中用户/平台时解密 key；解密失败或连接失效则跳到下一档，不硬报错。
 type LLMResolver struct {
 	llm    llmStore
@@ -63,7 +69,7 @@ func NewLLMResolver(llm llmStore, encKey string) *LLMResolver {
 }
 
 // ResolveForPlay 解析某玩家在某作品下某环节（write/review）的配置。
-// 优先级：作品级配置（玩家选的连接+模型）→ 平台该环节设置 → nil（agent 回退 .env）。
+// 优先级：作品级配置（玩家选的连接+模型）→ 平台该环节设置（需额度）→ nil（调用方须报错）。
 func (r *LLMResolver) ResolveForPlay(ctx context.Context, userID, storyID uuid.UUID, stage string) (*AgentLLMConfig, error) {
 	if userID != uuid.Nil && storyID != uuid.Nil {
 		if sc, err := r.llm.FindStoryConfig(ctx, userID, storyID); err == nil && sc != nil {
@@ -77,7 +83,7 @@ func (r *LLMResolver) ResolveForPlay(ctx context.Context, userID, storyID uuid.U
 			}
 		}
 	}
-	return r.platformOrNil(ctx, stage), nil
+	return r.platformIfCredit(ctx, userID, stage), nil
 }
 
 // ResolveForAssist 解析创作者在创作侧（world 环节）的配置。
@@ -88,17 +94,34 @@ func (r *LLMResolver) ResolveForAssist(ctx context.Context, userID uuid.UUID, ov
 			return cfg, nil
 		}
 	}
-	return r.platformOrNil(ctx, StageWorld), nil
+	return r.platformIfCredit(ctx, userID, StageWorld), nil
 }
 
-// platformOrNil 取某环节平台设置并解密；无则返回 nil（agent 回退 .env）。
-func (r *LLMResolver) platformOrNil(ctx context.Context, stage string) *AgentLLMConfig {
-	if ps, err := r.llm.FindPlatform(ctx, stage); err == nil && ps != nil {
-		if key, err := pkg.Decrypt(ps.APIKeyCipher, r.encKey); err == nil && key != "" {
-			return &AgentLLMConfig{Provider: ps.Provider, BaseURL: ps.BaseURL, APIKey: key, Model: ps.Model}
-		}
+// platformIfCredit 取某环节平台设置并解密，**但只在该用户还有额度时才给**。
+// 无设置/解密失败/匿名/余额耗尽 → nil，由调用方转成明确错误。
+//
+// 匿名（uuid.Nil）一律不给：额度挂在账号上，而且所有匿名玩家目前共享同一个 seed
+// guest id（handoff §9.2），给了等于让第一个匿名访客花光所有人的额度。
+func (r *LLMResolver) platformIfCredit(ctx context.Context, userID uuid.UUID, stage string) *AgentLLMConfig {
+	if userID == uuid.Nil {
+		return nil
 	}
-	return nil
+	credit, err := r.llm.GetCredit(ctx, userID)
+	if err != nil || credit <= 0 {
+		return nil
+	}
+	ps, err := r.llm.FindPlatform(ctx, stage)
+	if err != nil || ps == nil {
+		return nil
+	}
+	key, err := pkg.Decrypt(ps.APIKeyCipher, r.encKey)
+	if err != nil || key == "" {
+		return nil
+	}
+	return &AgentLLMConfig{
+		Provider: ps.Provider, BaseURL: ps.BaseURL, APIKey: key, Model: ps.Model,
+		Source: SourcePlatform, PriceInPerMTok: ps.PriceInPerMTok, PriceOutPerMTok: ps.PriceOutPerMTok,
+	}
 }
 
 // fromConnection 从一条连接构造下发配置：校验归属 + 解密 key（失败/无 key 返回 nil）。
@@ -116,5 +139,31 @@ func (r *LLMResolver) fromConnection(ctx context.Context, userID, connID uuid.UU
 	if model == "" {
 		model = conn.DefaultModel
 	}
-	return &AgentLLMConfig{Provider: conn.Provider, BaseURL: conn.BaseURL, APIKey: key, Model: model}
+	// Source=user：玩家自己的 key，不动平台额度，也不记用量流水。
+	return &AgentLLMConfig{
+		Provider: conn.Provider, BaseURL: conn.BaseURL, APIKey: key, Model: model,
+		Source: SourceUser,
+	}
+}
+
+// ReviewEnabled 读某玩家在某作品的「质量审校」开关（默认关）。
+//
+// 默认关是刻意的：开启要求单独配 review 的连接，若默认开，新玩家配了 write 还是玩不了。
+// 代价是默认质量下限低于以前（以前人人都过审校，真实拒绝率约 18%），
+// 这个权衡在前端开关旁写明。
+func (r *LLMResolver) ReviewEnabled(ctx context.Context, userID, storyID uuid.UUID) bool {
+	if userID == uuid.Nil || storyID == uuid.Nil {
+		return false
+	}
+	sc, err := r.llm.FindStoryConfig(ctx, userID, storyID)
+	if err != nil || sc == nil {
+		return false
+	}
+	return sc.ReviewEnabled
+}
+
+// PlatformAvailable 回答「平台档现在可不可选」：有额度 + admin 配了该环节的 key。
+// 供前端把「平台」这一档显示成可选或禁用（并说明原因）。
+func (r *LLMResolver) PlatformAvailable(ctx context.Context, userID uuid.UUID, stage string) bool {
+	return r.platformIfCredit(ctx, userID, stage) != nil
 }

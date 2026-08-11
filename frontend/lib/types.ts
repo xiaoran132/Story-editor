@@ -21,6 +21,7 @@ export interface UserProfile {
   nickname: string;
   bio: string;
   avatar_url: string;
+  credit_micro_cny: number; // 平台体验额度余额（微元，1e-6 元）；注册赠 1 元
   role: string;
   follower_count: number;
   following_count: number;
@@ -141,8 +142,30 @@ export interface StageBinding {
   conn: string; // 连接 id；空=未绑定
   model: string; // 可空→回退连接 default_model
 }
-// 玩家在某作品的配置：环节→{conn,model}（作品级，GET/PUT /llm/story-config/:storyId）。
-export type StoryLLMConfig = Partial<Record<"write" | "review", StageBinding>>;
+export type StageBindings = Partial<Record<"write" | "review", StageBinding>>;
+
+// 玩家在某作品的配置（GET/PUT /llm/story-config/:storyId）。
+// 除了绑定本身，后端在同一次请求里回「能不能开玩」——详情页据此拦住 CTA，
+// 而不是让玩家点了「开始新游戏」才发现没模型。
+export interface StoryLLMConfig {
+  bindings: StageBindings;
+  review_enabled: boolean;
+  ready: boolean;
+  blocked?: string; // 不能开玩的原因，后端给的文案，直接展示
+  credit_micro_cny: number; // 平台额度余额（微元，1e-6 元）；注册赠 1 元
+  platform_ready: boolean; // 「平台」这一档现在可不可选
+}
+
+// 保存作品级配置的请求体。
+export interface StoryLLMConfigInput {
+  bindings: StageBindings;
+  review_enabled: boolean;
+}
+
+// 微元 → 「¥0.83」。后端以整数微元存额度（避免浮点累加误差），展示时才折成元。
+export function formatCredit(microCNY: number): string {
+  return "¥" + (Math.max(0, microCNY) / 1_000_000).toFixed(2);
+}
 
 // 作者推荐模型（存于 world_config.recommended_models，仅标注展示、不自动套用）。
 export interface RecommendedModels {
@@ -156,6 +179,10 @@ export interface PlatformSetting {
   provider: string;
   base_url: string;
   model: string;
+  // 单价：元 / 百万 token，与各家定价页口径一致。**为 0 则永远扣不动额度**，
+  // 等于平台 key 无限量——admin 必须填。
+  price_in_per_mtok: number;
+  price_out_per_mtok: number;
   has_key: boolean;
   key_hint: string;
 }

@@ -15,9 +15,9 @@ Story Editor 的长期愿景是“AI 驱动的互动剧情共创社区”：用�
 
 | 域 | 已完成 | 未完成或限制 |
 |---|---|---|
-| 用户 | 后端注册/登录/JWT/资料、凭证分表；**前端登录接入完成**（可选登录，未登录仍匿名 guest；登录后迁移本浏览器 guest 会话到账号）；**个人主页 `/me`（资料 + 编辑昵称/简介/头像 + BYOK 连接管理）**；**BYOK 已接入生成**（连接=账号级、模型=作品级，见 §12） | OAuth/密码找回未做；平台 key 额度限制未做；旧 `User.LLMKeyCipher`（单 key）已废弃、列留孤儿 |
+| 用户 | 后端注册/登录/JWT/资料、凭证分表；**前端登录接入完成**（可选登录，未登录仍匿名 guest；登录后迁移本浏览器 guest 会话到账号）；**个人主页 `/me`（资料 + 编辑昵称/简介/头像 + BYOK 连接管理）**；**BYOK 已接入生成**（连接=账号级、模型=作品级，见 §12）；**注册赠 1 元平台额度 + 按 token 计费扣减**；头像上传 | OAuth/密码找回未做；**充值服务未做**（额度用尽只能自带 key）；单价需 admin 手填；旧 `User.LLMKeyCipher`（单 key）已废弃、列留孤儿 |
 | 作品 | Story CRUD（列表/详情 LEFT JOIN users 带出 `creator_name` 作者昵称，只读投影）、作品列表、世界观/初始状态 JSON；**创作编辑器(MVP)**：`world_config`/`opening_content` 可写入、运行时校验(`pkg.ValidateWorldConfig`，草稿宽松/发布严格)、发布态切换、我的作品列表、assist Go 转发；**封面上传（`/uploads/image` + `cover_url`，见 §14）** | `/assist/polish`·`/assist/branches` 编辑内接入未做 |
-| 游玩 | 开局、续写、自由输入、回溯、读档、删档、剧情树、状态合并 | 真实环境下的多回合质量/延迟指标尚未沉淀 |
+| 游玩 | 开局、续写、自由输入、回溯、读档、删档、剧情树、状态合并；质量审校可开关（默认关） | **匿名不能玩**（额度挂账号，详情页拦截并引导登录）；真实环境下的多回合质量/延迟指标尚未沉淀 |
 | Agent | **流式生成(SSE)**、属性类型规整（含 hidden）、故事大纲导演、滚动摘要、审校分级 + 有记忆修订 + 超限降级交付 | RAG、多 Agent fan-out、独立 director/recall/write 子图未做 |
 | 前端 | **双态设计体系（`docs/design` 落地，见 §13）**：管理态（白底 Inter + 全局 `AppHeader`）发现书库(错落瀑布 + 题材/搜索前端过滤 + 三态)、我的创作、社区占位、登录页(`/login` 双栏)、个人主页、admin、创作编辑器；阅读态（暖深色 Noto Serif + `useReadingTheme` 整页换肤 + 遮罩浓度/昼夜可调）作品详情、游玩(三栏舞台 + 状态轨 + 选项坞 1/2/3 快捷键 + 星图抽屉)。正文逐字流式(无首字下沉)、属性揭示门控可见性(hidden 全程不露面)、进度条按 `max` 声明画、登录/会话迁移、按作品配模型、作品级 8 主题换肤 | 社区功能、移动端细节/自动化测试未做 |
 | 社区 | API 路由与 handler 占位 | 浏览、详情、点赞、评论、搜索、排行榜均未实现 |
@@ -206,7 +206,7 @@ Agent 的开场和续写响应统一包含：`content`、`options`、`state_delt
 
 | 进程 | 示例文件 | 必要项 |
 |---|---|---|
-| Agent | `agent/.env.example` | `DEEPSEEK_API_KEY` |
+| Agent | `agent/.env.example` | **无必填项**：agent 不持有任何 LLM 凭据，key/端点/模型由 Go 随请求下发 |
 | 后端 | `backend/.env.example` | 可达 PostgreSQL、`DB_*`、`JWT_SECRET`、`AGENT_URL`；可选 `UPLOAD_DIR`(默认 `./uploads`)、`UPLOAD_MAX_MB`(默认 5) |
 | 前端 | `frontend/.env.local.example` | 可选 `NEXT_PUBLIC_API_BASE` |
 
@@ -311,6 +311,9 @@ cd agent
 - **创作侧 node CRUD 半残（2026-08-06）**：`POST /stories/:id/nodes` 仍以 `sessionID=uuid.Nil` 建节点（`handler/node.go` 的 TODO）。仅补了 `NodeService.Update/Delete` 经 `Story.CreatorID` 的越权校验，未建双归属模型。将来要独立编辑节点树时再引入「作者草稿树」或可空 sessionID 语义。
 - **上传孤儿文件无回收（2026-08-10）**：上传成功但表单没保存、换头像/封面后的旧文件，都会永远留在磁盘。最小治理方案是「上传即写一行 assets 表 + 夜间扫描无引用记录」，0 用户阶段不值得。
 - **上传走单机本地磁盘（2026-08-10）**：`UPLOAD_DIR` 是进程本地目录，多实例必须挂共享卷（compose 已挂 named volume `uploads`）。换对象存储只需替换 `service.UploadService`，`url` 语义不变、无需迁移表。
+- **平台额度的单价要 admin 手工维护（2026-08-10）**：`platform_llm_settings.price_*` 默认 0，**不填就永远扣不动额度**（安全的失败方向，但等于无限免费）。模型涨价也不会自动跟。
+- **事后扣费允许最后一回合透支（2026-08-10）**：花多少 token 只有调用完才知道，因此扣到 0 为止、不预扣。真要精确就得先估上限再冻结，0 用户阶段不值当。
+- **匿名玩家已无法游玩（2026-08-10，产品取舍不是 bug）**：额度挂账号、平台档对匿名不给，所以未登录只能浏览，点进详情页会被拦并引导登录（「登录即赠 1 元」）。副作用是它顺手掩盖了「匿名共享同一个 guest PlayerID」那个洞——**洞还在，只是现在没人能从匿名路径进来了**，别当成已修。
 - `community` 路由已注册但 handler 未实现，不能当可用接口依赖。
 - `AutoMigrate` 适合当前 demo，不等同于生产级迁移治理。
 - Go 侧的 context 透传、优雅关闭、seed 开关等工程化问题记在 [prd.md](prd.md) 开放问题里。
@@ -349,22 +352,38 @@ cd agent
 
 ## 12. BYOK 多供应商 / 分环节模型 / 平台设置 / admin 门槛
 
-**目标**：支持任意 OpenAI 兼容 key；平台 key 入库由管理员管理；游玩烧**玩家自己**的 key，未配回退平台。
+**目标**：支持任意 OpenAI 兼容 key；平台 key 入库由管理员管理；游玩优先烧**玩家自己**的 key，未配则从**注册赠送的 1 元额度**里按量扣平台 key，额度用尽必须自带连接。
 **分层**：连接（key/base_url）是**用户级**（账号里管一次）；「用哪个模型」是**作品级**（每玩家在每作品各配各的）。作者的推荐模型只作标注、不自动套用（作者与玩家配置大概率不同，复刻也用不了）。
 
 **数据模型**
 - `llm_connections`（每用户多条）：`name / provider(标签) / base_url / api_key_cipher(AES-GCM) / default_model`。
-- `user_story_llm_configs`（复合主键 user_id+story_id）：`bindings` TEXT/JSON = `{"write":{"conn":"<uuid>","model":""},"review":{...}}`；`model` 空→回退连接 `default_model`。仅 write/review。
-- `platform_llm_settings`（全局，admin 管，每环节一行）：`stage PK / provider / base_url / api_key_cipher / model`。
+- `user_story_llm_configs`（复合主键 user_id+story_id）：`bindings` TEXT/JSON = `{"write":{"conn":"<uuid>","model":""},"review":{...}}`；`model` 空→回退连接 `default_model`。仅 write/review。另有 `review_enabled BOOL`（**默认 false**，见下）。
+- `platform_llm_settings`（全局，admin 管，每环节一行）：`stage PK / provider / base_url / api_key_cipher / model / price_in_per_mtok / price_out_per_mtok`。单价单位是**元 / 百万 token**（照抄供应商定价页）。⚠️ **单价为 0 则永远扣不动额度**，等于平台 key 无限免费——admin 页对此显式告警。
+- `users.credit_micro_cny BIGINT DEFAULT 1000000`：平台额度余额，单位**微元**（1e-6 元）。整数避免浮点累加误差；列默认值 = 1 元，注册即到账（AutoMigrate 加列时 Postgres 也会给存量行补上）。
+- `llm_usage_logs`：每笔**平台额度**消费的流水（user/story/stage/model/tokens/cost_micro/estimated）。玩家用自己的 key 不入账。没这张表，"我那 1 元花哪了"只能靠猜。
 - 作者推荐模型：`stories.world_config.recommended_models = {"write":{"model":"..."},"review":{...}}`（前端编辑器写、作品详情页只读展示；后端透传，不参与解析）。
 - 旧 `User.LLMKeyCipher`（单 key）**废弃**，列留孤儿（GORM 不删列，0 用户未迁移）。
 
 **解析优先级**（`service.LLMResolver`，单测见 `llm_resolver_test.go`）：
-- 游玩（`play.go` 调 `ResolveForPlay(userID, storyID, stage)`，stage∈{write,review}）：**作品级配置 → 平台该环节 → nil**（agent 回退 `.env`）。
-- 创作（`assist.go` 调 `ResolveForAssist(userID, overrideConnID)`）：**编辑器覆盖连接 → 平台 world → nil**。
+- 游玩（`ResolveForPlay(userID, storyID, stage)`，stage∈{write,review}）：**作品级用户连接 → 平台档（需有额度）→ nil**。
+- 创作（`ResolveForAssist(userID, overrideConnID)`）：**编辑器覆盖连接 → 平台 world（需有额度）→ nil**。
 - 命中连接/平台时解密 key；连接失效/解密失败**跳到下一档**不硬报错。
+- **返回 nil 就是硬失败**（`pkg.CodeNoLLMConfig` = 10016），调用方必须在发请求前报错。曾经的第三档「agent 自己 `.env` 的 `DEEPSEEK_API_KEY`」**已删除**——那是一层看不见、无法限额、也不归 admin 管的服务器成本。`TestPlatformNeedsCredit` 守着这条别被加回来。
+- 平台档对**匿名一律不给**：额度挂账号，且所有匿名玩家共享同一个 seed guest id（§9.2），给了等于让第一个访客花光所有人的额度。
 
-**下发链路**：Go 解析出 `AgentLLMConfig{provider,base_url,api_key,model}` → 塞进 agent 请求体（`llm_write`/`llm_review`/`llm`）→ agent `_build_ephemeral` 构造临时 ChatOpenAI（不进缓存）。**agent 不碰库**，key/策略全在 Go。
+**额度与扣费**（`service/credit.go`）
+- 只对 `AgentLLMConfig.Source == platform` 的环节扣（该字段 `json:"-"`，不下发给 agent——agent 不该知道钱的事）。
+- agent 在 `done` 帧回传按环节分开的 token 用量；Go 按该环节单价折算成微元、**向上取整**（几百 token 的调用四舍五入会常年归零，1 元就成了无限），写一行流水并 `UPDATE ... GREATEST(0, credit - ?)`。扣减在 SQL 里做，避免并发回合先读后写吞掉一次消费。
+- **事后扣费**：花多少 token 只有调用完才知道，事前无法预扣准确金额，因此**最后一回合可能略微透支**（扣到 0 为止）。用一套精确预扣换这点误差，0 用户阶段不值当。
+- 扣费失败只记日志、不向上报错：token 已经烧掉了，此时让玩家的回合失败于事无补。
+- `estimated=true` 表示端点没在响应里回 usage、token 数是**按字符估算**的（OpenAI 兼容端点对 `stream_options.include_usage` 支持不一）。这批为真时说明扣费全靠估算——是需要知道的事实，别被精确数字掩盖。
+
+**review（质量审校）改为作品级开关，默认关**
+- 关：不下发 `llm_review`，agent 整段跳过审校（省约一半 token），埋点打 `review=off`，不伪装成 `first_draft_pass=true`。
+- 开：`review` 环节**必须**选一条连接，否则保存被拒（不静默降级成"关掉"——那会让玩家以为审校在生效）。
+- 默认关的代价：质量下限低于以前（以前人人都过审校，真实拒绝率约 18%）。权衡写在前端开关旁。
+
+**下发链路**：Go 解析出 `AgentLLMConfig{provider,base_url,api_key,model}` → 塞进 agent 请求体（`llm_write`/`llm_review`/`llm`）→ agent `_build_ephemeral` 构造临时 ChatOpenAI。**agent 不碰库、也不持有任何默认凭据**：三个关键字段缺一即抛 `LLMConfigMissing`。key/额度/策略全在 Go。
 
 **admin 门槛（最小）**：JWT 携带 `role` 快照（`pkg.GenerateToken(userID, role, secret)`）；`middleware.RequireAdmin()` 校验；`/admin/llm/*` 挂 `AuthRequired+RequireAdmin`。
 - **产生第一个 admin**：手动改库 `UPDATE users SET role='admin' WHERE username='<你的用户名>';`，然后该用户**重新登录**（role 是 JWT 签发时快照，旧 token 不含新角色）。前端 `/admin` 与 `/me` 的「平台设置」入口按 `user.role==='admin'` 显示；后端才是硬防线。
