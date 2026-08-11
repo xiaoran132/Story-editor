@@ -13,7 +13,8 @@ import { coverStyle, type SessionListItem, type Story, type UserProfile } from "
 
 // 「我的空间」（对齐原型 my-space.html）：资料头 + 两个页签——我的创作 / 我在读。
 // 「我在读」原先寄居在首页，会让书库首屏被个人数据挤占；按原型迁到这里，
-// 导航入口在 AppHeader（/mine?tab=reading）。
+// 顶栏只有「我的空间」一项入口（曾另有「我在读」直达第二页签，已移除——
+// 顶栏不该暴露页面内部页签）；深链 /mine?tab=reading 仍然有效。
 //
 // 页签状态挂在 **查询参数**而不是 hash 上：两个导航项指向同一个路由，Next 用
 // history.pushState 做客户端跳转，而 pushState **不触发 hashchange**，Next 的

@@ -1,50 +1,21 @@
 "use client";
 
-import { Suspense } from "react";
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 import AuthWidget from "./AuthWidget";
 import BrandGlyph from "./BrandGlyph";
 import { IconPlus } from "./icons";
 
-// 导航集合按 DESIGN §9.3：发现 / 我在读 / 我的空间 / 社区。
-// 「我在读」指向 /mine?tab=reading（我的空间的第二个页签），存档从首页迁过去后入口不丢。
-// 用查询参数而非 hash：同路由内切换时 hash 不会触发重渲染（见 app/mine/page.tsx 注释）。
+// 全局导航：发现 / 我的空间 / 社区。
+//
+// 「我在读」曾在这里单独占一项（指向 /mine 的第二个页签），已移除：顶栏是全局
+// 导航，不该暴露某个页面的内部页签——两个入口指向同一路由，看起来还完全一样。
+// 存档入口没有丢，就在「我的空间」页面的页签上；深链 /mine?tab=reading 仍然有效。
 const NAV = [
   { href: "/", label: "发现" },
-  { href: "/mine?tab=reading", label: "我在读" },
   { href: "/mine", label: "我的空间" },
   { href: "/community", label: "社区" },
 ];
-
-// 导航链表。active 传 null = 不做高亮（静态预渲染时的降级渲染，见下方 Suspense）。
-function NavLinks({ active }: { active: ((href: string) => boolean) | null }) {
-  return (
-    <nav className="nav-links" aria-label="主导航">
-      {NAV.map((n) => (
-        <Link key={n.href} href={n.href} aria-current={active?.(n.href) ? "page" : undefined}>
-          {n.label}
-        </Link>
-      ))}
-    </nav>
-  );
-}
-
-// 高亮判定要读查询参数，而 useSearchParams 会让所属子树退出静态预渲染，
-// 故单独抽成组件并用 Suspense 包住——否则**每个用了 AppHeader 的静态页都会预渲染失败**
-// （踩过：/、/me、/admin、/community 全线报 prerender-error）。
-function ActiveNavLinks() {
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  // 两个导航项指向同一路由、靠 ?tab 区分，所以高亮要连查询参数一起比，
-  // 否则「我在读」永远不亮、「我的空间」在两个页签下都亮。
-  const isActive = (href: string) => {
-    const [path, query] = href.split("?");
-    if (path !== pathname) return false;
-    return (query ?? "") === (searchParams.toString() || "");
-  };
-  return <NavLinks active={isActive} />;
-}
 
 // 管理态全局导航头：sticky 毛玻璃。可选搜索框（首页传入 value/onChange 做前端过滤）。
 export default function AppHeader({
@@ -54,6 +25,12 @@ export default function AppHeader({
   search?: string;
   onSearch?: (v: string) => void;
 }) {
+  const pathname = usePathname();
+  // 只比 pathname：导航项都不带查询参数，且「我的空间」在两个页签下都该高亮。
+  // 一旦有导航项要带 ?query，就得改用 useSearchParams——那会让子树退出静态预渲染，
+  // 必须再用 Suspense 包住，否则每个用了 AppHeader 的静态页都会 prerender 失败（踩过）。
+  const isActive = (href: string) =>
+    href === "/" ? pathname === "/" : pathname === href;
 
   return (
     <header className="app-header">
@@ -61,11 +38,13 @@ export default function AppHeader({
         <Link className="brand" href="/" aria-label="Story Editor 首页">
           <span className="glyph" aria-hidden="true"><BrandGlyph /></span> Story&nbsp;Editor
         </Link>
-        {/* fallback 渲染同样的链接、只是不高亮：静态 HTML 里导航必须在，
-            不能因为高亮判定而整块缺席 */}
-        <Suspense fallback={<NavLinks active={null} />}>
-          <ActiveNavLinks />
-        </Suspense>
+        <nav className="nav-links" aria-label="主导航">
+          {NAV.map((n) => (
+            <Link key={n.href} href={n.href} aria-current={isActive(n.href) ? "page" : undefined}>
+              {n.label}
+            </Link>
+          ))}
+        </nav>
 
         {onSearch ? (
           <div className="nav-search" role="search">
