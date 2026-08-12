@@ -74,7 +74,7 @@
 ### 验证
 - dev 逐个预设在**作品详情 + 游玩**页人眼过目；确认**外壳页（首页/`/me`/编辑器/`/admin`）不受影响**。
 - 剧情树在每套主题下连线/当前星/脉冲仍清晰可辨。
-- `npx tsc --noEmit` + `npx next build` 绿。
+- `npx.cmd tsc --noEmit` + `npx.cmd next build` 绿（PowerShell 下用 `.cmd`）。
 
 ---
 

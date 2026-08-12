@@ -22,7 +22,9 @@ class Settings(BaseSettings):
     # 生成参数
     ai_temperature: float = 0.8
     ai_timeout: int = 60
-    # 质量审校拒绝后，允许额外重写的最大次数；超限后报错，不返回未经认可的内容。
+    # 质量审校拒绝后，允许有记忆写手在上一稿基础上修订的最大次数。
+    # **超限后照常交付最后一稿**（埋点打 degraded=1），不报错——属性与 delta 只是辅助，
+    # 轻微不精确可以容忍，玩家这一回合失败不可接受。
     ai_review_max_retries: int = 2
     # LLM 返回非法 JSON 时，允许额外重试的最大次数（附纠正指令重发）；超限抛 LLMParseError。
     # 真实样本显示裸 parse_error 约占 7% 且直接冒泡成玩家 502，故加一次廉价重试兜底。

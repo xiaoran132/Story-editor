@@ -2,6 +2,9 @@
 -- 001_users.sql
 -- 用户模块：用户主表 / 登录凭证 / 会话 / 关注关系
 -- ============================================================
+-- ⚠️ 本目录**不参与建表**。运行库的事实源是 GORM `AutoMigrate`（见 backend/main.go 与
+--    backend/internal/model/）。这里是**设计蓝图**，领先于实现，不是第二套隐式迁移机制。
+--    哪些表真的在运行、哪些只是蓝图，见 docs/handoff.md §2.1 实现矩阵。
 
 -- 启用 UUID 扩展
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";

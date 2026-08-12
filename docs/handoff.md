@@ -20,8 +20,28 @@ Story Editor 的长期愿景是“AI 驱动的互动剧情共创社区”：用�
 | 游玩 | 开局、续写、自由输入、回溯、读档、删档、剧情树、状态合并；质量审校可开关（默认关）；**全组需登录，草稿仅作者可玩**；**hidden/未揭示 reveal 的数值不外发**（§9.2） | **匿名不能玩**（额度挂账号，详情页拦截并引导登录）；真实环境下的多回合质量/延迟指标尚未沉淀 |
 | Agent | **流式生成(SSE)**、属性类型规整（含 hidden）、故事大纲导演、滚动摘要、审校分级 + 有记忆修订 + 超限降级交付 | RAG、多 Agent fan-out、独立 director/recall/write 子图未做 |
 | 前端 | **双态设计体系（`docs/design` 落地，见 §13）**：管理态（白底 Inter + 全局 `AppHeader`）发现书库(错落瀑布 + 题材/搜索前端过滤 + 三态)、我的创作、社区占位、登录页(`/login` 双栏)、个人主页、admin、创作编辑器；阅读态（暖深色 Noto Serif + `useReadingTheme` 整页换肤 + 遮罩浓度/昼夜可调）作品详情、游玩(三栏舞台 + 状态轨 + 选项坞 1/2/3 快捷键 + 星图抽屉)。正文逐字流式(无首字下沉)、属性揭示门控可见性(hidden 全程不露面)、进度条按 `max` 声明画、登录/会话迁移、按作品配模型、作品级 8 主题换肤 | 社区功能、移动端细节/自动化测试未做 |
-| 社区 | API 路由与 handler 占位 | 浏览、详情、点赞、评论、搜索、排行榜均未实现 |
+| 社区 | 无 | 路由**未注册**（访问 404）；浏览、详情、点赞、评论、搜索、排行榜均未实现 |
 | 商业化 | SQL 蓝本中有概念 | 付费、打赏、分成、成就未做 |
+
+### 2.1 实现矩阵：一个领域在四个地方各是什么状态
+
+PRD 写愿景、`infa/sql` 写蓝图、GORM 建真表、API/UI 才是玩家摸得到的东西——四者进度不同步是本项目最容易踩的坑（比如 `community.sql` 表设计齐全，但一张表都没建、路由也没注册）。这张表就是为了让「某个东西到底做了没有」一眼可查。
+
+| 领域 | PRD 目标 | SQL 蓝图 | GORM 运行模型（`main.go` AutoMigrate） | API / UI | 权威细节 |
+|---|---|---|---|---|---|
+| 用户与凭证 | §4 角色体系 | `users.sql` ✅ 同步 | `User`、`UserCredential` | 注册/登录/JWT/资料/头像 ✅ | §12 |
+| 作品 | §1.1 创作 | `stories.sql` ✅ 同步 | `Story` | CRUD + 编辑器 + 发布严格校验 ✅ | §2 |
+| 剧情树 | §1.1 游玩 | `play.sql` ✅ 同步 | `StoryNode` | **只由游玩链路写**；创作侧节点 CRUD 已下线（§9.2） | §5.1 |
+| 游玩会话 | §1.1 游玩 | `play.sql` ✅ 同步 | `PlaySession` | 全链路 ✅，需登录 | §6 |
+| BYOK 连接 | —（工程需求） | `llm.sql` ✅ | `LLMConnection` | `/llm/connections` ✅ | §12 |
+| 作品级模型绑定 | — | `llm.sql` ✅ | `UserStoryLLMConfig` | `/llm/story-config/:storyId` ✅ | §12 |
+| 平台模型设置 | — | `llm.sql` ✅ | `PlatformLLMSetting` | `/admin/llm/platform` ✅（需 admin） | §12 |
+| 用量与额度 | §1.4 商业化 | `llm.sql` + `users.credit_micro_cny` ✅ | `LLMUsageLog` + `User.CreditMicroCNY` | 按 token 计费扣减 ✅；**充值未做** | §12 |
+| 上传素材 | §1.1 | **无表**（文件落磁盘） | 无 | `/uploads/image` ✅；孤儿文件无回收（§9.2） | §14 |
+| 社区（点赞/评论/收藏/关注） | §1.2 | `community.sql` **仅蓝图** | **无** | **路由未注册**，访问 404 | §9.2 |
+| 付费 / 打赏 / 成就 | §1.4 | 仅 `stories.price_config` 字段 | 无 | 无 | `prd.md` §1.4 |
+
+**运行中的模型就是这 9 个**：`User`、`UserCredential`、`Story`、`StoryNode`、`PlaySession`、`LLMConnection`、`PlatformLLMSetting`、`UserStoryLLMConfig`、`LLMUsageLog`。`infa/sql/` 里其余表（community 全部、素材/关注等）**没有任何一张进入运行库**——该目录不参与建表，见其文件头声明。
 
 ## 3. 系统架构与职责
 
@@ -77,7 +97,7 @@ handler → service → repository
 | `StoryNode` | 邻接表剧情树。`parent_id`、`depth`、`choice_text`、`content`、`suggested_options`、`state_delta`、`state_snapshot`、`revealed_snapshot`(截至本节点已揭示的门控属性,供回溯恢复可见性)、`summary` |
 | `PlaySession` | 会话归属与当前指针；`current_node_id`、`current_state`、`revealed_attrs`(本会话已揭示的门控属性键集)、`node_count`、`status` |
 
-`backend/main.go` 目前对 `User`、`UserCredential`、`Story`、`StoryNode`、`PlaySession` 执行 GORM `AutoMigrate`。`infa/sql/` 是更完整的未来蓝本，尤其 `community.sql` 中的表尚未进入运行模型。
+上表只列游玩链路的四个核心模型；**运行中共 9 个**，与 SQL 蓝图、API 的对应关系见 §2.1 实现矩阵。
 
 ### 5.2 状态规则
 
@@ -249,7 +269,7 @@ cd agent
 cd backend; go run .
 
 # 窗口C · 前端
-cd frontend; npm run dev            # http://localhost:3000
+cd frontend; npm.cmd run dev        # http://localhost:3000（PowerShell 下用 .cmd，裸 npm 受执行策略限制）
 ```
 
 玩够量后**离线聚合埋点**：

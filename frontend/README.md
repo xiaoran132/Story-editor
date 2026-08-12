@@ -20,7 +20,7 @@ cp .env.local.example .env.local   # 按需修改 NEXT_PUBLIC_API_BASE
 npm run dev                         # http://localhost:3000
 ```
 
-Windows 下也可用仓库根的 `.\scripts\dev.ps1`（默认一并拉起 AI/后端/前端；`-Only frontend` 只起前端）。
+上面是 bash 语境。**PowerShell 里要写 `npm.cmd` / `npx.cmd`** —— 裸 `npm` 是个 shell 脚本，会受执行策略限制。Windows 下更省事的是仓库根的 `.\scripts\dev.ps1`（默认一并拉起 AI/后端/前端；`-Only frontend` 只起前端）。
 
 需要后端（:8080）与 AI 服务（:8001）在运行；后端 CORS 已放行所有来源。
 

@@ -4,7 +4,7 @@
 > ## 阅读边界：愿景与当前实现
 > 本文是 **PRD / 产品愿景**，其中大量“支持”“提供”的描述是目标能力，**不代表已经实现**。当前可运行范围、接口、数据字段、测试和接手顺序，请先看 [handoff.md](handoff.md)；工程约束看 [`../CLAUDE.md`](../CLAUDE.md)。
 >
-> 截至 **2026 年 7 月 28 日**：游玩闭环（生成、审校、回溯、读档）已完成；创作前端、社区、支付、成就、流式输出尚未实现。产品优先级是先验证游玩留存，再扩张创作与社区。
+> 截至 **2026 年 8 月 12 日**：游玩闭环（**流式**生成、审校、回溯、读档）与**创作编辑器（MVP）**已完成；社区、支付、成就尚未实现。产品优先级是先验证游玩留存，再扩张创作与社区。逐领域完成度以 [handoff.md](handoff.md) §2.1 实现矩阵为准，本文不重复记录状态。
 
 本平台定位为：
 **“AI驱动的互动剧情共创社区”**，用户既是玩家也是创作者，通过 AI Agent 协作完成剧情生成、体验、分享与再创作，形成“创作—体验—传播—变现”的闭环生态。
@@ -290,12 +290,12 @@
 
 ### 5.1 架构与实现一致性（高）
 1. ~~**`play_sessions` 缺失**~~ ✅ **已实现**：`model.PlaySession` + `repository/play_session.go` 已建，`main.go` 的 `AutoMigrate` 已纳入 `&model.PlaySession{}`；`service.PlayService`（`StartSession` / `MakeChoice` / `Backtrack` / `GetSession`）与 `/api/v1/play/*` 路由已打通，游玩链路可端到端跑通（最小页面 `templates/index.html` 已验证：开局→选择→AI 生成→属性更新→回溯）。
-2. **JSONB 的处理方式**：Go model 目前把 `world_config`/`state_delta`/`current_state` 定义为 `string`，与「后端直接做 JSONB `||` 合并」的设计前提不符。需决定：改用 `datatypes.JSON` + 原生合并，还是在应用层反序列化后合并再写回。
+2. ~~**JSONB 的处理方式**~~ ✅ **已决策：应用层合并**。Go model 保持 `string`，反序列化后由 `service.mergeState` 按 `world_config.attributes` 声明的类型合并再写回，不用 JSONB `||`。理由：`||` 只能做浅覆盖，而三种属性类型里只有 `scalar` 是覆盖语义——`number` 要累加、`set` 要按 add/remove 逐元素增删，这两种在 SQL 侧表达远比在 Go 里绕。代价是合并逻辑必须与 agent 的 `normalize` 保持一致，由 `play_merge_test.go` 锁契约。
 3. **架构定位**：`design.md` 的 5 个 “service” 是**逻辑模块/未来拆分方向**，当前实现为 Go 单体扁平分层。本文档按「MVP 单体、后期按需拆分微服务；AI 服务独立进程」定位。
 
 ### 5.2 属性系统语义（高）
 4. ~~**增量对非数值属性失效**~~ ✅ **已解决（AI + 合并层）**：属性分为 `number`（数值累加）/ `scalar`（覆盖式）/ `set`（集合增删）三类，创作者在 `world_config.attributes` 声明每键类型。Python `story_graph.normalize` 按类型规整 LLM 输出的 `state_delta`，Go `service.mergeState` 按类型合并（未声明类型的键回落为「数值累加否则覆盖」，兼容老作品），两端语义由 `play_merge_test.go` 锁定。
-   > 遗留（低）：`assist/world` 生成的 `attributes` 目前无「与 `initial_state` 键一致」的硬校验；创作侧发布接口尚未做 `world_config` schema 校验。
+   > 已补齐：`pkg.ValidateWorldConfig` 校验「`initial_state` 键 ↔ `attributes` 键严格一一对应」等 8 条规则，存草稿宽松、发布严格（`PUT /stories/:id/status`）。
 5. **三份状态的一致性成本**：见 `design.md`「关键数据流与前后端契约」，需明确以 `current_state` 为准、`state_snapshot` 仅作回溯缓存的约定并强制事务化。
 
 ### 5.3 AI 不确定性（中）
@@ -303,7 +303,11 @@
 
 ### 5.4 社区与商业化语义（中）
 7. **玩家/创作者账号是否统一**：见第 4 章，建议统一（降低创作门槛），需确认。
-8. **节点分享的语义**：节点归属私有 `session`，「分享给他人直接体验」是**复制到对方会话**还是**共享只读路线**？两者数据结构不同（复制需新建 session + 节点，共享需路线快照表）。当前 `is_public` + `visit_count` 暗示共享统计，但分享入库路径未定义。
+8. ~~**节点分享的语义**~~ ✅ **已决策：发布时由作者二选一**，两种模式并存而不是二选其一地定死。
+   - **拷贝模式**：内容复制进玩家自己的空间，标注「拷贝自某作者的某作品」并提供跳转。原作下架不影响已拷贝者，跳转页显示「原作者已取消发布」。需要 `stories.copied_from` / `copied_author` 等字段与复制流程，**尚未实现**。
+   - **引用模式**：不复制，直接用作者的世界配置。原作下架后既有会话**转只读**——可以读完，不能再推进。**已实现**（`PlayService.storyGate` + `SessionResult.read_only`，见 handoff §9.2）。
+   
+   当前全部作品都走引用模式。`is_public` + `visit_count` 是为拷贝模式的来源统计预留的字段。
 9. **「按深度计费」在分叉树上的定义**：`price_config.per_depth` 把「深度=章节」，但同一 `depth` 有多个分叉节点。需重新定义计费单位（如按「解锁的路径长度」而非绝对 depth）。
 10. **接力共创 vs 单一 player 归属**：节点树目前绑定单个 `session/player`，多人协作缺权限与分支合并模型，属 P3，暂记录不展开。
 
@@ -313,7 +317,7 @@
 12. **工程化待办（低）**：
     - 无优雅关闭——`r.Run()` 阻塞，缺信号处理与 `http.Server.Shutdown` 连接排空；
     - `seed` 每次启动都跑，应移到 flag/env 开关之后，避免生产环境误注入；
-    - `community` handler 仍为全桩（已知 TODO）。
+    - `community` 路由**未注册**（曾是返回 `success:true` 的空壳 handler，会让调用方误判操作成功；已整组摘除，访问 404）。
 
 ### 5.6 未来可能会出现的问题
 13. **中后期上下文剧增** 在文本达到一部短篇小说量级时，上下文暴涨所带来的
@@ -322,4 +326,4 @@
   - rag 检索困难
   - 思考时间长
 
-> 标注 **（高）** 的三项中，第 1、4 项已实现/解决；**仅剩第 2 项（JSONB 处理方式）** 建议在继续写业务代码前拍板，否则属性合并链路后续可能返工。
+> 标注 **（高）** 的三项（第 1、2、4）**均已实现或决策完毕**，没有阻塞业务代码的待拍板项了。当前仍开放的是：第 7（账号是否统一）、第 9（按深度计费在分叉树上的定义）、第 10（接力共创，P3）；工程侧第 11（context 断层）已排期待做。

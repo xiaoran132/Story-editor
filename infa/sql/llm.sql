@@ -3,6 +3,9 @@
 -- BYOK 模块：用户 LLM 连接 / 环节绑定 / 平台设置
 -- 依赖：001_users.sql
 -- ============================================================
+-- ⚠️ 本目录**不参与建表**。运行库的事实源是 GORM `AutoMigrate`（见 backend/main.go 与
+--    backend/internal/model/）。这里是**设计蓝图**，领先于实现，不是第二套隐式迁移机制。
+--    哪些表真的在运行、哪些只是蓝图，见 docs/handoff.md §2.1 实现矩阵。
 -- 设计要点（详见 docs/handoff.md §12）：
 --   - 支持任意 OpenAI 兼容端点（base_url + api_key + model）。
 --   - 连接（key/base_url）是**用户级**（llm_connections，账号里管一次）。
@@ -60,8 +63,35 @@ CREATE TABLE platform_llm_settings (
     api_key_cipher  TEXT,
     model           VARCHAR(80)  NOT NULL,
 
+    -- 单价：元 / 百万 token，admin 手工维护。
+    -- **默认 0 = 永远扣不动额度**（安全的失败方向，但等于无限免费）；模型涨价也不会自动跟。
+    price_in_per_mtok  DOUBLE PRECISION NOT NULL DEFAULT 0,
+    price_out_per_mtok DOUBLE PRECISION NOT NULL DEFAULT 0,
+
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- ------------------------------------------------------------
+-- 平台额度用量流水（每次走**平台档**的 LLM 调用一行）
+-- 玩家自带 key 的调用不记流水、不扣额度。余额本身在 users.credit_micro_cny，
+-- 本表是审计与对账依据。
+-- ------------------------------------------------------------
+CREATE TABLE llm_usage_logs (
+    id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id           UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    story_id          UUID        REFERENCES stories(id) ON DELETE SET NULL,  -- 创作侧调用无作品归属，可空
+    stage             VARCHAR(20)  NOT NULL,      -- write / review / world
+    model             VARCHAR(80)  NOT NULL,
+    prompt_tokens     INTEGER     NOT NULL,
+    completion_tokens INTEGER     NOT NULL,
+    cost_micro_cny    BIGINT      NOT NULL,       -- 微元（1e-6 元），整数存储避免浮点累加误差
+    -- estimated：供应商没回 usage 时按字数估算的兜底值，对账时要能把它挑出来。
+    estimated         BOOLEAN     NOT NULL DEFAULT FALSE,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 按用户查时间序（个人用量 / 对账）——与 GORM 的 idx_usage_user_time 复合索引一致。
+CREATE INDEX idx_usage_user_time ON llm_usage_logs(user_id, created_at);
 
 -- ------------------------------------------------------------
 -- admin 提权（最小门槛，无自动化）：手动指定第一个管理员，随后该用户需重新登录

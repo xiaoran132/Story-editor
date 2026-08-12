@@ -23,6 +23,11 @@
 | `community.html` | 社区 feed | 管理态 |
 | `create-editor.html` | 创作编辑器(AI 优先六步) | 管理态 |
 
+> **`prototypes/` 下的 10 个 HTML 是视觉参考资产,不是实现。** 正式实现一律以 `frontend/` 为准;
+> 原型里的假数据、定时器、写死的状态只为演示视觉,行为永远跟随后端契约。两者不一致时,
+> **不要**照原型改前端——先查 `docs/handoff.md` 确认当前契约。原型的价值是「这一屏该长什么样」,
+> 到此为止。
+
 ---
 
 ## 2. 双态决策(先判态,再取 token)
@@ -101,7 +106,7 @@
 
 ## 10. 现状与待办
 
-- **已知副本漂移**:11 个原型页目前各自在 `:root` 内联了一份 token(历史原因)。`tokens.css` 已是权威源;**下一步应把各页 `:root` 替换为 `@import "tokens.css";`**(逐页验证,勿一次性盲改)。新页面请直接 @import,不要再复制内联。
+- **已知副本漂移**:10 个原型页目前各自在 `:root` 内联了一份 token(历史原因)。`tokens.css` 已是权威源;**下一步应把各页 `:root` 替换为 `@import "tokens.css";`**(逐页验证,勿一次性盲改)。新页面请直接 @import,不要再复制内联。
   - Next 实现侧(`frontend/app/globals.css`)的 token 层已与本文件对齐,新增变量一律**先回写 tokens.css 再落地**。已修掉的两处副本:品牌 glyph(曾在 AppHeader 与 login 各一份、颜色各写死一套,现为 `components/BrandGlyph.tsx` 单一来源 + currentColor)、sci 主题色值(CSS 与 `lib/types.ts` 两份,现已同步且不再用 Tailwind indigo)。
   - 仍存在的一份副本:作品主题色板同时存在于 tokens.css 注释、`globals.css` 的 `[data-work-theme]` 块、`lib/types.ts` 的 `THEMES`。前两者是阅读态场景色,后者是书库封面渐变,用途不同故未强行合并——改主题时三处都要看。
 - 未做的产品页:管理后台(`/admin`,边缘)。

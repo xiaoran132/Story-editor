@@ -132,9 +132,10 @@ cd ..\agent
 .\.venv\Scripts\python.exe -m compileall -q app tests
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 
-# 前端生产构建
+# 前端生产构建（PowerShell 下用 .cmd，裸 npm 受执行策略限制）
 cd ..\frontend
-npm run build
+npm.cmd run build
+npx.cmd tsc --noEmit
 ```
 
 > Agent 的真实端到端验证仍依赖可用的 PostgreSQL 与 DeepSeek Key。离线测试不能替代多回合试玩：必须检查摘要是否漂移、选择后果是否兑现、审校重写率和实际延迟。
