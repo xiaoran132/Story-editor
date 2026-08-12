@@ -37,7 +37,7 @@ func (h *PlayHandler) Start(c *gin.Context) {
 		return
 	}
 
-	result, err := h.svc.StartSession(h.player(c), req.StoryID)
+	result, err := h.svc.StartSession(c.Request.Context(), h.player(c), req.StoryID)
 	if err != nil {
 		pkg.Error(c, err)
 		return
@@ -77,7 +77,7 @@ func (h *PlayHandler) ChoiceStream(c *gin.Context) {
 	}
 	send := sseStart(c)
 	result, err := h.svc.MakeChoiceStream(
-		sessionID, h.player(c), req.Choice,
+		c.Request.Context(), sessionID, h.player(c), req.Choice,
 		func(t string) { send("delta", gin.H{"text": t}) },
 		func() { send("revise", gin.H{}) },
 	)
@@ -98,7 +98,7 @@ func (h *PlayHandler) OpeningStream(c *gin.Context) {
 	}
 	send := sseStart(c)
 	result, err := h.svc.StartOpeningStream(
-		sessionID, h.player(c),
+		c.Request.Context(), sessionID, h.player(c),
 		func(t string) { send("delta", gin.H{"text": t}) },
 		func() { send("revise", gin.H{}) },
 	)
@@ -126,7 +126,7 @@ func (h *PlayHandler) Backtrack(c *gin.Context) {
 		return
 	}
 
-	result, err := h.svc.Backtrack(h.player(c), sessionID, req.NodeID)
+	result, err := h.svc.Backtrack(c.Request.Context(), h.player(c), sessionID, req.NodeID)
 	if err != nil {
 		pkg.Error(c, err)
 		return
@@ -136,7 +136,7 @@ func (h *PlayHandler) Backtrack(c *gin.Context) {
 
 // List 列出当前玩家（匿名回退 guest）的历史会话，供读档/续玩。
 func (h *PlayHandler) List(c *gin.Context) {
-	items, err := h.svc.ListSessions(h.player(c))
+	items, err := h.svc.ListSessions(c.Request.Context(), h.player(c))
 	if err != nil {
 		pkg.Error(c, err)
 		return
@@ -152,7 +152,7 @@ func (h *PlayHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	if err := h.svc.DeleteSession(h.player(c), sessionID); err != nil {
+	if err := h.svc.DeleteSession(c.Request.Context(), h.player(c), sessionID); err != nil {
 		pkg.Error(c, err)
 		return
 	}
@@ -166,7 +166,7 @@ func (h *PlayHandler) Get(c *gin.Context) {
 		return
 	}
 
-	result, err := h.svc.GetSession(h.player(c), sessionID)
+	result, err := h.svc.GetSession(c.Request.Context(), h.player(c), sessionID)
 	if err != nil {
 		pkg.Error(c, err)
 		return

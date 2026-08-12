@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 
 	"backend/internal/middleware"
 	"backend/internal/service"
@@ -33,7 +32,7 @@ func (h *AssistHandler) resolveWorld(c *gin.Context, connOverride *uuid.UUID) (*
 	if h.resolver == nil {
 		return nil, noModelErr()
 	}
-	cfg, err := h.resolver.ResolveForAssist(context.Background(), middleware.GetUserID(c), connOverride)
+	cfg, err := h.resolver.ResolveForAssist(c.Request.Context(), middleware.GetUserID(c), connOverride)
 	if err != nil {
 		return nil, err // 存储故障：如实上抛，别说成「你没配模型」
 	}

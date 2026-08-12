@@ -95,8 +95,7 @@ type SessionResult struct {
 
 // StartSession 开始一局：只建**空会话**（无根节点），开场正文改由 StartOpeningStream 流式生成。
 // 这样开局正文也能像续写一样逐字流到浏览器（生成发生在游玩页而非首页建会话时）。
-func (s *PlayService) StartSession(playerID, storyID uuid.UUID) (*SessionResult, error) {
-	ctx := context.Background()
+func (s *PlayService) StartSession(ctx context.Context, playerID, storyID uuid.UUID) (*SessionResult, error) {
 
 	story, err := s.stories.FindByID(ctx, storyID)
 	if err != nil {
@@ -150,10 +149,8 @@ func streamFixedText(text string, onDelta func(string)) {
 // StartOpeningStream 为空会话流式生成开场并落根节点：正文增量经 onDelta 外发，结束落库。
 // 幂等：若根节点已存在（刷新/重复触发），直接返回既有开场，不重复生成。
 func (s *PlayService) StartOpeningStream(
-	sessionID, playerID uuid.UUID, onDelta func(string), onRevise func(),
+	ctx context.Context, sessionID, playerID uuid.UUID, onDelta func(string), onRevise func(),
 ) (*SessionResult, error) {
-	ctx := context.Background()
-
 	session, err := s.sessions.FindByID(ctx, sessionID)
 	if err != nil {
 		return nil, err
@@ -165,7 +162,7 @@ func (s *PlayService) StartOpeningStream(
 		return nil, err
 	}
 	if session.CurrentNodeID != nil { // 幂等：开场已生成，直接返回
-		return s.GetSession(playerID, sessionID)
+		return s.GetSession(ctx, playerID, sessionID)
 	}
 
 	story, err := s.stories.FindByID(ctx, session.StoryID)
@@ -202,8 +199,12 @@ func (s *PlayService) StartOpeningStream(
 		}
 	}
 
+	// 生成之后切到不可取消的 ctx（理由同 MakeChoiceStream）：开场已经生成出来了，
+	// 玩家此刻关页面不该让扣费与落库一起失败。
+	done := context.WithoutCancel(ctx)
+
 	// 扣平台额度（只对确实走了平台档的环节生效；玩家自带 key 不动额度）。
-	s.credit.ChargeAll(ctx, playerID, &session.StoryID, write, review, opening.Usage)
+	s.credit.ChargeAll(done, playerID, &session.StoryID, write, review, opening.Usage)
 
 	// 开场揭示（若 AI 在开场即揭示某门控属性）：并入会话与根节点快照。
 	revealedJSON := mergeRevealed(session.RevealedAttrs, opening.Revealed, world.RevealGatedAttrs())
@@ -224,7 +225,7 @@ func (s *PlayService) StartOpeningStream(
 	session.RevealedAttrs = revealedJSON
 	session.LastPlayedAt = time.Now()
 	// 跨表事务下沉到仓储：Create(root) + 会话指向根节点（CurrentNodeID 由仓储回填后设置）。
-	if err := s.sessions.CreateNodeAndUpdateSession(ctx, root, session); err != nil {
+	if err := s.sessions.CreateNodeAndUpdateSession(done, root, session); err != nil {
 		return nil, err
 	}
 	return newAttrView(world, story.CreatorID == playerID).result(session, root), nil
@@ -344,9 +345,8 @@ func (s *PlayService) applyContinueResult(
 // MakeChoiceStream 提交一次选择（流式）：回溯历史 → AI 流式生成（正文增量经 onDelta 外发、
 // 审校拒绝经 onRevise 通知）→ 流结束拿到完整结果后合并属性/去重/写子节点/更新会话。
 func (s *PlayService) MakeChoiceStream(
-	sessionID, playerID uuid.UUID, choice string, onDelta func(string), onRevise func(),
+	ctx context.Context, sessionID, playerID uuid.UUID, choice string, onDelta func(string), onRevise func(),
 ) (*SessionResult, error) {
-	ctx := context.Background()
 	session, story, pathNodes, history, err := s.loadChoiceContext(ctx, sessionID, playerID)
 	if err != nil {
 		return nil, err
@@ -361,9 +361,15 @@ func (s *PlayService) MakeChoiceStream(
 	if err != nil {
 		return nil, pkg.Internal("ai continue stream: " + err.Error())
 	}
+
+	// **生成之后切到不可取消的 ctx**：到这里 token 已经烧掉、正文已经拿到，
+	// 玩家此刻关掉页面不该让这一切白费。继续用请求 ctx 的话，断开会让扣费和
+	// 落库双双 context canceled——结果是烧了钱、丢了内容、还没记账，三头亏。
+	// 取消只该阻止「还没发生的生成」，不该回滚「已经发生的事实」。
+	done := context.WithoutCancel(ctx)
 	// 扣平台额度：token 已经烧掉了，所以无论后续落库成功与否都要记账。
-	s.credit.ChargeAll(ctx, playerID, &session.StoryID, write, review, result.Usage)
-	return s.applyContinueResult(ctx, session, pathNodes, story, choice, result)
+	s.credit.ChargeAll(done, playerID, &session.StoryID, write, review, result.Usage)
+	return s.applyContinueResult(done, session, pathNodes, story, choice, result)
 }
 
 // tryMerge 在当前节点的已有直接子节点中，寻找与本次生成「state_delta 相同 + 语义等价」的一个复用。
@@ -415,8 +421,7 @@ func deltaEqual(stored, fresh string) bool {
 }
 
 // Backtrack 回溯到某历史节点：不删数据，恢复该节点的状态快照，从该点继续分叉。
-func (s *PlayService) Backtrack(playerID, sessionID, nodeID uuid.UUID) (*SessionResult, error) {
-	ctx := context.Background()
+func (s *PlayService) Backtrack(ctx context.Context, playerID, sessionID, nodeID uuid.UUID) (*SessionResult, error) {
 
 	session, err := s.sessions.FindByID(ctx, sessionID)
 	if err != nil {
@@ -478,8 +483,7 @@ func (s *PlayService) storyGate(ctx context.Context, session *model.PlaySession)
 
 // DeleteSession 删除一局游玩会话及其全部节点（读档列表删档）。
 // 归属校验与列表口径一致：仅允许删除自己（当前匿名回退 guest）名下的会话。
-func (s *PlayService) DeleteSession(playerID, sessionID uuid.UUID) error {
-	ctx := context.Background()
+func (s *PlayService) DeleteSession(ctx context.Context, playerID, sessionID uuid.UUID) error {
 
 	session, err := s.sessions.FindByID(ctx, sessionID)
 	if err != nil {
@@ -502,8 +506,7 @@ func checkSessionOwner(session *model.PlaySession, playerID uuid.UUID) error {
 }
 
 // GetSession 返回会话 + 当前节点 + 该局全部节点（供时间线渲染）。
-func (s *PlayService) GetSession(playerID, sessionID uuid.UUID) (*SessionResult, error) {
-	ctx := context.Background()
+func (s *PlayService) GetSession(ctx context.Context, playerID, sessionID uuid.UUID) (*SessionResult, error) {
 
 	session, err := s.sessions.FindByID(ctx, sessionID)
 	if err != nil {
@@ -561,8 +564,7 @@ type SessionListItem struct {
 }
 
 // ListSessions 列出某玩家的全部会话（含作品标题），按最近游玩时间倒序。
-func (s *PlayService) ListSessions(playerID uuid.UUID) ([]SessionListItem, error) {
-	ctx := context.Background()
+func (s *PlayService) ListSessions(ctx context.Context, playerID uuid.UUID) ([]SessionListItem, error) {
 
 	sessions, err := s.sessions.FindByPlayerID(ctx, playerID)
 	if err != nil {
