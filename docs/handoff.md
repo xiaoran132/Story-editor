@@ -234,14 +234,25 @@ Agent 的开场和续写响应统一包含：`content`、`options`、`state_delt
 
 ### 8.2 已有自动验证
 
+**CI**：`.github/workflows/ci.yml`，push 到 main 与所有 PR 触发，三个 job 并行（backend / frontend / agent）。全部不连数据库、不连 LLM —— CI 只证明「能编译、静态检查过、纯逻辑单测过」，叙事质量必须靠 §8.3 的真人试玩。
+
+本地照跑同样的命令：
+
 ```powershell
 cd backend
-go test ./...
+go build ./...; go vet ./...; go test -race ./...
+
+cd ..\frontend
+npm.cmd run lint        # --max-warnings 0：警告即失败
+npm.cmd run typecheck   # tsc --noEmit
+npm.cmd run build
 
 cd ..\agent
 .\.venv\Scripts\python.exe -m compileall -q app tests
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
+
+ESLint 用 `next/core-web-vitals`，只关了 `@next/next/no-img-element` 一条（项目刻意用原生 `<img>`，理由见 `frontend/.eslintrc.json` 与 `components/ImageUpload.tsx`）。
 
 当前 Python 测试覆盖“流式哨兵解析/结构化兜底/拒绝→有记忆修订/超限降级交付”（`test_stream.py`）、“parse 重试恢复/耗尽”（`test_llm_parse_retry.py`）与“揭示门控白名单/prepare 注入抑制”（`test_reveal.py`）。Go 有 `play_merge_test.go`（节点语义合并）与 `seed_config_test.go`（六部作品 world_config 逻辑一致性：键对应/类型匹配/initial/布尔标记）。
 

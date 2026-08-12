@@ -37,6 +37,7 @@ Docs are read every session; length is a real cost.
 ```bash
 cd backend && go run .                         # needs PostgreSQL; MUST run from backend/
 cd backend && go test ./...
+cd frontend && npm run lint && npm run typecheck   # lint is --max-warnings 0
 cd agent && uvicorn app.main:app --port 8001   # see agent/README.md
 cd frontend && npm run dev                     # :3000, see frontend/README.md
 ```

@@ -1,0 +1,11 @@
+{
+  // next/core-web-vitals = next/recommended + 一组会真正影响 CLS/LCP 的规则。
+  // 只关掉确有理由的，不做大面积 off——门禁一旦开始说谎就不如没有。
+  "extends": "next/core-web-vitals",
+  "rules": {
+    // 本项目刻意用原生 <img>：没配 next/image 的 remotePatterns，
+    // 而上传图走的是 /api/v1/uploads 同源静态直出，next/image 反而要多一层配置。
+    // 理由写在 components/ImageUpload.tsx 的注释里。
+    "@next/next/no-img-element": "off"
+  }
+}

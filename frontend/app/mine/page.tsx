@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { api, assetUrl } from "@/lib/api";
@@ -63,7 +63,9 @@ function MineInner() {
     initAuth();
   }, [initAuth]);
 
-  const reload = () => {
+  // useCallback 是为了能安全进 useEffect 依赖：函数体里只用到 setState（引用稳定）
+  // 与模块级的 api，空依赖即可。裸函数每次渲染都换新身份，进依赖数组会无限重取。
+  const reload = useCallback(() => {
     setLoading(true);
     setError(null);
     Promise.all([
@@ -78,7 +80,7 @@ function MineInner() {
       })
       .catch((e) => setError((e as Error).message))
       .finally(() => setLoading(false));
-  };
+  }, []);
 
   useEffect(() => {
     if (typeof window !== "undefined" && !localStorage.getItem("token")) {
@@ -86,7 +88,7 @@ function MineInner() {
       return;
     }
     reload();
-  }, [user]);
+  }, [user, router, reload]);
 
   // 「被游玩 / 获赞」由我的作品求和得出，不需要新接口。
   const totals = useMemo(
