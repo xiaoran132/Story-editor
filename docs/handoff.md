@@ -234,9 +234,7 @@ Agent 的开场和续写响应统一包含：`content`、`options`、`state_delt
 
 ### 8.2 已有自动验证
 
-**CI**：`.github/workflows/ci.yml`，push 到 main 与所有 PR 触发，三个 job 并行（backend / frontend / agent）。全部不连数据库、不连 LLM —— CI 只证明「能编译、静态检查过、纯逻辑单测过」，叙事质量必须靠 §8.3 的真人试玩。
-
-本地照跑同样的命令：
+**没有 CI，也不打算加**：单人单分支、私有仓库（Actions 免费额度 2000 分钟/月），事后跑的绿灯拦不住任何东西，不值这个额度。下面这几条命令**提交前本地跑**就是全部门禁。
 
 ```powershell
 cd backend
