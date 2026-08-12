@@ -573,7 +573,8 @@ func (s *PlayService) ListSessions(playerID uuid.UUID) ([]SessionListItem, error
 	type storyMeta struct {
 		title     string
 		view      attrView
-		available bool // 作品仍可读可玩（取不到 / 已取消发布 → false）
+		known     bool // 作品行还在（取得到才知道哪些键该挡）
+		available bool // 还能继续推进（下架后为 false，但这一局仍可读）
 	}
 	cache := map[uuid.UUID]storyMeta{}
 	items := make([]SessionListItem, 0, len(sessions))
@@ -582,19 +583,20 @@ func (s *PlayService) ListSessions(playerID uuid.UUID) ([]SessionListItem, error
 		meta, ok := cache[sess.StoryID]
 		if !ok {
 			if story, err := s.stories.FindByID(ctx, sess.StoryID); err == nil && story != nil {
-				// 标题照给：玩家玩过这部作品，凭标题才认得出是哪一局；下架与否不改变这点。
+				// 作品还在 → 标题与脱敏视图都照给。下架只影响「能不能推进」，不影响
+				// 这一局能不能读——列表若把只读局的状态清空，就和点进去看到的对不上。
 				meta.title = story.Title
-				if canPlay(story, playerID) == nil {
-					meta.view = newAttrView(parseWorld(story.WorldConfig), story.CreatorID == playerID)
-					meta.available = true
-				}
+				meta.view = newAttrView(parseWorld(story.WorldConfig), story.CreatorID == playerID)
+				meta.known = true
+				meta.available = canPlay(story, playerID) == nil
 			}
 			cache[sess.StoryID] = meta
 		}
 		resp := meta.view.session(sess)
-		if !meta.available {
-			// 进不去的局也不外发状态：宁可整份留空，也不赌这部作品没有隐藏属性。
-			// 列表只用标题和时间，无损。
+		if !meta.known {
+			// 作品行没了 → 无从判断哪些键该挡，宁可整份留空也不赌它没有隐藏属性。
+			// 只对**取不到作品**的孤儿会话生效；下架的局照常脱敏后外发，
+			// 否则列表显示 {} 而点进去是完整状态，两边对不上。
 			resp.CurrentState = "{}"
 		}
 		items = append(items, SessionListItem{
