@@ -88,6 +88,9 @@ type SessionResult struct {
 	Session     *model.SessionResponse `json:"session"`
 	CurrentNode *model.NodeResponse    `json:"current_node"`
 	Nodes       []model.NodeResponse   `json:"nodes,omitempty"`
+	// ReadOnly：作品被作者取消发布，这一局只能读完、不能再推进（引用模式的下架语义）。
+	// 前端据此禁用选项与自由输入；不给这个标志的话，玩家只能靠点下去撞一个 403 才知道。
+	ReadOnly bool `json:"read_only"`
 }
 
 // StartSession 开始一局：只建**空会话**（无根节点），开场正文改由 StartOpeningStream 流式生成。
@@ -122,7 +125,7 @@ func (s *PlayService) StartSession(playerID, storyID uuid.UUID) (*SessionResult,
 		return nil, err
 	}
 	// CurrentNode 为 nil：前端游玩页据此触发 StartOpeningStream 流式生成开场。
-	return &SessionResult{Session: session.ToResponse(), CurrentNode: nil}, nil
+	return newAttrView(world, story.CreatorID == playerID).result(session, nil), nil
 }
 
 // streamFixedText 把一段固定正文按小块 + 微延时逐块回调，模拟 LLM 逐字流式的观感。
@@ -169,8 +172,8 @@ func (s *PlayService) StartOpeningStream(
 	if err != nil {
 		return nil, err
 	}
-	if story == nil {
-		return nil, pkg.NotFound("story not found")
+	if canPlay(story, playerID) != nil {
+		return nil, readOnlyErr() // 建会话后作品被取消发布：开场也是生成，一并拦下
 	}
 	world := parseWorld(story.WorldConfig)
 	initialState := parseState(session.CurrentState)
@@ -224,44 +227,45 @@ func (s *PlayService) StartOpeningStream(
 	if err := s.sessions.CreateNodeAndUpdateSession(ctx, root, session); err != nil {
 		return nil, err
 	}
-	return &SessionResult{Session: session.ToResponse(), CurrentNode: root.ToResponse()}, nil
+	return newAttrView(world, story.CreatorID == playerID).result(session, root), nil
 }
 
 // loadChoiceContext 校验会话并回溯出 AI 上下文（当前节点到根的路径 + history）。
 // MakeChoice 与 MakeChoiceStream 的前置阶段一致，抽出复用。
+// 返回 story 而非解析好的 WorldConfig：下游既要 world（合并属性）又要 CreatorID（判断
+// 是不是作者本人、决定要不要脱敏），拆成两个返回值不如直接给源。
 func (s *PlayService) loadChoiceContext(ctx context.Context, sessionID, playerID uuid.UUID) (
-	*model.PlaySession, WorldConfig, []model.StoryNode, []PathStep, error,
+	*model.PlaySession, *model.Story, []model.StoryNode, []PathStep, error,
 ) {
-	var zero WorldConfig
 	session, err := s.sessions.FindByID(ctx, sessionID)
 	if err != nil {
-		return nil, zero, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	if session == nil {
-		return nil, zero, nil, nil, pkg.NotFound("session not found")
+		return nil, nil, nil, nil, pkg.NotFound("session not found")
 	}
 	if err := checkSessionOwner(session, playerID); err != nil {
-		return nil, zero, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	if session.Status != "active" {
-		return nil, zero, nil, nil, pkg.BadRequest("session already ended")
+		return nil, nil, nil, nil, pkg.BadRequest("session already ended")
 	}
 	if session.CurrentNodeID == nil {
-		return nil, zero, nil, nil, pkg.BadRequest("session has no current node")
+		return nil, nil, nil, nil, pkg.BadRequest("session has no current node")
 	}
 
 	story, err := s.stories.FindByID(ctx, session.StoryID)
 	if err != nil {
-		return nil, zero, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
-	if story == nil {
-		return nil, zero, nil, nil, pkg.NotFound("story not found")
+	// 归属校验之外还要看作品状态：作者取消发布后，其他人的既有会话可以读完，但不能再推进。
+	if canPlay(story, playerID) != nil {
+		return nil, nil, nil, nil, readOnlyErr()
 	}
-	world := parseWorld(story.WorldConfig)
 
 	pathNodes, err := s.nodes.FindPath(ctx, *session.CurrentNodeID)
 	if err != nil {
-		return nil, zero, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	history := make([]PathStep, 0, len(pathNodes))
 	for _, n := range pathNodes {
@@ -271,15 +275,17 @@ func (s *PlayService) loadChoiceContext(ctx context.Context, sessionID, playerID
 		}
 		history = append(history, step)
 	}
-	return session, world, pathNodes, history, nil
+	return session, story, pathNodes, history, nil
 }
 
 // applyContinueResult 消费一次续写生成结果：状态合并 → 同层语义去重 → 建节点/复用 + 更新会话。
 // 非流式与流式共用（区别仅在生成阶段；落库阶段依赖完整结果，两者一致）。
 func (s *PlayService) applyContinueResult(
 	ctx context.Context, session *model.PlaySession, pathNodes []model.StoryNode,
-	world WorldConfig, choice string, result *AIResult,
+	story *model.Story, choice string, result *AIResult,
 ) (*SessionResult, error) {
+	world := parseWorld(story.WorldConfig)
+	view := newAttrView(world, story.CreatorID == session.PlayerID)
 	currentState := parseState(session.CurrentState)
 	newState := mergeState(currentState, result.StateDelta, world.AttrTypes())
 	// 揭示集合：把本段新揭示的门控属性并入会话已揭示集（仅保留声明为门控的键）。
@@ -298,7 +304,7 @@ func (s *PlayService) applyContinueResult(
 		if err := s.sessions.Update(ctx, session); err != nil {
 			return nil, err
 		}
-		return &SessionResult{Session: session.ToResponse(), CurrentNode: merged.ToResponse()}, nil
+		return view.result(session, merged), nil
 	}
 
 	parentID := *session.CurrentNodeID
@@ -332,7 +338,7 @@ func (s *PlayService) applyContinueResult(
 	if err := s.sessions.CreateNodeAndUpdateSession(ctx, node, session); err != nil {
 		return nil, err
 	}
-	return &SessionResult{Session: session.ToResponse(), CurrentNode: node.ToResponse()}, nil
+	return view.result(session, node), nil
 }
 
 // MakeChoiceStream 提交一次选择（流式）：回溯历史 → AI 流式生成（正文增量经 onDelta 外发、
@@ -341,10 +347,11 @@ func (s *PlayService) MakeChoiceStream(
 	sessionID, playerID uuid.UUID, choice string, onDelta func(string), onRevise func(),
 ) (*SessionResult, error) {
 	ctx := context.Background()
-	session, world, pathNodes, history, err := s.loadChoiceContext(ctx, sessionID, playerID)
+	session, story, pathNodes, history, err := s.loadChoiceContext(ctx, sessionID, playerID)
 	if err != nil {
 		return nil, err
 	}
+	world := parseWorld(story.WorldConfig)
 	currentState := parseState(session.CurrentState)
 	write, review, err := s.resolvePlay(ctx, playerID, session.StoryID)
 	if err != nil {
@@ -356,7 +363,7 @@ func (s *PlayService) MakeChoiceStream(
 	}
 	// 扣平台额度：token 已经烧掉了，所以无论后续落库成功与否都要记账。
 	s.credit.ChargeAll(ctx, playerID, &session.StoryID, write, review, result.Usage)
-	return s.applyContinueResult(ctx, session, pathNodes, world, choice, result)
+	return s.applyContinueResult(ctx, session, pathNodes, story, choice, result)
 }
 
 // tryMerge 在当前节点的已有直接子节点中，寻找与本次生成「state_delta 相同 + 语义等价」的一个复用。
@@ -430,16 +437,43 @@ func (s *PlayService) Backtrack(playerID, sessionID, nodeID uuid.UUID) (*Session
 		return nil, pkg.NotFound("node not found in this session")
 	}
 
+	// 闸要在写库**之前**：回溯不生成内容，但它改写 current_node_id / current_state /
+	// revealed_attrs，是货真价实的写入，只读的局不能做。
+	view, playable, err := s.storyGate(ctx, session)
+	if err != nil {
+		return nil, err
+	}
+	if !playable {
+		return nil, readOnlyErr()
+	}
+
 	session.CurrentNodeID = &node.ID
 	session.CurrentState = node.StateSnapshot
 	session.RevealedAttrs = node.RevealedSnapshot // 回溯同时恢复"已揭示"可见性（发现前的节点会重新隐藏）
-	session.Status = "active"                      // 回到旧节点则重新激活
+	session.Status = "active"                     // 回到旧节点则重新激活
 	session.LastPlayedAt = time.Now()
 	if err := s.sessions.Update(ctx, session); err != nil {
 		return nil, err
 	}
 
-	return &SessionResult{Session: session.ToResponse(), CurrentNode: node.ToResponse()}, nil
+	return view.result(session, node), nil
+}
+
+// storyGate 为「读」路径（GetSession/Backtrack）取一次作品，回答两件事：
+// 该玩家的属性可见性，以及**现在还能不能推进**。
+//
+// 下架不拦读：作者取消发布后，别人玩到一半的那一局可以读完，只是不能再生成新节点
+// （引用模式语义）。只有作品行真的没了才 404——那时也确实没什么可读的。
+func (s *PlayService) storyGate(ctx context.Context, session *model.PlaySession) (attrView, bool, error) {
+	story, err := s.stories.FindByID(ctx, session.StoryID)
+	if err != nil {
+		return attrView{}, false, err
+	}
+	if story == nil {
+		return attrView{}, false, pkg.NotFound("story not found")
+	}
+	isAuthor := story.CreatorID == session.PlayerID
+	return newAttrView(parseWorld(story.WorldConfig), isAuthor), canPlay(story, session.PlayerID) == nil, nil
 }
 
 // DeleteSession 删除一局游玩会话及其全部节点（读档列表删档）。
@@ -482,6 +516,11 @@ func (s *PlayService) GetSession(playerID, sessionID uuid.UUID) (*SessionResult,
 		return nil, err
 	}
 
+	view, playable, err := s.storyGate(ctx, session)
+	if err != nil {
+		return nil, err
+	}
+
 	var current *model.NodeResponse
 	if session.CurrentNodeID != nil {
 		node, err := s.nodes.FindByID(ctx, *session.CurrentNodeID)
@@ -489,23 +528,26 @@ func (s *PlayService) GetSession(playerID, sessionID uuid.UUID) (*SessionResult,
 			return nil, err
 		}
 		if node != nil {
-			current = node.ToResponse()
+			current = view.node(node)
 		}
 	}
 
+	// 整局节点也要逐节点脱敏——时间线是最容易被忽略的泄露口：
+	// 会话当前值挡住了，历史节点快照却把同一个数原样摆在那里。
 	nodes, err := s.nodes.FindBySessionID(ctx, session.ID)
 	if err != nil {
 		return nil, err
 	}
 	responses := make([]model.NodeResponse, 0, len(nodes))
 	for i := range nodes {
-		responses = append(responses, *nodes[i].ToResponse())
+		responses = append(responses, *view.node(&nodes[i]))
 	}
 
 	return &SessionResult{
-		Session:     session.ToResponse(),
+		Session:     view.session(session),
 		CurrentNode: current,
 		Nodes:       responses,
+		ReadOnly:    !playable,
 	}, nil
 }
 
@@ -513,6 +555,9 @@ func (s *PlayService) GetSession(playerID, sessionID uuid.UUID) (*SessionResult,
 type SessionListItem struct {
 	*model.SessionResponse
 	StoryTitle string `json:"story_title"`
+	// Available=false 表示这局现在进不去了（作品被作者取消发布或删除）。
+	// 仍然列出来而不是悄悄消失——存档是玩家自己的东西，凭空少一条比标注「已下架」更让人困惑。
+	Available bool `json:"available"`
 }
 
 // ListSessions 列出某玩家的全部会话（含作品标题），按最近游玩时间倒序。
@@ -524,21 +569,38 @@ func (s *PlayService) ListSessions(playerID uuid.UUID) ([]SessionListItem, error
 		return nil, err
 	}
 
-	// 缓存作品标题，避免同一作品重复查询。
-	titles := map[uuid.UUID]string{}
+	// 缓存作品的标题 + 可见性，避免同一作品重复查询。
+	type storyMeta struct {
+		title     string
+		view      attrView
+		available bool // 作品仍可读可玩（取不到 / 已取消发布 → false）
+	}
+	cache := map[uuid.UUID]storyMeta{}
 	items := make([]SessionListItem, 0, len(sessions))
 	for i := range sessions {
 		sess := &sessions[i]
-		title, ok := titles[sess.StoryID]
+		meta, ok := cache[sess.StoryID]
 		if !ok {
 			if story, err := s.stories.FindByID(ctx, sess.StoryID); err == nil && story != nil {
-				title = story.Title
+				// 标题照给：玩家玩过这部作品，凭标题才认得出是哪一局；下架与否不改变这点。
+				meta.title = story.Title
+				if canPlay(story, playerID) == nil {
+					meta.view = newAttrView(parseWorld(story.WorldConfig), story.CreatorID == playerID)
+					meta.available = true
+				}
 			}
-			titles[sess.StoryID] = title
+			cache[sess.StoryID] = meta
+		}
+		resp := meta.view.session(sess)
+		if !meta.available {
+			// 进不去的局也不外发状态：宁可整份留空，也不赌这部作品没有隐藏属性。
+			// 列表只用标题和时间，无损。
+			resp.CurrentState = "{}"
 		}
 		items = append(items, SessionListItem{
-			SessionResponse: sess.ToResponse(),
-			StoryTitle:      title,
+			SessionResponse: resp,
+			StoryTitle:      meta.title,
+			Available:       meta.available,
 		})
 	}
 	return items, nil

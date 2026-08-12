@@ -38,6 +38,14 @@ func canPlay(s *model.Story, player uuid.UUID) error {
 	return canViewStory(s, player)
 }
 
+// readOnlyErr 是「作品已下架，这一局只能读完」的统一文案。
+//
+// 用 403 而不是 canViewStory 的 404：草稿返 404 是为了不泄露存在性，但走到这里的玩家
+// 早就玩过这部作品，藏它没有意义——给一句能看懂的话比一个 404 有用得多。
+func readOnlyErr() error {
+	return pkg.Forbidden("作者已取消发布这部作品，这一局可以读完，但不能再推进")
+}
+
 // sanitizeWorldConfig 把 world_config 脱敏成「非作者可见」的版本：
 //   - hidden 属性：连声明带初值整条抹掉——它本就该全程不露面；
 //   - reveal 属性：保留声明（前端要据 type/max 画锁定占位），但抹掉 initial 与初值。

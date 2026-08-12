@@ -190,7 +190,7 @@ CREATE INDEX idx_session_state ON play_sessions USING GIN(current_state);
 - **`"reveal": true`** —— **在剧情让玩家发现之前**隐藏，之后显示；是一种由 AI 控制的、按会话计的可见性。数值全程照常跟踪，被门控的只有显示。状态存在 `play_sessions.revealed_attrs` + `story_nodes.revealed_snapshot`（按节点存，所以**回溯到发现之前会重新隐藏**）。写手产出 `revealed: [...]` 列表，`normalize` 按已声明的 reveal 键做白名单过滤，Go 侧做并集。`AttrBar` 的显示条件是 `非 hidden ∧ (非门控 ∨ 已揭示)`。这条机制是开场不会一次性剧透 `initial_state` 全部属性的原因。
 - **`"max": <正数>`**（仅 `number`）—— 纯**显示**上界：`AttrBar` 只对声明了它的键画进度条，其余显示纯数字。没有声明上界就没有「满」的含义——曾经硬编码 0–100，结果 `gold: 500` 永远满、`affinity: -20` 永远空，比不画还误导。不参与合并，不下发给 agent。由 `pkg.ValidateWorldConfig` 规则 8 约束。**没有 `min`**，代码里从不存在这个键。
 
-对非作者，作品详情接口会剥掉 `hidden` 属性的整条声明、剥掉未揭示 `reveal` 属性的初值（见 `CLAUDE.md`「Routes」）。会话与节点的实时数值目前**仍完整下发**，属已知缺口，见 [handoff.md](handoff.md) §9.2。
+对非作者，两侧都要挡住：作品详情剥掉 `hidden` 的整条声明与未揭示 `reveal` 的初值（`service/access.go` 的 `sanitizeWorldConfig`），游玩接口剥掉对应的实时数值（`service/player_view.go` 的 `attrView`，节点按自身 `revealed_snapshot`、会话按 `revealed_attrs`）。只做一边等于没做——光挡声明，玩家从 `current_state` 照样读得到。作者玩自己的作品不脱敏。
 
 ### 题材标签（`world_config.tags: string[]`）
 
