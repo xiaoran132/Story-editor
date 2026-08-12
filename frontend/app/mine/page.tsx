@@ -248,11 +248,14 @@ function MineInner() {
                         <button className="btn secondary sm" onClick={() => router.push(`/edit/${s.id}`)}>
                           编辑
                         </button>
-                        {s.status === "published" && (
-                          <Link className="btn ghost sm" href={`/story/${s.id}`}>
-                            查看
-                          </Link>
-                        )}
+                        {/* 草稿也要能试玩——不先跑一局，作者根本不知道自己写的世界观
+                            能不能撑起生成。后端本来就允许作者玩自己的任何状态的作品
+                            （service.canPlay），这里缺的只是入口。
+                            指向详情页而不是直接建会话：那一页带「生成设置」，没配模型时
+                            会就地拦下并说明原因，直接建会话只会让人落到游玩页吃报错。 */}
+                        <Link className="btn ghost sm" href={`/story/${s.id}`}>
+                          试玩
+                        </Link>
                         <button className="btn ghost sm" onClick={() => toggleStatus(s)}>
                           {s.status === "published" ? "下架" : "发布"}
                         </button>
