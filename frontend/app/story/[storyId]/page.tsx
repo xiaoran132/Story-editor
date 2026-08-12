@@ -251,9 +251,15 @@ export default function StoryDetailPage() {
                   <small>第 {Math.max(0, lastSession.node_count - 1)} 步</small>
                 </button>
               )}
-              <button className="btn-read primary" disabled={starting || !canPlay} onClick={start}>
+              {/* 未登录时**不禁用**：死按钮点了毫无反馈，作者只会以为坏了。
+                  改成可点 + 直说要登录，点击带 next 跳登录页，回来还在这一部作品。 */}
+              <button
+                className="btn-read primary"
+                disabled={starting || (!!user && !canPlay)}
+                onClick={() => (user ? start() : router.push(`/login?next=/story/${storyId}`))}
+              >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
-                {starting ? "正在生成开场…" : "开始新游戏"}
+                {starting ? "正在生成开场…" : user ? "开始新游戏" : "登录后开始"}
               </button>
             </div>
             <p className="od-cont-hint">

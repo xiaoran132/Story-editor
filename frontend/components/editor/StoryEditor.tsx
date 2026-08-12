@@ -11,7 +11,8 @@ import CharacterList from "./CharacterList";
 import AttrTable from "./AttrTable";
 import { Toast } from "@/components/Toast";
 import ImageUpload from "@/components/ImageUpload";
-import PublishCheck, { usePublishChecks } from "./PublishCheck";
+import PublishCheck, { StepRequired, usePublishChecks } from "./PublishCheck";
+import { NEW_GATE_ID, moveGate, readGate, walkedGate, writeGate, type Gate } from "@/lib/editorGate";
 
 // 创作编辑器主体：AI 优先流程——灵感生成世界观 → 结构化微调 → 生成开场 → 存草稿/发布。
 // create 与 edit 两页共用；差异仅初始化（create 调 reset、edit 调 loadStory）。
@@ -35,9 +36,44 @@ export default function StoryEditor() {
   const [confirmDel, setConfirmDel] = useState(false);
   const [conns, setConns] = useState<LLMConnection[]>([]);
   const [step, setStep] = useState(0);
+  // 步骤门禁：顺序解锁 + 离开才打勾，保证每一页都被看见过——放开全部跳转，
+  // 「属性系统」这种不填也能存草稿、却决定整个玩法的步骤最容易被整个跳过。
+  //
+  // 状态**按作品持久化**（lib/editorGate），不按入口区分：走到第 3 步存了草稿、
+  // 明天从「我的创作」再进来，第 5 步照样锁着。没有记录的既有作品视为已走查完
+  // （walkedGate）——本功能上线前就存在的作品，总不能反过来把作者锁在自己的成品外面。
+  const [gate, setGate] = useState<Gate>(() => walkedGate(STEPS.length));
+  const unlocked = (i: number) => i <= gate.maxUnlocked;
+
+  // 门禁归属的键：已保存作品用它的 id，未保存的新作品先挂占位键。
+  const gateId = s.storyId || NEW_GATE_ID;
+
+  useEffect(() => {
+    const saved = readGate(gateId);
+    // 新建且无记录 → 从头锁起；既有作品无记录 → 当作已走查完。
+    setGate(saved ?? (gateId === NEW_GATE_ID ? { maxUnlocked: 0, seen: [] } : walkedGate(STEPS.length)));
+    setStep(0);
+  }, [gateId]);
+
+  // 首次保存拿到 id：把占位记录搬到该作品名下，否则这次走查的进度会丢。
+  useEffect(() => {
+    if (s.storyId) moveGate(NEW_GATE_ID, s.storyId);
+  }, [s.storyId]);
+
+  const updateGate = (next: Gate) => {
+    setGate(next);
+    writeGate(gateId, next);
+  };
 
   // 跳步后回到顶部——面板换了内容却停在半截滚动位置会很迷失。
   const goStep = (i: number) => {
+    if (i < 0 || i >= STEPS.length || i === step) return;
+    updateGate({
+      // 离开当前步 → 记为看过（不是把「正要去的那一步」记进去）
+      seen: gate.seen.includes(step) ? gate.seen : [...gate.seen, step],
+      // 到达即解锁——「下一步」正是靠这句把门禁往前推
+      maxUnlocked: Math.max(gate.maxUnlocked, i),
+    });
     setStep(i);
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -54,6 +90,16 @@ export default function StoryEditor() {
     const t = setTimeout(() => useEditorStore.setState({ toast: null }), 2400);
     return () => clearTimeout(t);
   }, [s.toast]);
+
+  // 发布前置校验：镜像后端 strict 规则，未全通过则禁用发布按钮。
+  // 以前只能点了发布再等后端报错，而且一次只报一条。
+  //
+  // ⚠️ 必须在下面那个 `if (s.loading) return` **之前**调用——它是 hook。
+  // editorStore 是模块级的、跨页面导航不销毁：从编辑器发布完再进来，首帧带着上次的
+  // 已载入状态渲染（hooks 齐全），随后 effect 里的 reset() 把 loading 置回 true，
+  // 下一帧撞上提前 return 就少调一个 hook，React 直接抛
+  // 「Rendered fewer hooks than expected」。
+  const checks = usePublishChecks();
 
   // 外壳（AppHeader）由页面层负责（app/create、app/edit），这里只渲染编辑器本体——
   // 两边都渲染会得到两个 <header> + 两个 <nav>，屏幕阅读器的地标列表会出现两套相同导航。
@@ -79,15 +125,17 @@ export default function StoryEditor() {
   const setTone = (tone: string) =>
     s.setField("tags", reorder([...s.tags.filter((t) => !isTone(t)), ...(tone ? [tone] : [])]));
 
-  // 发布前置校验：镜像后端 strict 规则，未全通过则禁用发布按钮。
-  // 以前只能点了发布再等后端报错，而且一次只报一条。
-  const checks = usePublishChecks();
   const canPublish = checks.every((c) => c.ok);
-  // 某一步「已完成」= 归属这步的检查项全过。没有检查项的步骤（灵感/开场/主题）
-  // 不标完成——它们本来就不是必填，打勾会误导成「这步做完了」。
+  // 打勾 = **离开过这一步** ∧ 它的必填项全过。两个条件都必要——
+  //   只看必填项 → 「属性系统」的检查是「键名均已填写」，一个属性都没有时空数组天然
+  //   通过，作者刚进编辑器就看见它被打了勾；
+  //   只看足迹   → 一进入就打勾，等于替作者宣布他看完了。
+  // 当前步的实时进度由页内 <StepRequired> 表达，不靠左侧这个勾。
+  // 走查完的作品 seen 是全集，于是退化成「只看必填项」——正是编辑既有作品时要的信号：
+  // 哪一步现在缺东西。
   const stepDone = (i: number) => {
-    const own = checks.filter((c) => c.step === i);
-    return own.length > 0 && own.every((c) => c.ok);
+    if (!gate.seen.includes(i)) return false;
+    return checks.filter((c) => c.step === i).every((c) => c.ok);
   };
 
   const aiWorld = s.aiBusy === "world";
@@ -103,7 +151,9 @@ export default function StoryEditor() {
     }
   };
 
-  // 每个面板底部的上一步/下一步（原型 .navbtns）
+  // 每个面板底部的上一步/下一步（原型 .navbtns）。
+  // 「下一步」永远可点：必填项没填完不拦——草稿本来就允许半成品，拦住只会逼作者
+  // 为了往下看而胡乱填一通。是否合规由发布按钮和 <StepRequired> 表达。
   const NavBtns = ({ i }: { i: number }) => (
     <div className="navbtns">
       {i > 0 ? (
@@ -140,29 +190,39 @@ export default function StoryEditor() {
 
       <div className="ed-shell">
         <nav className="steps" aria-label="创作步骤">
-          {STEPS.map((st, i) => (
-            <button
-              key={st.t}
-              type="button"
-              className={`step${stepDone(i) ? " done" : ""}`}
-              aria-current={step === i ? "true" : undefined}
-              onClick={() => goStep(i)}
-            >
-              <span className="n" aria-hidden="true">
-                {stepDone(i) ? (
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                    <path d="M20 6 9 17l-5-5" />
-                  </svg>
-                ) : (
-                  i + 1
-                )}
-              </span>
-              <span className="t">
-                {st.t}
-                <small>{st.sub}</small>
-              </span>
-            </button>
-          ))}
+          {STEPS.map((st, i) => {
+            const open = unlocked(i);
+            return (
+              <button
+                key={st.t}
+                type="button"
+                className={`step${stepDone(i) ? " done" : ""}${open ? "" : " locked"}`}
+                aria-current={step === i ? "true" : undefined}
+                disabled={!open}
+                title={open ? undefined : "按「下一步」依次解锁"}
+                onClick={() => goStep(i)}
+              >
+                <span className="n" aria-hidden="true">
+                  {stepDone(i) ? (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                      <path d="M20 6 9 17l-5-5" />
+                    </svg>
+                  ) : open ? (
+                    i + 1
+                  ) : (
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+                      <rect x="4" y="11" width="16" height="10" rx="2" />
+                      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                    </svg>
+                  )}
+                </span>
+                <span className="t">
+                  {st.t}
+                  <small>{st.sub}</small>
+                </span>
+              </button>
+            );
+          })}
         </nav>
 
         <div className="ed-panels">
@@ -229,6 +289,7 @@ export default function StoryEditor() {
               <p className="me-desc">
                 这段会作为系统设定注入每一次生成，写清楚世界怎么运转、玩家是谁、什么不可违背。
               </p>
+              <StepRequired checks={checks} step={1} />
               <Textarea label="标题" value={s.title} onChange={(v) => s.setField("title", v)} rows={1} />
               <Textarea
                 label="简介"
@@ -303,6 +364,7 @@ export default function StoryEditor() {
                 <strong>scalar</strong> 覆盖、<strong>set</strong> 集合增删。
                 <span className="ed-hint">隐藏 = 只供 AI 参考、玩家永不可见；门控 = 剧情揭示后才显示。</span>
               </p>
+              <StepRequired checks={checks} step={2} />
               <AttrTable />
               <NavBtns i={2} />
             </section>

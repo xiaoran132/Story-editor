@@ -31,7 +31,8 @@ export default function CreatePage() {
     <>
       <AppHeader />
       <main className="page-narrow section-space">
-        <StoryEditor />
+        {/* key 固定 new：从 /edit/xxx 切过来时强制重挂载，否则会继承上一部作品的步骤状态 */}
+        <StoryEditor key="new" />
       </main>
     </>
   );

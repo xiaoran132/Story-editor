@@ -440,6 +440,20 @@ html[data-motion="off"] .cover.alive { animation: none; background-size: 100% 10
 /* ---- 创作编辑器：左侧步骤导航 + 右侧单步面板（原型 create-editor.html 的 .shell/.steps） ---- */
 .ed-shell { display: grid; grid-template-columns: 200px 1fr; gap: 26px; align-items: start; }
 .ed-panels { min-width: 0; }
+/* 本步必填项：就地告诉作者这一页还差什么，不必翻到最后一步的发布检查才发现。 */
+.step-req {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px;
+  margin-bottom: 16px; padding: 10px 12px;
+  background: var(--surface); border: var(--border-w) solid var(--border);
+  border-radius: var(--r-md); font-size: 12.5px;
+}
+.step-req .sr-head { font-weight: 600; color: var(--warn-ink); }
+.step-req.done .sr-head { color: var(--success-ink); }
+.step-req ul { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; padding: 0; list-style: none; }
+.step-req li { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); }
+.step-req li.ok { color: var(--success); }
+.step-req li .mk { font-weight: 700; }
+
 .steps { position: sticky; top: 76px; display: flex; flex-direction: column; gap: 4px; }
 .step {
   display: flex; align-items: center; gap: 12px; padding: 11px 12px; border-radius: var(--r-md);
@@ -458,6 +472,9 @@ html[data-motion="off"] .cover.alive { animation: none; background-size: 100% 10
 /* 当前步用 accent 描一圈——这是本屏 accent 的第二处（第一处是 eyebrow.lead），刚好用满配额 */
 .step[aria-current="true"] .n { border-color: var(--accent); color: var(--accent-ink); }
 .step.done .n { background: var(--success); border-color: var(--success); color: var(--bg); }
+/* 未解锁的步骤：可见但不可点，让作者知道后面还有内容、按「下一步」会到。 */
+.step.locked { opacity: .45; cursor: not-allowed; }
+.step.locked:hover { background: none; }
 .step .t { font-size: 13.5px; font-weight: 500; }
 .step .t small { display: block; color: var(--muted); font-weight: 400; font-size: 11.5px; margin-top: 1px; letter-spacing: 0.01em; }
 
@@ -593,6 +610,8 @@ html[data-motion="off"] .cover.alive { animation: none; background-size: 100% 10
   transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
 }
 .session-card:hover { box-shadow: var(--shadow-card-hover); }
+/* 作品已下架：整卡降饱和，暗示「还能读、但走不下去了」。链接照常可点。 */
+.session-card.gone { opacity: .68; }
 .sc-link { display: flex; align-items: center; gap: 14px; padding: 14px 16px; }
 .sc-cov { width: 44px; height: 56px; flex: none; border-radius: var(--r-sm); }
 .sc-body { min-width: 0; flex: 1; }

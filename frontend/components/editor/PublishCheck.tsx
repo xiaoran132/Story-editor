@@ -35,6 +35,29 @@ export function usePublishChecks(): CheckItem[] {
   ];
 }
 
+// StepRequired 把「这一步有哪些必填项、填没填」摆在作者正在看的那一页上。
+// 以前必填项只在最后一步的发布检查里露面，作者填到第 6 步才知道第 2 步漏了东西。
+export function StepRequired({ checks, step }: { checks: CheckItem[]; step: number }) {
+  const own = checks.filter((c) => c.step === step);
+  if (own.length === 0) return null;
+  const left = own.filter((c) => !c.ok).length;
+  return (
+    <div className={`step-req${left === 0 ? " done" : ""}`}>
+      <span className="sr-head">
+        {left === 0 ? "本步必填项已齐" : `本步还差 ${left} 项必填`}
+      </span>
+      <ul>
+        {own.map((c) => (
+          <li key={c.label} className={c.ok ? "ok" : "no"}>
+            <span className="mk" aria-hidden="true">{c.ok ? "✓" : "•"}</span>
+            {c.label}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export default function PublishCheck({
   checks,
   onJump,

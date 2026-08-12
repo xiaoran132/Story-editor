@@ -25,7 +25,8 @@ export default function EditPage() {
     <>
       <AppHeader />
       <main className="page-narrow section-space">
-        <StoryEditor />
+        {/* key 随作品 id 变：换一部作品即重挂载，不继承上一部的步骤状态 */}
+        <StoryEditor key={storyId} />
       </main>
     </>
   );

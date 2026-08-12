@@ -226,9 +226,11 @@ export interface Session {
   created_at: string;
 }
 
-// GET /play/sessions 列表项：会话字段 + 作品标题。
+// GET /play/sessions 列表项：会话字段 + 作品标题 + 现在还进不进得去。
+// available=false：作品被作者取消发布或删除，点进去会 404，卡片就地标注而不是凭空消失。
 export interface SessionListItem extends Session {
   story_title: string;
+  available: boolean;
 }
 
 export interface StoryNode {
@@ -257,6 +259,9 @@ export interface SessionResult {
   session: Session;
   current_node: StoryNode | null;
   nodes?: StoryNode[]; // 仅 GET /play/sessions/:id 返回，用于重建时间线
+  // 作品被作者取消发布：这一局可以读完，但不能再推进（引用模式的下架语义）。
+  // 没有这个标志的话，玩家只能靠点下去撞一个 403 才知道。
+  read_only?: boolean;
 }
 
 // ===== 创作编辑器：world_config 的对象形态与草稿类型 =====

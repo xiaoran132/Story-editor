@@ -35,9 +35,13 @@ export default function PlayPage() {
 
   const {
     session, currentNode, allNodes, storyTitle, theme, coverUrl,
-    hiddenAttrs, revealGated, attrMax, busy, streamingText, loading, error,
+    hiddenAttrs, revealGated, attrMax, busy, readOnly, streamingText, loading, error,
     load, choose, backtrack, reset,
   } = usePlayStore();
+
+  // 只读局（作品已下架）与生成中一样锁掉一切写操作：选项、自由输入、回溯。
+  // 复用 busy 这个既有的禁用通道，不再给每个子组件加第二个开关。
+  const locked = busy || readOnly;
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [mode, setMode] = useState<"day" | "night">("night");
@@ -189,6 +193,15 @@ export default function PlayPage() {
         <main className="reader">
           <div className="scrim">
             <div className={`lifecycle ${lifeCls}`}><span className="ld" aria-hidden="true" />{lifecycle}</div>
+            {/* 只读局：不说清楚原因，玩家只会以为选项坏了 */}
+            {readOnly && !loading && (
+              <div className="notice" role="status">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                  <rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                </svg>
+                作者已取消发布这部作品 · 这一局可以读完，但不能再推进
+              </div>
+            )}
             {error && (
               <div className="notice err">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M12 9v4M12 17h.01M10.3 3.9 2 18a2 2 0 0 0 1.7 3h16.6A2 2 0 0 0 22 18L13.7 3.9a2 2 0 0 0-3.4 0z" /></svg>
@@ -223,7 +236,7 @@ export default function PlayPage() {
       {/* 底部选项坞 */}
       <div className="dock" ref={dockRef}>
         <div className="dock-inner">
-          {!loading && <OptionList node={currentNode} busy={busy} onChoose={choose} />}
+          {!loading && <OptionList node={currentNode} busy={locked} onChoose={choose} />}
         </div>
       </div>
 
@@ -246,7 +259,7 @@ export default function PlayPage() {
             <StoryTree
               nodes={allNodes}
               currentNodeId={session?.current_node_id ?? null}
-              busy={busy}
+              busy={locked}
               onBacktrack={handleBacktrack}
               bare
               active={drawerOpen}

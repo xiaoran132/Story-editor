@@ -13,6 +13,7 @@ interface PlayState {
   revealGated: string[]; // world_config.attributes 里标了 reveal 的门控属性键：揭示前不显示
   attrMax: Record<string, number>; // 声明了 max 的 number 属性上限：只有它才画进度条，其余只显示数字
   busy: boolean; // AI 生成中，禁用交互
+  readOnly: boolean; // 作品已被作者取消发布：可读完，不可推进（引用模式的下架语义）
   streamingText: string; // 流式续写时逐字到达的正文（done 后清空，回落 currentNode.content）
   loading: boolean; // 首次加载会话中
   error: string | null;
@@ -107,6 +108,7 @@ export const usePlayStore = create<PlayState>((set, get) => ({
   revealGated: [],
   attrMax: {},
   busy: false,
+  readOnly: false,
   streamingText: "",
   loading: false,
   error: null,
@@ -123,6 +125,7 @@ export const usePlayStore = create<PlayState>((set, get) => ({
       revealGated: [],
       attrMax: {},
       busy: false,
+      readOnly: false,
       streamingText: "",
       loading: false,
       error: null,
@@ -136,6 +139,7 @@ export const usePlayStore = create<PlayState>((set, get) => ({
         session: r.session,
         currentNode: r.current_node,
         allNodes: r.nodes ?? [],
+        readOnly: r.read_only === true,
         loading: false,
       });
       // 取作品：标题（顶栏展示）+ 隐藏属性键（AI 参考）+ 揭示门控属性键（发现前不显示）。失败忽略，不影响游玩。
