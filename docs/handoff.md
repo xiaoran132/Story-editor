@@ -252,7 +252,7 @@ cd ..\agent
 
 ESLint 用 `next/core-web-vitals`，只关了 `@next/next/no-img-element` 一条（项目刻意用原生 `<img>`，理由见 `frontend/.eslintrc.json` 与 `components/ImageUpload.tsx`）。
 
-当前 Python 测试覆盖“流式哨兵解析/结构化兜底/拒绝→有记忆修订/超限降级交付”（`test_stream.py`）、“parse 重试恢复/耗尽”（`test_llm_parse_retry.py`）与“揭示门控白名单/prepare 注入抑制”（`test_reveal.py`）。Go 有 `play_merge_test.go`（节点语义合并）与 `seed_config_test.go`（六部作品 world_config 逻辑一致性：键对应/类型匹配/initial/布尔标记）。
+当前 Python 测试覆盖“流式哨兵解析/结构化兜底/拒绝→有记忆修订/超限降级交付”（`test_stream.py`）、“parse 重试恢复/耗尽”（`test_llm_parse_retry.py`）与“揭示门控白名单/prepare 注入抑制”（`test_reveal.py`）。Go 有 `play_merge_test.go`（节点语义合并契约）、`access_test.go` / `ownership_test.go`（可见性与归属）、`player_view_test.go`（玩家可见投影）、`llm_resolver_test.go`（BYOK 解析优先级）、`worldvalidate_test.go`（发布校验）与 `crypto_test.go` / `upload_test.go`。
 
 ### 8.3 必做的人工验收
 
@@ -336,7 +336,7 @@ cd agent
 **其余**
 - LLM 偶发返回非法 JSON（真实样本约 7%）。`chat_json` 对 `LLMParseError` 附纠正指令重试 `AI_PARSE_MAX_RETRIES`（默认 1）次并打 `parse_retry` 点；耗尽仍抛。
 - `summary` 是有损压缩，长剧情仍会漂移；RAG 是后续补精确细节的方案。
-- **匿名 guest 共享 PlayerID 已彻底移除（2026-08-11）**：曾经所有匿名玩家共用同一个 seed `guest` id，`checkSessionOwner` 因此对匿名会话之间完全失效（彼此可读可删）。现 `/play` 全组 `AuthRequired`，`player()` 的 guest 回退、`/play/sessions/migrate`、`MigrateGuestSessions` 一并删除。**取舍**：历史 guest 存档留在库里但不可达、不提供迁移——这是为消除已确认越权面所付的明确代价。seed `guest` 仅剩「演示作品作者」一个身份。
+- **匿名 guest 共享 PlayerID 已彻底移除（2026-08-11）**：曾经所有匿名玩家共用同一个 seed `guest` id，`checkSessionOwner` 因此对匿名会话之间完全失效（彼此可读可删）。现 `/play` 全组 `AuthRequired`，`player()` 的 guest 回退、`/play/sessions/migrate`、`MigrateGuestSessions` 一并删除。**取舍**：历史 guest 存档留在库里但不可达、不提供迁移——这是为消除已确认越权面所付的明确代价。那个 `guest` 账号如今只是老库里的一行历史数据（现有演示作品挂在它名下）；seed 已于 2026-08-12 整个删除，新库不会再有它。
 - **创作侧 node CRUD 已整组下线（2026-08-11）**：`POST /stories/:id/nodes`、`GET /nodes/:id/children`、`PUT/DELETE /nodes/:id` 连同 `NodeHandler`/`NodeService` 一起删除。原因是它以 `sessionID=uuid.Nil` 写非空列、且创建路径不校验作者，只摘一半会留下「作者去改玩家会话节点」这种更怪的语义。`StoryNode` 模型与 repository 保留，专供游玩链路。将来要做可视化作者树，必须新建 `DraftNode` 或明确可空 session 的模型，不能复用游玩节点。
 - **上传孤儿文件无回收（2026-08-10）**：上传成功但表单没保存、换头像/封面后的旧文件，都会永远留在磁盘。最小治理方案是「上传即写一行 assets 表 + 夜间扫描无引用记录」，0 用户阶段不值得。
 - **上传走单机本地磁盘（2026-08-10）**：`UPLOAD_DIR` 是进程本地目录，多实例必须挂共享卷（compose 已挂 named volume `uploads`）。换对象存储只需替换 `service.UploadService`，`url` 语义不变、无需迁移表。
@@ -348,7 +348,7 @@ cd agent
 - **玩家可见数据投影已完成（2026-08-11）**：`hidden` 属性与未揭示的 `reveal` 属性，其数值不再出现在任何游玩接口的 `current_state`/`state_snapshot`/`state_delta` 里（`service/player_view.go` 的 `attrView`）。节点按**自身** `revealed_snapshot` 过滤，所以时间线不会提前剧透、回溯到发现之前会重新隐藏；会话按 `revealed_attrs`。作者玩自己的作品不脱敏。读档列表取不到作品时整份状态置空（宁可多挡）。
 - 社区路由**未注册**（2026-08-11），访问一律 404。此前空壳 handler 返 `success:true`，会让调用方误判操作成功。
 - `AutoMigrate` 适合当前 demo，不等同于生产级迁移治理。
-- Go 侧的 context 透传、优雅关闭、seed 开关等工程化问题记在 [prd.md](prd.md) 开放问题里。
+- Go 侧的 context 透传、优雅关闭等工程化问题记在 [prd.md](prd.md) 开放问题里（seed 开关已不再是问题：整个 seed 于 2026-08-12 删除）。
 
 ### 9.3 建议的后续顺序
 
@@ -401,7 +401,7 @@ cd agent
 - 创作（`ResolveForAssist(userID, overrideConnID)`）：**编辑器覆盖连接 → 平台 world（需有额度）→ nil**。
 - 命中连接/平台时解密 key；连接失效/解密失败**跳到下一档**不硬报错。
 - **返回 nil 就是硬失败**（`pkg.CodeNoLLMConfig` = 10016），调用方必须在发请求前报错。曾经的第三档「agent 自己 `.env` 的 `DEEPSEEK_API_KEY`」**已删除**——那是一层看不见、无法限额、也不归 admin 管的服务器成本。`TestPlatformNeedsCredit` 守着这条别被加回来。
-- 平台档对**匿名一律不给**：额度挂账号，且所有匿名玩家共享同一个 seed guest id（§9.2），给了等于让第一个访客花光所有人的额度。
+- 平台档对**匿名一律不给**：额度挂账号。这一档如今是防御性的——`/play/*` 全组 `AuthRequired`，匿名请求到不了解析这一步；历史上所有匿名玩家共用同一个 `guest` id（§9.2），给了等于让第一个访客花光所有人的额度。
 
 **额度与扣费**（`service/credit.go`）
 - 只对 `AgentLLMConfig.Source == platform` 的环节扣（该字段 `json:"-"`，不下发给 agent——agent 不该知道钱的事）。
@@ -460,7 +460,7 @@ cd agent
 - 新增变量**先回写 `docs/design/tokens.css`** 再落 `globals.css`，不两边各写一份。
 
 **数据与后端**
-- `seed()` 有自愈：`healSeedDuplicates` 在 ensureStory 之前跑。guest 被删后重建会拿到**新 UUID**，旧的 6 部作品成孤儿并被整套重建一遍。自愈只处理**种子标题**且**无主或属于当前 guest**的行（真实用户同名作品绝不碰），同标题多行保留 `created_at` 最早的一份（它挂着玩家会话，删了会级联清进度），并把它认领给当前 guest。幂等，不需要手工清库。
+- **启动不再预置任何数据**（seed 于 2026-08-12 整个删除）：干净库起来后没有用户也没有作品，注册账号自行创作。原实现每次启动都在生产库上跑夹具代码的删除逻辑（重复项清理、硬删「迷雾古堡」），职责错位。现有库里的 `guest` 与那六部演示作品是历史遗留数据，不会被自动重建，也不会被自动删除。
 - `StoryService.SetStatus` 发布前拦空标题（`ValidateWorldConfig` 只管 world_config，管不到标题）。若又出现空标题的已发布作品说明被绕过（如直接改库）：`SELECT id, creator_id FROM stories WHERE status='published' AND btrim(title)=''`，作者仍在则降草稿、已删号则删除。
 - 作者署名走 `LEFT JOIN users` 投影 `creator_name`（`gorm:"->;-:migration"` 只读不建列），空则前端**整块不渲染**——统一挂个假作者名比不署名更伤。⚠️ **join 后 `users` 也有 `status`/`created_at`，`listWhere` 里所有列名必须带 `stories.` 前缀。**
 - 注册的 username 由**后端**派生（`service.generateUsername`），不由前端 `email.split("@")[0]`——那会让 `a@x` 与 `a@y` 撞车，且报错对不上用户填过的任何一栏。邮箱唯一性**先查**。

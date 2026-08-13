@@ -34,11 +34,9 @@ func main() {
 		log.Fatalf("failed to migrate: %v", err)
 	}
 
-	// 预置 guest 用户 + demo 作品（幂等）。guest 只是演示作品的作者，
-	// 不再是匿名游玩的身份来源——游玩已全量要求登录。
-	if _, err := seed(db); err != nil {
-		log.Fatalf("failed to seed: %v", err)
-	}
+	// 不再 seed：demo 数据已在库中。原实现每次启动都会跑重复项清理与「迷雾古堡」硬删，
+	// 等于在生产库上执行夹具代码的删除逻辑，职责错位。
+	// **干净数据库启动将没有任何用户和作品**——注册一个账号自行创作即可。
 
 	// Repositories
 	userRepo := repository.NewUserRepository(db)

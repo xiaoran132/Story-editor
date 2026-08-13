@@ -26,8 +26,7 @@ Agent 契约实现在 `internal/service/agent_client.go`；游玩编排在 `inte
 
 ```text
 backend/
-├── main.go                     # 启动入口：config → db → 迁移 → seed → DI → 路由
-├── seed.go                     # 幂等预置 guest 用户 + demo 作品
+├── main.go                     # 启动入口：config → db → 迁移 → DI → 路由
 ├── config/config.go            # viper 配置（环境变量 > config.yaml > 默认值）
 ├── internal/
 │   ├── model/                  # 纯 GORM 模型 + ToResponse() DTO
@@ -46,7 +45,7 @@ backend/
 
 ```bash
 cd backend
-go run .                # 启动 :8080（自动迁移 + seed）
+go run .                # 启动 :8080（自动迁移）
 
 go build .              # 构建
 go test ./...           # 测试（含 play_merge_test.go 属性合并契约）
@@ -55,7 +54,7 @@ go get <pkg> && go mod tidy   # 加依赖
 
 Windows 下可用仓库根的 `.\scripts\dev.ps1`（默认一并拉起 Agent/后端/前端；`-Only backend` 只起后端）。
 
-启动时会依次：启用 `pgcrypto` 扩展 → `AutoMigrate`（`User`/`UserCredential`/`Story`/`StoryNode`/`PlaySession`）→ `seed()` 幂等预置 guest 用户与 demo 作品。
+启动时会依次：启用 `pgcrypto` 扩展 → `AutoMigrate`（`User`/`UserCredential`/`Story`/`StoryNode`/`PlaySession`/`LLMConnection`/`PlatformLLMSetting`/`UserStoryLLMConfig`/`LLMUsageLog`，共 9 个模型）。**不预置任何数据**：干净数据库启动后既没有用户也没有作品，注册一个账号自行创作。
 
 ## 配置
 

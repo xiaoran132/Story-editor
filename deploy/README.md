@@ -15,7 +15,8 @@ Internet → :80/:443 Nginx(宿主机, 域名)
 - 同域反代 ⇒ 前端用**同源相对地址** `NEXT_PUBLIC_API_BASE=/api/v1`,无跨域、不硬编码域名。
 - 8001/8080/3000/5432 **只监听本机**,公网只放 **80/443**(由宿主 nginx 占)。
 - 反代用宿主机原生 nginx,配置见 `deploy/nginx/story-editor.conf`;**不再用 Caddy 容器**。
-- 首启后端会建 `pgcrypto` 扩展 + AutoMigrate + seed(建 guest + 六部作品、**级联删「迷雾古堡」**)。这是你现在连的**同一台 PG**,注意别误删想留的数据。
+- 首启后端只建 `pgcrypto` 扩展 + AutoMigrate,**不写入也不删除任何数据**(seed 于 2026-08-12 整个删除)。容器连的是你本机的**同一台 PG**。
+- 因此**干净库起来后首页是空的**:没有用户、没有作品,注册一个账号自己创作即可。别等一个不会出现的示例列表。
 - **上传的头像/封面存在后端本地磁盘**(`UPLOAD_DIR`),不是数据库也不是对象存储。Docker 下必须挂持久卷(compose 已挂 named volume `uploads` → `/data/uploads`,与 `backend.env` 的 `UPLOAD_DIR` 对齐),否则 `up --build` 一次图就全没了;原生部署下默认落 `backend/uploads/`(备份别漏)。
 
 ---
@@ -49,7 +50,7 @@ nginx -t && systemctl reload nginx
 cd deploy/docker
 docker compose up -d --build      # 构建镜像并后台启动 agent/backend/frontend
 docker compose ps
-docker compose logs -f backend    # 看迁移+seed
+docker compose logs -f backend    # 看迁移
 ```
 冒烟:先本机 `curl -sS http://127.0.0.1:8080/api/v1/stories/ | head`(三进程) → 再 `curl -sS http://<域名>/api/v1/stories/ | head`(经 nginx);浏览器开域名走一遍 详情页→开局→续写→回溯。
 
@@ -115,7 +116,6 @@ python agent/tools/aggregate_log.py agent.log   # 见 handoff §8.4
 
 ## ⚠️ 公网上线前必读(当前 dev 级)
 
-- **共享 guest 身份**:未登录访客互相看到彼此存档(handoff §7.1)。公网多人前至少默认要求登录,或改每浏览器独立匿名身份。
-- **DeepSeek 额度**:公网任何人都能触发生成、烧你的 key——加登录门槛/速率限制。
+- **平台额度是你在付钱**:匿名已进不来(2026-08-11 起 `/play/*` 全组 `AuthRequired`,agent 的默认 `DEEPSEEK_*` 凭据也已删除),但任何人都能注册领 1 元额度烧平台 key。更要命的是 `platform_llm_settings.price_*` **不填就永远扣不动额度**(handoff §9.2),等于无限免费——上线前先把单价填上,并加注册/速率限制。
 - 无速率限制/审计;`community` 未实现。**建议先小范围/加访问控制,别长期公网裸放。**
 - **`JWT_SECRET` 与 `ENCRYPTION_KEY` 必须改成各自独立的随机长串**:前者签发登录 token,后者加密用户自带的 LLM key(`users.llm_key_cipher`)。用默认值 = 密文可被任何人用默认密钥解开。

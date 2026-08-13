@@ -117,8 +117,9 @@ func (r *LLMResolver) ResolveForAssist(ctx context.Context, userID uuid.UUID, ov
 // platformIfCredit 取某环节平台设置并解密，**但只在该用户还有额度时才给**。
 // 无设置/解密失败/匿名/余额耗尽 → nil，由调用方转成明确错误。
 //
-// 匿名（uuid.Nil）一律不给：额度挂在账号上，而且所有匿名玩家目前共享同一个 seed
-// guest id（handoff §9.2），给了等于让第一个匿名访客花光所有人的额度。
+// 匿名（uuid.Nil）一律不给：额度挂在账号上。这条如今是防御性的——`/play/*` 全组
+// AuthRequired，匿名请求到不了这里；历史上匿名玩家共用同一个 guest id（handoff
+// §9.2），给了等于让第一个匿名访客花光所有人的额度。
 func (r *LLMResolver) platformIfCredit(ctx context.Context, userID uuid.UUID, stage string) (*AgentLLMConfig, error) {
 	if userID == uuid.Nil {
 		return nil, nil

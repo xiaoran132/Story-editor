@@ -24,7 +24,7 @@ type worldConfigShape struct {
 
 // ValidateWorldConfig 校验 world_config JSON 的结构一致性。
 //
-// 规则（提炼自 seed_config_test.go，与 seed 的不变式严格对齐）：
+// 规则（原提炼自已删除的 seed_config_test.go，现由 worldvalidate_test.go 守着）：
 //  1. JSON 合法；
 //  2. strict 时 background/style/rules/outline 非空、characters 至少 1 个；
 //  3. initial_state 键 ↔ attributes 键严格一一对应；
