@@ -1,0 +1,1428 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="description" content="万象 · 衍生星图 —— 一个世界被走过的所有岔路。星越亮,走过的人越多。" />
+<title>衍生星图 · 万象</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;510;590&family=Noto+Serif+SC:wght@500;700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:        oklch(0.13 0.022 265);
+    --bg-deep:   oklch(0.09 0.018 265);
+    --fg:        oklch(0.96 0.010 90);
+    --muted:     oklch(0.72 0.020 265);
+    --border:    oklch(1 0 0 / 0.11);
+    --border-2:  oklch(1 0 0 / 0.20);
+    --accent:    oklch(0.82 0.125 85);       /* 暖金 · 全站唯一强调,不参与 hue 染色 */
+
+    --font-display:"Noto Serif SC", Georgia, "Songti SC", serif;
+    --font-ui:"Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+    --r-sm:8px; --r-md:12px; --r-lg:18px; --r-pill:999px;
+    --ease:cubic-bezier(.2,0,0,1);
+    --ring:0 0 0 2px oklch(0.09 0.018 265), 0 0 0 4px oklch(0.82 0.125 85);
+
+    --ambient-hue:252;
+  }
+  /* 角色 token 声明在使用它的元素上(.starmap / .panel / .legend),不放 :root */
+  .world-scope{
+    --w-line:   oklch(0.72 0.140 var(--hue) / .85);
+    --w-glow:   oklch(0.72 0.140 var(--hue) / .50);
+    --w-sky-hi: oklch(0.34 0.115 var(--hue));
+    --w-sky-md: oklch(0.22 0.085 var(--hue));
+    --w-sky-lo: oklch(0.11 0.040 var(--hue));
+    --w-halo:   oklch(0.48 0.130 var(--hue) / .75);
+    --w-cloud:  oklch(0.20 0.050 var(--hue) / .85);
+    --w-cloud2: oklch(0.44 0.090 var(--hue) / .50);
+    --w-star:   oklch(0.98 0.020 var(--hue) / .90);
+    --w-ink:    oklch(0.055 0.015 var(--hue));
+    --w-plate:  oklch(0.050 0.015 var(--hue) / .92);
+    --w-text:   oklch(0.97 0.010 var(--hue));
+    --w-kick:   oklch(0.86 0.090 var(--hue));
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{min-height:100%;background:var(--bg-deep);color:var(--fg);font-family:var(--font-ui);
+    -webkit-font-smoothing:antialiased}
+  button,input,textarea{font-family:inherit;color:inherit}
+  button{cursor:pointer}
+  a{color:inherit;text-decoration:none}
+  :focus-visible{outline:none;box-shadow:var(--ring);border-radius:var(--r-sm)}
+  .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+  /* 作者样式里的 display 会盖掉 UA 的 [hidden],小屏切到空态时必须真的藏住 */
+  [hidden]{display:none!important}
+
+  /* ================= 深空 ================= */
+  .space{position:fixed;inset:0;z-index:0;
+    background:
+      radial-gradient(62% 48% at 72% 8%,  oklch(0.32 0.082 var(--ambient-hue) / .50), transparent 64%),
+      radial-gradient(48% 36% at 8% 92%,  oklch(0.28 0.070 calc(var(--ambient-hue) + 52) / .32), transparent 66%),
+      radial-gradient(84% 70% at 50% 46%, oklch(0.16 0.028 var(--ambient-hue)), oklch(0.075 0.015 var(--ambient-hue)) 82%);
+    transition:background 1.1s var(--ease)}
+  .stars{position:fixed;inset:0;z-index:1;pointer-events:none}
+  .stars i{position:absolute;border-radius:50%;background:oklch(1 0 0);display:block}
+  @keyframes twinkle{0%,100%{opacity:.25}50%{opacity:.95}}
+  .grain{position:fixed;inset:0;z-index:2;pointer-events:none;opacity:.05;mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='140' height='140' filter='url(%23n)'/></svg>");
+    background-size:140px 140px}
+  .vignette{position:fixed;inset:0;z-index:3;pointer-events:none;
+    background:radial-gradient(132% 100% at 50% 44%, transparent 52%, oklch(0.05 0.01 265 / .82) 100%)}
+
+  /* ================= 顶栏 ================= */
+  .topbar{position:relative;z-index:40;display:flex;align-items:center;gap:14px;padding:14px 30px;
+    background:linear-gradient(180deg,oklch(0.08 0.017 265 / .34),transparent)}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:590;font-size:15px;letter-spacing:.02em}
+  .brand .mark{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;flex:none;
+    background:oklch(1 0 0 / .05);border:1px solid var(--border)}
+  .brand .zh{font-family:var(--font-display);font-weight:700;font-size:16px;letter-spacing:.1em}
+  .brand .en{color:var(--muted);font-size:11.5px;letter-spacing:.16em;padding-left:10px;
+    border-left:1px solid var(--border)}
+  .topnav{margin-left:auto;display:flex;align-items:center;gap:4px}
+  .topnav a{min-height:44px;padding:0 13px;border-radius:var(--r-sm);color:var(--muted);font-size:13.5px;
+    font-weight:510;letter-spacing:.02em;display:inline-flex;align-items:center;
+    transition:color .15s var(--ease),background .15s var(--ease)}
+  .topnav a:hover{color:var(--fg);background:oklch(1 0 0 / .07)}
+  .topnav a[aria-current="page"]{color:var(--fg);background:oklch(1 0 0 / .07)}
+
+  /* ================= 页头: 作品是主角,统计只保留必要的方向 ================= */
+  .wrap{position:relative;z-index:10;max-width:1320px;margin:0 auto;padding:0 30px 30px}
+  .back{min-height:44px;display:inline-flex;align-items:center;gap:8px;padding:0 8px;margin-left:-8px;
+    font-size:13px;letter-spacing:.04em;color:var(--muted);border-radius:var(--r-sm);
+    transition:color .15s var(--ease),background .15s var(--ease)}
+  .back:hover{color:var(--fg);background:oklch(1 0 0 / .07)}
+  .ghead{margin-top:18px;max-width:65ch;padding-bottom:4px}
+  .ghead .eyebrow{font-size:11px;letter-spacing:.12em;color:oklch(0.72 0.020 265 / .86);font-weight:590;margin-bottom:12px}
+  .ghead h1{font-family:var(--font-display);font-weight:700;font-size:clamp(36px,4.5vw,54px);
+    line-height:1.36;letter-spacing:0}
+  .ghead .facts{margin-top:10px;font-size:12px;line-height:1.85;letter-spacing:.01em;
+    color:oklch(0.68 0.018 265)}
+  .ghead .facts b{color:var(--fg);font-weight:590;font-variant-numeric:tabular-nums}
+  .ghead .facts .sep{padding:0 9px;color:oklch(0.48 0.014 265)}
+
+  /* ================= 星图:直接落在深空上,没有盒子 ================= */
+  .starmap{position:relative;margin-top:20px;height:min(68vh,640px);cursor:grab;touch-action:none;
+    overflow:hidden;isolation:isolate}
+  .starmap::before{content:"";position:absolute;inset:3% 0 0;z-index:0;pointer-events:none;border-radius:50%;
+    background:radial-gradient(68% 52% at 42% 34%,var(--w-sky-md),transparent 70%);opacity:.52}
+  .starmap.dragging{cursor:grabbing}
+  .starmap svg{position:relative;z-index:1;width:100%;height:100%;display:block}
+
+  /* root 身后那片该世界的天空 —— 星图唯一的大面积色彩来源 */
+  #haloGrad .h0{stop-color:var(--w-halo);stop-opacity:.95}
+  #haloGrad .h1{stop-color:var(--w-halo);stop-opacity:.32}
+  #haloGrad .h2{stop-color:var(--w-halo);stop-opacity:0}
+  #bloomGrad .b0{stop-color:var(--w-sky-hi);stop-opacity:.92}
+  #bloomGrad .b1{stop-color:var(--w-sky-hi);stop-opacity:.40}
+  #bloomGrad .b2{stop-color:var(--w-sky-hi);stop-opacity:0}
+  .bloom{fill:url(#bloomGrad)}
+  /* pathLength=100 + dasharray100:静止态是实线,入场时才从 dashoffset 100 画出来。
+     所有入场动画一律 backwards 填充 —— 减动效下动画被禁用,元素落在「已完成」的静止态,
+     而不是卡在隐藏态。 */
+  /* ⚠️ 这里刻意不写 stroke。描边色由每条边自己的线性渐变给(见 paint() 的 edgeDefs),
+     光在源头亮、向末端衰减——「连线即光」靠的是这个,不是等亮度的描边。
+     CSS 的 stroke 会盖掉 path 上的 presentation attribute,写了渐变就不生效。 */
+  .edge{fill:none;stroke-linecap:round;
+    stroke-dasharray:100;stroke-dashoffset:0;
+    transition:opacity .24s var(--ease),stroke-width .24s var(--ease)}
+  .edge.main{opacity:1}
+  .egs-a{stop-color:var(--w-line);stop-opacity:1}
+  .egs-b{stop-color:var(--w-line);stop-opacity:.38}
+  .egm-a{stop-color:var(--w-kick);stop-opacity:1}
+  .egm-b{stop-color:var(--w-kick);stop-opacity:.60}
+  .edge.lit{opacity:1!important;filter:drop-shadow(0 0 5px var(--w-glow))}
+
+  /* ——— 入场:开场那颗星先亮,分叉逐层长出去 ——— */
+  @keyframes bloomIn{from{opacity:0}to{opacity:.62}}
+  @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+  @keyframes draw{from{stroke-dashoffset:100}}
+  @keyframes starIn{from{opacity:0}}
+  .grow .bloom-g{animation:bloomIn 1.5s var(--ease) backwards}
+  .grow .halos{animation:fadeIn 1.2s .34s var(--ease) backwards}
+  .grow .edge{animation:draw .66s var(--ease) backwards}
+  .grow .node{animation:starIn .54s var(--ease) backwards}
+
+  /* ——— 光晕呼吸:相位与周期由 hue 和序号决定,不同步、不齐拍 ——— */
+  @keyframes breathe{
+    from{opacity:calc(var(--o) * .76);transform:scale(.95)}
+    to  {opacity:var(--o);transform:scale(1.06)}
+  }
+  .halo{fill:url(#haloGrad);opacity:var(--o);
+    transform-box:fill-box;transform-origin:center;
+    animation:breathe var(--dur) var(--dl) ease-in-out infinite alternate}
+
+  /* ——— 待揭示节点:虚线环缓慢自转,是「还在等着被点亮」而不是坏了 ——— */
+  @keyframes wait{to{transform:rotate(360deg)}}
+
+  /* ——— 选中路径的流光:一次性,从开场跑向选中的那颗星 ——— */
+  @keyframes run{from{stroke-dashoffset:9}to{stroke-dashoffset:-100}}
+  .spark{fill:none;stroke:var(--w-star);stroke-linecap:round;
+    stroke-dasharray:9 100;stroke-dashoffset:9;
+    animation:run .56s var(--ease) forwards;animation-delay:var(--sd)}
+
+  /* ——— 偶发流星:周期 11s / 14s,可见窗口只有 1s 左右 ——— */
+  .meteor{position:absolute;z-index:2;width:118px;height:1px;pointer-events:none;opacity:0;
+    background:linear-gradient(90deg,transparent,var(--w-star));
+    animation:shoot var(--md) linear var(--mdl) infinite}
+  @keyframes shoot{
+    0%,72%{opacity:0;transform:translate3d(0,0,0) rotate(24deg)}
+    73%{opacity:0}
+    76%{opacity:.92}
+    79%{opacity:.92}
+    81%,100%{opacity:0;transform:translate3d(318px,146px,0) rotate(24deg)}
+  }
+
+  /* ⚠️ 命中只允许落在节点上。
+     装饰层(root 柔光、光晕群、连线、标签牌、流光)全部不吃指针事件——
+     它们要么面积巨大(柔光椭圆 rx 500+),要么叠在星的上方(标签牌、流光),
+     只要能被命中就会把点击吞掉,表现就是「节点点不动」。 */
+  .bloom-g,.halos,.edges,.sparks,.tag{pointer-events:none}
+  .node{cursor:pointer;pointer-events:auto}
+  /* fill:transparent 仍会参与命中(与 fill:none 不同),这是节点的实际点击区 */
+  .node .hit{fill:transparent;pointer-events:all}
+  .node .ring{fill:none;stroke:var(--accent);stroke-width:2;opacity:0}
+  .node:focus{outline:none}
+  .node:focus-visible .ring{opacity:1}
+  .node .core{fill:var(--w-star);transition:r .2s var(--ease)}
+  .node .kick{fill:none;stroke:var(--w-kick);stroke-width:1.3;opacity:.62;
+    transition:opacity .2s var(--ease)}
+  /* 待揭示 = 还没被点亮的星:空心虚线,不发光,虚线环缓慢自转 */
+  .node.wait .core{fill:none;stroke:var(--w-line);stroke-width:1.4;stroke-dasharray:2.6 3;
+    transform-box:fill-box;transform-origin:center;
+    animation:wait 17s linear infinite}
+  .node.wait .halo{display:none}
+
+  .tag{opacity:0;transition:opacity .22s var(--ease)}
+  .tag .bg{fill:oklch(0.085 0.016 265 / .82);stroke:oklch(1 0 0 / .13);stroke-width:1}
+  .tag .tx{fill:oklch(0.95 0.010 265);font-family:var(--font-display);font-weight:500;font-size:12px;
+    letter-spacing:.01em}
+  /* 只有开场节点默认完整可读；岔路像远处星名,靠近或选中才完全显露。 */
+  .node.branch .tag{opacity:.58}
+  .node.root .tag,.node.onpath .tag,.node:hover .tag,.node.sel .tag{opacity:1}
+  .node.root .tag .tx{font-weight:700;font-size:13.5px}
+  .node.root .tag .bg{fill:oklch(0.085 0.016 265 / .9)}
+  .node.branch .tag .tx{fill:var(--w-kick)}
+  /* hover / 选中只加亮,前景绝不压暗 */
+  .node:hover .core,.node.sel .core{fill:oklch(1 0 0 / .96)}
+  /* 待揭示节点的 core 已被自转占用 transform,不参与这条缩放 */
+  .node:not(.wait) .core{transform-box:fill-box;transform-origin:center;
+    transition:transform .18s var(--ease)}
+  .node:not(.wait):hover .core,.node:not(.wait).sel .core{transform:scale(1.32)}
+  /* 主干只提高一点物理尺度,不额外堆新的说明。 */
+  .node.main:not(.wait) .core{transform:scale(1.11)}
+  .node.main:not(.wait):hover .core,.node.main:not(.wait).sel .core{transform:scale(1.38)}
+  .node:hover .kick,.node.sel .kick{opacity:1}
+  .node.sel .tag .bg{fill:oklch(0.10 0.018 265 / .95);stroke:var(--w-line)}
+
+  /* ================= 星图下方的控制行 ================= */
+  .maprow{margin-top:6px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  .hintline{max-width:52ch;font-size:11px;letter-spacing:.03em;color:oklch(0.58 0.015 265)}
+  .zoom{margin-left:auto;display:inline-flex;align-items:center;gap:4px}
+  .zoom button{width:44px;height:44px;border-radius:50%;border:1px solid var(--border);background:transparent;
+    display:grid;place-items:center;color:var(--muted);
+    transition:background .16s var(--ease),color .16s var(--ease),border-color .16s var(--ease)}
+  .zoom button:hover:not(:disabled){background:oklch(1 0 0 / .10);color:var(--fg);border-color:var(--border-2)}
+  /* 到达缩放上下限:禁用是唯一允许降低对比度的状态 */
+  .zoom button:disabled{color:oklch(0.42 0.014 265);border-color:oklch(1 0 0 / .06);cursor:not-allowed}
+  .zoom .level{min-width:52px;text-align:center;font-size:12.5px;color:var(--muted);
+    font-variant-numeric:tabular-nums}
+  .zoom .reset{width:auto;height:44px;padding:0 16px;border-radius:var(--r-pill);font-size:12.5px;
+    font-weight:510}
+
+  .legend{margin-top:18px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+    font-size:11px;letter-spacing:.035em;color:oklch(0.58 0.015 265)}
+  .legend span{display:inline-flex;align-items:center;gap:8px}
+  .legend svg{flex:none;overflow:visible}
+  .lg-core{fill:var(--w-star)}
+  .lg-halo{fill:var(--w-halo)}
+  .lg-dash{fill:none;stroke:var(--w-line)}
+  .lg-ring{fill:none;stroke:var(--w-kick)}
+  .lg-line{stroke:var(--w-line)}
+
+  /* ================= 小屏:沿主干的一维列表 ================= */
+  .listview{display:none;margin-top:10px}
+  .listview ul{list-style:none}
+  .listview ul ul{margin-left:15px;padding-left:15px;border-left:1px solid var(--border)}
+  .nrow{width:100%;text-align:left;display:flex;align-items:center;gap:12px;min-height:56px;
+    padding:9px 12px;border:0;border-radius:var(--r-md);background:transparent;
+    transition:background .16s var(--ease)}
+  .nrow:hover{background:oklch(1 0 0 / .07)}
+  .nrow[aria-current="true"]{background:oklch(1 0 0 / .10)}
+  .nrow .bead{width:9px;height:9px;border-radius:50%;flex:none;background:var(--w-star);
+    box-shadow:0 0 10px 2px var(--w-glow)}
+  .nrow.wait .bead{background:transparent;box-shadow:none;border:1.4px dashed var(--w-line);
+    width:11px;height:11px}
+  .nrow.branch .bead{box-shadow:0 0 0 3px oklch(0.86 0.090 var(--hue) / .28),0 0 10px 2px var(--w-glow)}
+  .nrow .txt{min-width:0;overflow-wrap:anywhere}
+  .nrow .t1{font-family:var(--font-display);font-size:14px;line-height:1.5;font-weight:500}
+  .nrow.branch .t1{color:var(--w-kick)}
+  .nrow .t2{margin-top:4px;font-size:11.5px;letter-spacing:.04em;color:oklch(0.66 0.018 265);
+    font-variant-numeric:tabular-nums}
+  .nrow .bar{margin-left:auto;flex:none;height:4px;border-radius:99px;background:var(--w-line)}
+
+  /* ================= 节点面板:头部是真实的天空 + 剪影 ================= */
+  .panel{position:fixed;top:0;right:0;bottom:0;width:min(432px,100vw);z-index:70;overflow:auto;
+    border-left:1px solid var(--border-2);
+    background:oklch(0.115 0.020 265 / .985);
+    box-shadow:-30px 0 90px -44px oklch(0.02 0 0 / .95);
+    transform:translateX(18px);opacity:0;visibility:hidden;
+    transition:transform .32s var(--ease),opacity .32s var(--ease),visibility .32s}
+  .panel.on{transform:none;opacity:1;visibility:visible}
+  .scene{position:relative;height:146px;overflow:hidden;border-bottom:1px solid var(--border)}
+  .scene .sky{position:absolute;inset:0;
+    background:
+      radial-gradient(120% 66% at 70% 4%, var(--w-halo), transparent 62%),
+      linear-gradient(176deg, var(--w-sky-hi) 0%, var(--w-sky-md) 48%, var(--w-sky-lo) 100%)}
+  .scene .cloud{position:absolute;border-radius:50%;filter:blur(7px);background:var(--w-cloud)}
+  .scene .cloud.c1{width:150%;height:32%;left:-30%;bottom:4%}
+  .scene .cloud.c2{width:112%;height:22%;left:20%;bottom:16%;background:var(--w-cloud2)}
+  .scene .dot{position:absolute;width:1.6px;height:1.6px;border-radius:50%;background:var(--w-star)}
+  .scene .streak{position:absolute;height:1px;background:linear-gradient(90deg,transparent,var(--w-star));
+    transform:rotate(28deg);transform-origin:right center}
+  .scene .horizon{position:absolute;left:0;right:0;bottom:0;height:38%;
+    background:linear-gradient(180deg, transparent, var(--w-ink) 66%)}
+  /* 人小天大:剪影靠右下,给左侧的标题让出整块空间,不互相压 */
+  .scene .figure{position:absolute;left:78%;bottom:13%;width:34px;height:34px;margin-left:-17px;
+    color:var(--w-ink)}
+  .scene .figure svg{width:100%;height:100%;display:block}
+  .scene .plate{position:absolute;left:0;right:0;bottom:0;padding:14px 92px 14px 22px;
+    background:linear-gradient(180deg,transparent,var(--w-plate) 46%)}
+  .scene .kicker{display:block;font-size:10px;font-weight:590;letter-spacing:.18em;color:var(--w-kick);
+    margin-bottom:6px}
+  .scene .nname{display:block;font-family:var(--font-display);font-weight:700;font-size:19px;
+    line-height:1.42;letter-spacing:0;color:var(--w-text)}
+  .panel .close{position:absolute;top:12px;right:12px;width:44px;height:44px;border-radius:50%;
+    border:1px solid oklch(1 0 0 / .22);background:oklch(0.10 0.02 265 / .62);
+    display:grid;place-items:center;color:oklch(0.94 0.01 265);
+    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    transition:background .16s var(--ease),border-color .16s var(--ease)}
+  .panel .close:hover{background:oklch(0.20 0.03 265 / .86);border-color:oklch(1 0 0 / .38)}
+
+  .pbody{padding:24px 22px 26px}
+  .pathline{margin-top:18px;max-width:18ch;font-family:var(--font-display);font-size:18px;line-height:1.72;letter-spacing:0;color:var(--w-kick)}
+  .chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:18px}
+  .chips span{font-size:11.5px;letter-spacing:.04em;padding:5px 11px;border-radius:var(--r-pill);
+    border:1px solid var(--border);color:var(--muted);background:oklch(1 0 0 / .04)}
+  .excerpt{margin-top:18px;font-family:var(--font-display);font-size:15.5px;line-height:2.04;color:var(--fg)}
+  .prow{margin-top:16px;padding-top:18px;border-top:1px solid var(--border);
+    display:flex;flex-wrap:wrap;gap:8px 22px;font-size:12.5px;letter-spacing:.03em;
+    color:oklch(0.66 0.018 265)}
+  .prow b{color:var(--fg);font-weight:590;font-variant-numeric:tabular-nums}
+  .pfoot{margin-top:24px;display:flex;flex-direction:column;gap:8px}
+  /* 全页唯一的实心暖金(第 2 处暖金,第 1 处是品牌标记) */
+  .btn-accent{min-height:50px;padding:0 22px;border-radius:var(--r-pill);border:0;
+    background:var(--accent);color:oklch(0.16 0.03 85);font-size:14.5px;font-weight:590;letter-spacing:.03em;
+    display:inline-flex;align-items:center;justify-content:center;gap:9px;
+    transition:background .16s var(--ease),transform .1s}
+  .btn-accent:hover{background:oklch(0.90 0.135 85);color:oklch(0.14 0.03 85)}
+  .btn-accent:active{transform:translateY(1px)}
+  .plink{min-height:44px;display:inline-flex;align-items:center;justify-content:center;gap:7px;
+    font-size:13px;letter-spacing:.03em;color:var(--muted);border-radius:var(--r-sm);
+    transition:color .15s var(--ease),background .15s var(--ease)}
+  .plink:hover{color:var(--fg);background:oklch(1 0 0 / .07)}
+
+  /* ================= 空 / 加载 / 错误:同一套骨架 ================= */
+  .state{margin-top:20px;padding:72px 24px;text-align:center}
+  .state .glyph{width:64px;height:64px;margin:0 auto 22px;color:oklch(0.46 0.02 265)}
+  .state p{font-family:var(--font-display);font-size:19px;line-height:1.6}
+  .state small{display:block;margin-top:12px;font-size:13px;line-height:1.9;color:var(--muted);
+    max-width:44ch;margin-left:auto;margin-right:auto}
+  .state .plink{margin-top:20px}
+  .state-retry{min-height:44px;margin-top:22px;padding:0 18px;border-radius:var(--r-pill);
+    border:1px solid var(--border-2);background:transparent;color:var(--fg);
+    font-size:13.5px;font-weight:590;letter-spacing:.03em;
+    transition:background .16s var(--ease),border-color .16s var(--ease)}
+  .state-retry:hover{background:oklch(1 0 0 / .10);border-color:oklch(1 0 0 / .34)}
+  /* 加载:三颗星依次亮起,与星图入场的语义同源 */
+  .dots{display:flex;gap:9px;justify-content:center;margin-bottom:24px}
+  .dots i{width:7px;height:7px;border-radius:50%;background:oklch(0.72 0.02 265);
+    animation:dot 1.25s ease-in-out infinite}
+  .dots i:nth-child(2){animation-delay:.18s}
+  .dots i:nth-child(3){animation-delay:.36s}
+  @keyframes dot{0%,100%{opacity:.28;transform:scale(.82)}45%{opacity:1;transform:scale(1)}}
+
+  /* ================= 分叉弹层 ================= */
+  .toast{position:fixed;left:50%;bottom:28px;transform:translate(-50%,10px);z-index:95;
+    max-width:min(420px,calc(100vw - 32px));padding:12px 18px;border-radius:var(--r-pill);
+    font-size:13px;line-height:1.5;text-align:center;
+    background:oklch(0.17 0.026 265 / .97);border:1px solid var(--border-2);color:var(--fg);
+    box-shadow:0 20px 50px -28px oklch(0.02 0 0 / .9);
+    opacity:0;visibility:hidden;transition:opacity .22s var(--ease),transform .22s var(--ease),visibility .22s}
+  .toast.on{opacity:1;visibility:visible;transform:translate(-50%,0)}
+  .modal{position:fixed;inset:0;z-index:90;display:grid;place-items:center;padding:24px;
+    background:oklch(0.06 0.014 265 / .8);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+  .modal[hidden]{display:none}
+  .modal-panel{width:min(100%,444px);max-height:calc(100vh - 48px);overflow:auto;padding:26px;
+    border-radius:var(--r-lg);border:1px solid var(--border-2);
+    background:
+      linear-gradient(180deg, oklch(0.26 0.062 var(--hue) / .32), transparent 44%),
+      oklch(0.145 0.024 265 / .98);
+    box-shadow:0 40px 96px -46px oklch(0.02 0 0 / .95)}
+  .modal-panel .peyebrow{font-size:10.5px;letter-spacing:.24em;font-weight:590;color:var(--w-kick)}
+  .modal-panel h2{margin-top:12px;font-family:var(--font-display);font-weight:700;font-size:21px;
+    line-height:1.42;letter-spacing:0}
+  .modal-panel .sub{margin-top:10px;font-size:12.5px;line-height:1.85;color:var(--muted)}
+  .field{margin-top:20px}
+  .field > label > span{display:block;font-size:12px;font-weight:590;letter-spacing:.08em;
+    color:var(--muted);margin-bottom:8px}
+  .field input,.field textarea{width:100%;min-height:44px;padding:11px 13px;border-radius:var(--r-sm);
+    border:1px solid var(--border-2);background:oklch(0.10 0.018 265 / .8);font-size:14px;line-height:1.6;
+    transition:border-color .16s var(--ease)}
+  .field textarea{min-height:78px;resize:vertical;font-family:var(--font-display);line-height:1.85}
+  .field input::placeholder,.field textarea::placeholder{color:oklch(0.58 0.016 265)}
+  .field input:hover,.field textarea:hover{border-color:oklch(1 0 0 / .32)}
+  .field input:focus-visible,.field textarea:focus-visible{border-color:var(--accent);box-shadow:var(--ring)}
+  .field .counter{margin-top:7px;font-size:11.5px;color:oklch(0.64 0.018 265);font-variant-numeric:tabular-nums}
+  .err{margin-top:8px;font-size:12.5px;line-height:1.6;color:oklch(0.78 0.150 25);
+    display:flex;align-items:center;gap:7px}
+  .err[hidden]{display:none}
+  .field.invalid input{border-color:oklch(0.66 0.150 25)}
+  .modal-foot{margin-top:24px;display:flex;align-items:center;gap:12px}
+  .btn-ghost{min-height:44px;padding:0 15px;border-radius:var(--r-pill);border:1px solid var(--border-2);
+    background:transparent;font-size:13.5px;font-weight:510;letter-spacing:.03em;
+    transition:background .16s var(--ease),border-color .16s var(--ease)}
+  .btn-ghost:hover{background:oklch(1 0 0 / .10);border-color:oklch(1 0 0 / .34)}
+  /* 弹层里的提交用中性亮态:页面的暖金配额已给面板的主动作 */
+  .btn-solid{margin-left:auto;min-height:48px;padding:0 22px;border-radius:var(--r-pill);border:0;
+    background:oklch(0.88 0.008 265);color:oklch(0.16 0.02 265);font-size:14.5px;font-weight:590;
+    letter-spacing:.03em;display:inline-flex;align-items:center;gap:9px;
+    transition:background .16s var(--ease),transform .1s}
+  .btn-solid:hover{background:oklch(0.95 0.006 265);color:oklch(0.13 0.02 265)}
+  .btn-solid:active{transform:translateY(1px)}
+  .done p{font-family:var(--font-display);font-size:15.5px;line-height:1.95}
+  .done .path{margin-top:14px;padding:13px 15px;border-radius:var(--r-md);border:1px solid var(--border);
+    background:oklch(1 0 0 / .04);font-size:12.5px;line-height:1.85;color:var(--muted)}
+  .done .path b{color:var(--fg);font-weight:590}
+
+  /* ================= 响应式 ================= */
+  @media(max-width:1100px){
+    .wrap{max-width:none}
+    .starmap{height:min(64vh,560px)}
+  }
+  @media(max-width:900px){
+    /* 自由缩放画布在手机上不可用:降级为沿主干的一维列表 */
+    .starmap,.maprow,.legend{display:none}
+    .listview{display:block}
+    .topbar{padding:12px 16px;gap:8px}
+    .brand .en{display:none}
+    .topnav a{padding:0 9px;font-size:12.5px}
+    .wrap{padding:0 16px 32px}
+    .panel{top:auto;width:100%;max-height:88vh;border-left:0;border-top:1px solid var(--border-2);
+      border-radius:var(--r-lg) var(--r-lg) 0 0;overflow:hidden;
+      transform:translateY(22px);box-shadow:0 -30px 90px -44px oklch(0.02 0 0 / .95);
+      display:flex;flex-direction:column}
+    .panel.on{transform:none}
+    .scene{flex:none;height:132px;border-radius:var(--r-lg) var(--r-lg) 0 0}
+    .pbody{overflow:auto}
+  }
+  @media(max-width:560px){
+    .topnav a.hide-xs{display:none}
+    .ghead .facts .sep{padding:0 6px}
+    /* 每层 30px 缩进 × 6 层会在 360px 宽下吃掉一半正文宽度,收到 10px */
+    .listview ul ul{margin-left:0;padding-left:10px}
+    .nrow{gap:10px;padding:9px 8px}
+    .state{padding:56px 16px}
+    .pbody{padding:18px}
+    .scene .plate{padding:12px 78px 12px 18px}
+    .scene .nname{font-size:17px}
+    .modal-panel{padding:20px}
+    .modal-foot{flex-wrap:wrap}
+    .btn-solid{margin-left:0;width:100%;justify-content:center}
+    .btn-ghost{width:100%}
+  }
+  @media (prefers-reduced-motion: reduce){
+    *{animation:none!important;transition:none!important}
+    /* 动画一律 backwards 填充,所以禁用后落在的就是最终静止态:
+       连线实线、星点不透明、光晕停在 var(--o)、流星 opacity 0。
+       只剩 hover 的缩放要单独按掉 —— 那是位移,不是配色反馈。 */
+    .node.main:not(.wait) .core,.node:not(.wait):hover .core,.node:not(.wait).sel .core{transform:none!important}
+  }
+</style>
+</head>
+<body>
+<div class="space" data-od-id="space-backdrop"></div>
+<div class="stars" id="stars" aria-hidden="true"></div>
+<div class="grain" aria-hidden="true"></div>
+<div class="vignette" aria-hidden="true"></div>
+
+<!-- ============ 顶栏 ============ -->
+<header class="topbar" data-od-id="topbar">
+  <a class="brand" href="home-galaxy.html" aria-label="万象 · Story Editor · 回到星海">
+    <span class="mark" aria-hidden="true">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 19.5v-6M12 13.5 7.7 8.9M12 13.5l4.3-4.6"/>
+        <circle cx="12" cy="20" r="1.3" fill="currentColor" stroke="none"/>
+        <circle cx="7.4" cy="8.3" r="2.2" fill="var(--accent)" stroke="none"/>
+        <circle cx="16.6" cy="8.3" r="2.2" fill="currentColor" stroke="none"/>
+      </svg>
+    </span>
+    <span class="zh">万象</span>
+    <span class="en">STORY EDITOR</span>
+  </a>
+  <nav class="topnav" aria-label="主导航" data-od-id="primary-navigation">
+    <a href="home-galaxy.html" class="hide-xs" data-od-id="nav-galaxy">星海</a>
+    <a href="works-library.html" class="hide-xs" data-od-id="nav-works-library">作品馆</a>
+    <a href="reading-history.html" data-od-id="nav-history">历史记录</a>
+    <a href="community.html" aria-current="page" data-od-id="nav-community">社区</a>
+  </nav>
+</header>
+
+<div class="wrap">
+  <a class="back" href="community.html" data-od-id="back-to-community">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H6"/><path d="M11 6l-6 6 6 6"/></svg>
+    社区广场
+  </a>
+
+  <div class="ghead" data-od-id="graph-head">
+    <p class="eyebrow">一个世界 · 被走过的岔路</p>
+    <h1 id="g-title">—</h1>
+    <p class="facts" id="g-facts">—</p>
+  </div>
+
+  <!-- 桌面:星图 -->
+  <p class="sr-only" id="svg-help">这是一张可交互星图。用 Tab 进入后,方向键在树上移动:上键到父节点,下键到走过最多的子节点,左右键在兄弟节点之间切换,回车打开节点详情。小屏会自动改用下方的列表视图。</p>
+  <div class="starmap world-scope" id="starmap" style="--hue:252" data-od-id="starmap">
+    <svg id="svg" role="group" aria-labelledby="g-title" aria-describedby="svg-help">
+      <defs>
+        <!-- 柔光一律用径向渐变,不用 feGaussianBlur:
+             光晕在呼吸,若模糊挂在动画元素上,每帧都要重算整张滤镜。
+             渐变的 opacity / transform 变化只走合成,不重绘。 -->
+        <radialGradient id="haloGrad">
+          <stop class="h0" offset="0" />
+          <stop class="h1" offset="52%" />
+          <stop class="h2" offset="100%" />
+        </radialGradient>
+        <radialGradient id="bloomGrad">
+          <stop class="b0" offset="0" />
+          <stop class="b1" offset="44%" />
+          <stop class="b2" offset="100%" />
+        </radialGradient>
+      </defs>
+      <g id="viewport"></g>
+    </svg>
+    <span class="meteor" style="left:11%;top:9%;--md:11s;--mdl:2.4s" aria-hidden="true"></span>
+    <span class="meteor" style="left:62%;top:27%;--md:14s;--mdl:8.6s" aria-hidden="true"></span>
+  </div>
+  <div class="maprow" id="maprow">
+    <p class="hintline">按住空白处漫游 · 滚轮缩放 · 方向键选择星 · Enter 打开</p>
+    <span class="zoom" role="group" aria-label="星图缩放">
+      <button type="button" id="zoom-out" aria-label="缩小" data-od-id="zoom-out">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M6 12h12"/></svg>
+      </button>
+      <span class="level" id="zoom-level">100%</span>
+      <button type="button" id="zoom-in" aria-label="放大" data-od-id="zoom-in">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M12 6v12M6 12h12"/></svg>
+      </button>
+      <button type="button" class="reset" id="zoom-reset" data-od-id="zoom-reset">回到全图</button>
+      <span class="sr-only" id="zoom-say" role="status"></span>
+    </span>
+  </div>
+
+  <p class="legend world-scope" id="legend" style="--hue:252" data-od-id="graph-legend">
+    <span>
+      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle class="lg-halo" cx="7" cy="7" r="6.4" opacity=".34"/><circle class="lg-core" cx="7" cy="7" r="3.4"/></svg>
+      已揭示,越亮越多人走过
+    </span>
+    <span>
+      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle class="lg-dash" cx="7" cy="7" r="4.2" stroke-width="1.4" stroke-dasharray="2.6 3"/></svg>
+      待揭示,剧情推进后才点亮
+    </span>
+    <span>
+      <svg width="16" height="14" viewBox="0 0 16 14" aria-hidden="true"><circle class="lg-core" cx="8" cy="7" r="3.2"/><circle class="lg-ring" cx="8" cy="7" r="6.2" stroke-width="1.3"/></svg>
+      他人的岔路
+    </span>
+    <span>
+      <svg width="30" height="14" viewBox="0 0 30 14" aria-hidden="true"><path class="lg-line" d="M1 10h28" stroke-width="5" stroke-linecap="round" opacity=".7"/><path class="lg-line" d="M1 3.5h28" stroke-width="1.4" stroke-linecap="round" opacity=".7"/></svg>
+      线粗 = 走过次数(对数)
+    </span>
+    <span>隐藏节点仅 AI 可见,不在此页展示</span>
+  </p>
+
+  <!-- 小屏:一维缩进列表 -->
+  <nav class="listview world-scope" id="listview" style="--hue:252" aria-labelledby="g-title" data-od-id="graph-list"></nav>
+
+  <div class="state" id="state-loading" role="status" hidden data-od-id="graph-loading">
+    <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+    <p>正在展开这个世界的星图</p>
+    <small>正在整理节点与岔路。</small>
+  </div>
+
+  <div class="state" id="state-empty" hidden data-od-id="graph-empty">
+    <div class="glyph" aria-hidden="true">
+      <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+        <path d="M32 52V34"/><circle cx="32" cy="55" r="2.4" fill="currentColor" stroke="none"/>
+        <path d="M32 34c0-8 0-14 0-22" stroke-dasharray="3 5"/>
+        <circle cx="32" cy="9" r="3" fill="currentColor" stroke="none" opacity=".5"/>
+      </svg>
+    </div>
+    <p id="empty-title">这个世界还没有人岔开过</p>
+    <small>它只有一条主干。等第一个人从某个节点拐弯,这里就会长出星图。</small>
+    <a class="plink" href="community.html" data-od-id="empty-to-community">去社区看看正在分叉的世界
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h13"/><path d="M13 6l6 6-6 6"/></svg>
+    </a>
+  </div>
+
+  <div class="state" id="state-error" role="alert" hidden data-od-id="graph-error">
+    <div class="glyph" aria-hidden="true">
+      <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+        <path d="M32 14v24"/><circle cx="32" cy="48" r="2.6" fill="currentColor" stroke="none"/>
+        <path d="M12 24 24 12M52 24 40 12" stroke-dasharray="3 5"/>
+      </svg>
+    </div>
+    <p id="state-error-title">星图没有展开</p>
+    <small id="state-error-copy">这个世界的节点数据读不出来,可能是数据本身有问题。其他世界不受影响。</small>
+    <button class="state-retry" type="button" id="state-retry" data-od-id="graph-retry">重新尝试</button>
+    <a class="plink" id="state-error-exit" href="works-library.html" hidden data-od-id="graph-error-exit">回到作品馆
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h13"/><path d="M13 6l6 6-6 6"/></svg>
+    </a>
+  </div>
+</div>
+
+<!-- ============ 节点面板 ============ -->
+<aside class="panel world-scope" id="panel" style="--hue:252" role="dialog" aria-modal="false"
+       aria-labelledby="p-name" data-od-id="node-panel">
+  <div class="scene" id="p-scene"></div>
+  <button class="close" type="button" id="p-close" aria-label="关闭节点详情" data-od-id="panel-close">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+  </button>
+  <div class="pbody">
+    <p class="pathline" id="p-pathline"></p>
+    <p class="excerpt" id="p-excerpt"></p>
+    <div class="chips" id="p-chips"></div>
+    <p class="prow" id="p-row"></p>
+    <div class="pfoot">
+      <button class="btn-accent" type="button" id="p-fork" data-od-id="panel-fork">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v6a4 4 0 0 0 4 4h6"/><path d="M15 11l3 3-3 3"/><path d="M7 14v6"/></svg>
+        从这个节点分叉
+      </button>
+      <a class="plink" href="play-story.html?world=radio" hidden data-od-id="panel-read">从这里开始读
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h13"/><path d="M13 6l6 6-6 6"/></svg>
+      </a>
+    </div>
+  </div>
+</aside>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<!-- ============ 分叉弹层 ============ -->
+<div class="modal" id="fork-modal" role="dialog" aria-modal="true" aria-labelledby="fork-title" hidden data-od-id="fork-dialog">
+  <div class="modal-panel world-scope" id="fork-panel" style="--hue:252">
+    <p class="peyebrow">从这个节点分叉</p>
+    <h2 id="fork-title">—</h2>
+    <p class="sub" id="fork-sub"></p>
+    <form id="fork-form" novalidate data-od-id="fork-form">
+      <div class="field" id="fork-name-field">
+        <label for="fork-name"><span>分支名</span></label>
+        <input id="fork-name" type="text" maxlength="20" autocomplete="off"
+               placeholder="给这条岔路起个名字" aria-describedby="fork-name-err fork-name-count"
+               data-od-id="fork-field-name" />
+        <p class="counter" id="fork-name-count">0 / 20</p>
+        <p class="err" id="fork-name-err" role="alert" hidden>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M12 8v5M12 16.5v.5"/><circle cx="12" cy="12" r="9"/></svg>
+          分支名至少要 2 个字。
+        </p>
+      </div>
+      <div class="field">
+        <label for="fork-hook"><span>一句钩子(可留空)</span></label>
+        <textarea id="fork-hook" maxlength="60" placeholder="读者看到的第一句话。" data-od-id="fork-field-hook"></textarea>
+      </div>
+      <div class="modal-foot">
+        <button class="btn-ghost" type="button" id="fork-cancel" data-od-id="fork-cancel">取消</button>
+        <button class="btn-solid" type="submit" data-od-id="fork-submit">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v6a4 4 0 0 0 4 4h6"/><path d="M15 11l3 3-3 3"/><path d="M7 14v6"/></svg>
+          建立分支
+        </button>
+      </div>
+    </form>
+    <div class="done" id="fork-done" hidden>
+      <p id="fork-done-msg"></p>
+      <p class="path">分支已经先记在你的空间里,可以在<a href="profile-drafts.html">「我的空间 · 草稿箱」</a>找到。创作编辑器已经上线,但它<b>还不能直接载入这条分支</b>——要等接上后端,现在打开会是一份空白草稿。</p>
+      <div class="modal-foot">
+        <button class="btn-ghost" type="button" id="fork-close" data-od-id="fork-close">回到星图</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="assets/works-data.js"></script>
+<script>
+(function(){
+  'use strict';
+  var RM = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ---------------- 世界与节点树(演示数据,尚未接后端) ----------------
+     s: open = 已揭示 / wait = 剧情推进后才点亮。
+     b: 他人的岔路。hidden(仅 AI 可见)按数据契约不进此页。 */
+  var WORLDS = {
+    radio: {nodes:[
+      {id:1,  p:null, t:'第七个雨夜',        plays:24100, a:'雨夜守听人', s:'open',
+       x:'末世的第七个雨夜。城市在一场无人能解释的「低语」中崩溃,被声音侵蚀的人不再是人。你躲在城南居民楼里,唯一还能联通外界的,是一台旧对讲机。'},
+      {id:2,  p:1,  t:'回应呼救',            plays:12800, a:'雨夜守听人', s:'open',
+       x:'你按下通话键。杂音里那个声音停了半秒,像是不敢相信真有人在听。'},
+      {id:3,  p:1,  t:'保持静默',            plays:9200,  a:'雨夜守听人', s:'open',
+       x:'你把手从通话键上收回来。呼救声重复了十一遍,然后没有第十二遍。'},
+      {id:4,  p:2,  t:'问对方在哪',          plays:7400,  a:'雨夜守听人', s:'open',
+       x:'「你在哪?」——这是你三天来说的第一句话,喉咙干得发疼。'},
+      {id:5,  p:2,  t:'先报出自己的位置',    plays:4100,  a:'雨夜守听人', s:'open',
+       x:'你说出了楼号。说完的那一刻,你意识到听见这句话的可能不只有一个人。'},
+      {id:6,  p:3,  t:'关掉对讲机',          plays:3600,  a:'雨夜守听人', s:'open',
+       x:'世界安静下来。安静得能听见雨点落在防盗窗上的顺序。'},
+      {id:7,  p:3,  t:'记录那段低语',        plays:5100,  a:'雨夜守听人', s:'wait',
+       x:'你把低语一字一句抄进笔记本。抄到第三行时,笔迹开始不像自己的。'},
+      {id:8,  p:4,  t:'城南居民楼',          plays:4800,  a:'雨夜守听人', s:'open',
+       x:'对方报出的地址和你在同一栋楼。四楼,而你在七楼。'},
+      {id:9,  p:4,  t:'他说不出地名',        plays:2200,  a:'雨夜守听人', s:'open',
+       x:'他描述了窗外的树、招牌、雨声,却说不出一个地名——像是从没在这座城市生活过。'},
+      {id:10, p:5,  t:'有人循声而来',        plays:2600,  a:'雨夜守听人', s:'open',
+       x:'楼下的铁门响了。不是敲,是有人在试着模仿敲门的节奏。'},
+      {id:11, p:7,  t:'低语重复你的名字',    plays:3100,  a:'雨夜守听人', s:'wait',
+       x:'笔记本第七页,低语的音节排成了你的名字。你从没在通话里说过它。'},
+      {id:12, p:8,  t:'下楼去接',            plays:2900,  a:'雨夜守听人', s:'open',
+       x:'你握着对讲机走下三层楼。四楼的门开着,屋里的对讲机也亮着灯。'},
+      {id:13, p:8,  t:'让他自己找过来',      plays:1600,  a:'雨夜守听人', s:'open',
+       x:'你在门后等了四十分钟。楼道里始终没有脚步声,可对讲机里的呼吸越来越近。'},
+      {id:14, p:12, t:'楼道里没有脚步声',    plays:1900,  a:'雨夜守听人', s:'open',
+       x:'你回头看,自己走过的台阶上没有水痕。'},
+      {id:15, p:12, t:'第七夜的回声',        plays:812,   a:'沉默的信号员', s:'open', b:1,
+       x:'岔路从这里开始:四楼那台对讲机播放的,是你二十分钟前说过的话。'},
+      {id:16, p:14, t:'传来自己的声音',      plays:1100,  a:'雨夜守听人', s:'wait',
+       x:'「你在哪?」——是你的声音,但你此刻没有按下通话键。'},
+      {id:17, p:10, t:'城北还有人吗',        plays:640,   a:'夜航员K', s:'open', b:1,
+       x:'岔路从这里开始:门外的人不在城南,他说他从城北走了三天。'},
+      {id:18, p:11, t:'不再回应',            plays:900,   a:'雨夜守听人', s:'open',
+       x:'你把笔记本烧了。低语没有停,但它不再叫你的名字。'}
+    ]},
+    opera: {nodes:[
+      {id:1,  p:null, t:'推开戏楼那扇门',   plays:9600, a:'城南拾旧', s:'open',
+       x:'城南的老戏楼荒废了三十年。可每逢十五的夜里,总有人听见楼里传出锣鼓声。今夜你推开了那扇门。'},
+      {id:2,  p:1, t:'坐进空着的第三排',    plays:5200, a:'城南拾旧', s:'open',
+       x:'第三排正中间空着一个位置,座椅是温的。'},
+      {id:3,  p:1, t:'走上后台',            plays:3300, a:'城南拾旧', s:'open',
+       x:'后台的镜子蒙着三十年的灰,唯独一面擦得很干净。'},
+      {id:4,  p:2, t:'看完这一出',          plays:3100, a:'城南拾旧', s:'open',
+       x:'台上唱的是你从没听过的本子,可每一句你都知道下一句。'},
+      {id:5,  p:2, t:'中途起身离席',        plays:1600, a:'城南拾旧', s:'wait',
+       x:'你一站起来,全场的头都转了过来——包括台上那个正在唱的。'},
+      {id:6,  p:3, t:'摘下那面镜子',        plays:1800, a:'城南拾旧', s:'wait',
+       x:'镜子背面写着一个名字,是你外祖父的名字。'},
+      {id:7,  p:4, t:'锣声停下的一拍',      plays:2400, a:'城南拾旧', s:'open',
+       x:'戏散了。观众席空了,可锣声还往下走了三拍。'},
+      {id:8,  p:7, t:'散场之后',            plays:604,  a:'后台阿七', s:'open', b:1,
+       x:'岔路从这里开始:第四拍不是锣,是有人在台下学着敲。'},
+      {id:9,  p:7, t:'留在原位不动',        plays:1100, a:'城南拾旧', s:'open',
+       x:'你坐到天亮。天亮时戏楼是空的,你的座位还是温的。'},
+      {id:10, p:2, t:'第二出戏',            plays:702,  a:'十五的月亮', s:'open', b:1,
+       x:'岔路从这里开始:戏一出接一出地演下去,每一出都比上一出更像你的生平。'}
+    ]},
+    sakura: {nodes:[
+      {id:1, p:null, t:'开学第一天的天桥', plays:18700, a:'五厘米', s:'open',
+       x:'开学第一天,你在天桥上遇见一个抱着画板的人。'},
+      {id:2, p:1, t:'早出门七分钟',        plays:11400, a:'五厘米', s:'open',
+       x:'此后三年,你每天都比预定时间早出门七分钟。'},
+      {id:3, p:1, t:'当作没看见',          plays:4200,  a:'五厘米', s:'open',
+       x:'你把头低下去,从画板旁边走过。三年后你还记得那天的风向。'},
+      {id:4, p:2, t:'借一次橡皮',          plays:6100,  a:'五厘米', s:'open',
+       x:'你借了一块橡皮。它到毕业那天都没有还。'},
+      {id:5, p:2, t:'第二年的雨季',        plays:5300,  a:'五厘米', s:'wait',
+       x:'雨季里她没来天桥。你连着等了十一天。'},
+      {id:6, p:4, t:'早七分钟',            plays:2106,  a:'天桥常客', s:'open', b:1,
+       x:'岔路从这里开始:那七分钟不再是习惯,是一场双方都没承认的等待。'},
+      {id:7, p:5, t:'去画室找她',          plays:3400,  a:'五厘米', s:'open',
+       x:'画室的门开着,画板上是天桥,天桥上有两个人。'},
+      {id:8, p:7, t:'毕业前最后一次同路',  plays:2900,  a:'五厘米', s:'open',
+       x:'毕业前最后一次同路,你们谁都没提那块橡皮。'},
+      {id:9, p:8, t:'毕业那天的天桥',      plays:1836,  a:'第三教学楼', s:'open', b:1,
+       x:'岔路从这里开始:三年后的同一座天桥,这次先开口的人换了。'}
+    ]}
+  };
+  /* 作品身份字段只来自共享数据；本页仅保留节点树这一份专属演示数据。 */
+  Object.keys(WORLDS).forEach(function(key){
+    var work = window.WANXIANG_WORK ? window.WANXIANG_WORK(key) : null;
+    if(work) WORLDS[key] = Object.assign({}, work, WORLDS[key]);
+  });
+  /* 社区页出现过、但还没有人岔开的世界 —— 选中走空态,不画假图 */
+  var NO_GRAPH = (window.WANXIANG_WORKS || []).filter(function(work){ return !WORLDS[work.key]; });
+
+  var COL = 158, ROW = 122, PAD = 92;
+  var svg = document.getElementById('svg');
+  var vp = document.getElementById('viewport');
+  var starmap = document.getElementById('starmap');
+  var maprow = document.getElementById('maprow');
+  var legend = document.getElementById('legend');
+  var listview = document.getElementById('listview');
+  /* 统计行的分隔点是纯装饰,不让读屏念出来 */
+  var SEP = ' <span class="sep" aria-hidden="true">·</span> ';
+  var panel = document.getElementById('panel');
+  var forkPanel = document.getElementById('fork-panel');
+  var current = null, laidOut = null, selId = null, panelReturn = null;
+  var growT = null, sparkT = null;
+
+  function num(v){ return String(v).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+
+  /* ---------------- 剪影(复用 home-galaxy 的 figure API) ---------------- */
+  function figure(type){
+    var head='<circle cx="50" cy="14" r="7.4"/>';
+    var torso='<path d="M50 22c-5.4 0-9.4 3.6-10.1 8.7l-1.7 12.9c-.3 2.3 1.5 4.2 3.8 4.2h16c2.3 0 4.1-1.9 3.8-4.2l-1.7-12.9C59.4 25.6 55.4 22 50 22z"/>';
+    var legs='<path d="M45.6 47 43.6 80" stroke-width="6" stroke-linecap="round" fill="none"/>'+
+             '<path d="M54.4 47 56.4 80" stroke-width="6" stroke-linecap="round" fill="none"/>';
+    var arms='';
+    if(type==='gaze'){
+      head='<circle cx="49" cy="13" r="7.4"/>';
+      arms='<path d="M41 30 35 49" stroke-width="5" stroke-linecap="round" fill="none"/>'+
+           '<path d="M59 30 66 47" stroke-width="5" stroke-linecap="round" fill="none"/>';
+    }else if(type==='radio'){
+      arms='<path d="M41 30 36 50" stroke-width="5" stroke-linecap="round" fill="none"/>'+
+           '<path d="M59 31 64 38 57 23" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>'+
+           '<rect x="53" y="15" width="6" height="9" rx="1.4"/>';
+    }else if(type==='blade'){
+      arms='<path d="M41 30 36 50" stroke-width="5" stroke-linecap="round" fill="none"/>'+
+           '<path d="M59 30 64 50" stroke-width="5" stroke-linecap="round" fill="none"/>'+
+           '<path d="M64 52 72 16" stroke-width="2.6" stroke-linecap="round" fill="none"/>';
+    }else if(type==='umbrella'){
+      arms='<path d="M41 30 36 50" stroke-width="5" stroke-linecap="round" fill="none"/>'+
+           '<path d="M59 30 63 19" stroke-width="5" stroke-linecap="round" fill="none"/>'+
+           '<path d="M63 19 63 8" stroke-width="2.2" stroke-linecap="round" fill="none"/>'+
+           '<path d="M47 12q16-13 32 0z"/>';
+    }else if(type==='reach'){
+      arms='<path d="M41 30 29 19" stroke-width="5" stroke-linecap="round" fill="none"/>'+
+           '<path d="M59 30 71 19" stroke-width="5" stroke-linecap="round" fill="none"/>';
+    }else{
+      legs='<path d="M45.6 47 40 79" stroke-width="6" stroke-linecap="round" fill="none"/>'+
+           '<path d="M54.4 47 61 78" stroke-width="6" stroke-linecap="round" fill="none"/>';
+      arms='<path d="M41 30 45 49" stroke-width="5" stroke-linecap="round" fill="none"/>'+
+           '<path d="M59 30 55 49" stroke-width="5" stroke-linecap="round" fill="none"/>';
+    }
+    return '<svg viewBox="0 0 100 92" aria-hidden="true"><g fill="currentColor" stroke="currentColor">'
+      + head + torso + legs + arms + '</g></svg>';
+  }
+
+  /* 面板头部的一片天空:星点由 hue 决定,刷新一致 */
+  function sceneHTML(world, node){
+    var dots = '', i;
+    for(i=0;i<18;i++){
+      var x = ((world.h*(i+3)*37) % 97) + 1;
+      var y = ((world.h*(i+7)*19) % 52) + 2;
+      var o = 0.35 + (((world.h*(i+5)) % 60)/100);
+      dots += '<span class="dot" style="left:'+x+'%;top:'+y+'%;opacity:'+o.toFixed(2)+'"></span>';
+    }
+    return '<span class="sky">'+dots
+      + '<span class="streak" style="left:14%;top:14%;width:64px"></span>'
+      + '<span class="cloud c1"></span><span class="cloud c2"></span></span>'
+      + '<span class="horizon"></span>'
+      + '<span class="figure">'+figure(world.f)+'</span>'
+      /* 节点名是面板的标题:用 h2 承接页面的 h1,同时给对话框一个稳定的可访问名称 */
+      + '<div class="plate"><span class="kicker">'+(node.b ? '他人的岔路' : '剧情节点')+'</span>'
+      + '<h2 class="nname" id="p-name">'+node.t+'</h2></div>';
+  }
+
+  /* ---------------- 稳定星图布局:主干稳定,支线有可重现的呼吸 ---------------- */
+  function layout(nodes){
+    var kids = {}, byId = {}, root = null;
+    nodes.forEach(function(n){ byId[n.id] = n; kids[n.id] = []; });
+    nodes.forEach(function(n){
+      if(n.p === null || n.p === undefined) root = n.id;
+      else if(kids[n.p]) kids[n.p].push(n.id);
+    });
+    /* 同层按走过次数从多到少排,第一支是主干 */
+    Object.keys(kids).forEach(function(k){
+      kids[k].sort(function(a, b){ return byId[b].plays - byId[a].plays; });
+    });
+    var slot = 0, pos = {}, maxDepth = 0;
+    function walk(id, depth){
+      maxDepth = Math.max(maxDepth, depth);
+      var ks = kids[id];
+      if(!ks.length){ pos[id] = {sx:slot++, d:depth}; return pos[id].sx; }
+      var xs = ks.map(function(k){ return walk(k, depth + 1); });
+      var sx = (xs[0] + xs[xs.length - 1]) / 2;
+      pos[id] = {sx:sx, d:depth};
+      return sx;
+    }
+    walk(root, 0);
+    nodes.forEach(function(n){
+      var p = pos[n.id];
+      var sway = ((n.id * 17 + p.d * 11) % 17) - 8;
+      var spread = p.d === 0 ? 0 : sway * (p.d > 2 ? 1.45 : 1.1);
+      n._x = PAD + p.sx * COL + spread + (n.b ? 14 : 0);
+      n._y = PAD + p.d * ROW + (p.d % 2 ? 6 : -4);
+      n._d = p.d;
+      n._kids = kids[n.id];
+      n._main = n.p === null || n.p === undefined || kids[n.p][0] === n.id;
+    });
+    return {byId:byId, kids:kids, root:root, maxDepth:maxDepth,
+            w:PAD * 2 + Math.max(1, slot - 1) * COL + 68, h:PAD * 2 + maxDepth * ROW + 42};
+  }
+
+  /* 线粗按对数映射:爆款分支不会把其他线压成头发丝 */
+  function weight(plays, min){
+    var w = 1 + Math.log(Math.max(plays, 1) / Math.max(min, 1)) / Math.log(2) * 0.9;
+    return Math.max(1, Math.min(6, w));
+  }
+
+  /* ---------------- 四态:ready / loading / empty / error ---------------- */
+  var STATES = {
+    loading: document.getElementById('state-loading'),
+    empty:   document.getElementById('state-empty'),
+    error:   document.getElementById('state-error')
+  };
+  function showState(name){
+    Object.keys(STATES).forEach(function(k){ STATES[k].hidden = k !== name; });
+    var ready = !name;
+    starmap.hidden = !ready; maprow.hidden = !ready;
+    legend.hidden = !ready; listview.hidden = !ready;
+    starmap.setAttribute('aria-busy', String(name === 'loading'));
+    if(!ready) closePanel();
+  }
+  var errorTitle = document.getElementById('state-error-title');
+  var errorCopy = document.getElementById('state-error-copy');
+  var errorRetry = document.getElementById('state-retry');
+  var errorExit = document.getElementById('state-error-exit');
+  function showError(title, copy, retryKey){
+    current = null; laidOut = null;
+    showState('error');
+    errorTitle.textContent = title;
+    errorCopy.textContent = copy;
+    errorRetry.hidden = !retryKey;
+    errorExit.hidden = !!retryKey;
+  }
+  errorRetry.addEventListener('click', function(){
+    if(lastKey && WORLDS[lastKey]) render(lastKey);
+  });
+  function showUnknownWorld(key){
+    lastKey = null;
+    showError(
+      '找不到这片星空',
+      '链接中的作品标识「' + key + '」不存在，可能已经失效。请从作品馆重新选择一部作品。',
+      null
+    );
+    document.getElementById('g-title').textContent = '未找到这个世界';
+    document.getElementById('g-facts').innerHTML =
+      '链接已失效 <span class="sep" aria-hidden="true">·</span> 没有将你带到其他作品';
+    document.documentElement.style.setProperty('--ambient-hue', 252);
+  }
+
+  /* ---------------- 渲染 ---------------- */
+  var lastKey = null;
+  function render(key){
+    lastKey = key;
+    var world = WORLDS[key];
+    var dark = null;
+    if(!world){
+      for(var i=0;i<NO_GRAPH.length;i++){ if(NO_GRAPH[i].key === key) dark = NO_GRAPH[i]; }
+    }
+    if(!world){
+      current = null; laidOut = null;
+      showState('empty');
+      document.getElementById('g-title').textContent = '《' + (dark ? dark.n : '未知世界') + '》';
+      document.getElementById('g-facts').innerHTML =
+        '只有一条主干 <span class="sep" aria-hidden="true">·</span> 还没有人从任何节点拐弯';
+      document.documentElement.style.setProperty('--ambient-hue', dark && !RM ? dark.h : 252);
+      return;
+    }
+
+    /* 先进加载态,下一帧再算布局。今天数据在本地,这一帧几乎看不见;
+       接后端 /api/v1/stories 时,这里就是 fetch 的接缝,状态已经就位。 */
+    showState('loading');
+    requestAnimationFrame(function(){
+      if(lastKey !== key) return;              /* 期间又切了世界,丢弃这次 */
+      try{
+        paint(world);
+      }catch(err){
+        showError(
+          '星图没有展开',
+          '这个世界的节点数据读不出来,可能是数据本身有问题。你可以重新尝试，其他世界不受影响。',
+          key
+        );
+        document.getElementById('g-title').textContent = '《' + world.n + '》';
+        document.getElementById('g-facts').innerHTML =
+          world.k + ' <span class="sep" aria-hidden="true">·</span> 星图未能展开';
+      }
+    });
+  }
+
+  function paint(world){
+    showState(null);
+    current = world;
+
+    [starmap, listview, legend, panel, forkPanel].forEach(function(el){
+      el.style.setProperty('--hue', world.h);
+    });
+    document.documentElement.style.setProperty('--ambient-hue', RM ? 252 : world.h);
+
+    var g = layout(world.nodes);
+    laidOut = g;
+    var minPlays = world.nodes.reduce(function(m, n){ return Math.min(m, n.plays); }, Infinity);
+    var maxPlays = world.nodes.reduce(function(m, n){ return Math.max(m, n.plays); }, 0);
+    var branches = world.nodes.filter(function(n){ return n.b; }).length;
+    var total = world.nodes.reduce(function(m, n){ return m + n.plays; }, 0);
+
+    document.getElementById('g-title').textContent = '《' + world.n + '》';
+    document.getElementById('g-facts').innerHTML =
+        world.k
+      + SEP + '已分成 <b>' + branches + '</b> 条岔路'
+      + SEP + '最远抵达 <b>' + (g.maxDepth + 1) + '</b> 层'
+      + SEP + '<b>' + world.nodes.length + '</b> 颗已被点亮的星';
+    /* —— 星图 —— */
+    var root = g.byId[g.root];
+    var bloom = '<g class="bloom-g" aria-hidden="true">'
+      + '<ellipse class="bloom" cx="' + root._x + '" cy="' + (root._y + 40) + '" rx="'
+      + (g.w * 0.42).toFixed(0) + '" ry="260" opacity=".62"/></g>';
+
+    var halos = '', edges = '', stars = '', edgeDefs = '';
+    world.nodes.forEach(function(n, i){
+      var w = weight(n.plays, minPlays);
+      n._r = 2.4 + w * 0.95 + (n._main ? (n._d === 0 ? 1.5 : 0.65) : 0); /* 主干略有尺度差 */
+      n._lum = Math.min(1, 0.30 + 0.70 * (n.plays / maxPlays) + (n._main ? 0.08 : 0));
+      if(n.s !== 'wait'){
+        /* 呼吸的周期与相位由 hue 和序号决定:整片星空不会齐拍,也保证刷新一致 */
+        var dur = (4.4 + ((world.h * (i + 5)) % 26) / 10).toFixed(1);
+        var dl  = (((world.h * (i + 3)) % 34) / 10).toFixed(1);
+        /* 渐变本身就带柔边,半径要比原先的模糊版更大才读得出光晕 */
+        halos += '<circle class="halo" cx="' + n._x + '" cy="' + n._y + '" r="'
+          + (n._r * 4.7).toFixed(1) + '" style="--o:' + (n._lum * 0.74).toFixed(2)
+          + ';--dur:' + dur + 's;--dl:' + dl + 's"/>';
+      }
+    });
+    world.nodes.forEach(function(n){
+      if(n.p === null || n.p === undefined) return;
+      var pn = g.byId[n.p];
+      var w = weight(n.plays, minPlays) + (n._main ? 0.78 : 0);
+      /* 断口随线宽退让:6px 的粗线若按固定 3px 留白,会直接怼进半径 8px 的星核。 */
+      var gap = 3 + w * 0.55;
+      var y1 = pn._y + pn._r + gap;
+      var y2 = n._y - n._r - gap;
+      var dx = n._x - pn._x;
+      /* ⚠️ 控制点沿 y 轴外推,横向引导不设上限。
+         旧版是 clamp(Δx×0.22, ±48) 且两个控制点都压在 midY:近垂直的边是直棍,
+         横跨大的边一到 48 就饱和、中段被拉成一段水平平肩,读起来是流程图的肘形连接线。
+         现在 k 取纵向跨度的一半、横向只给 0.25 的引导——没有饱和点,
+         整张图是同一族曲线;每条边的起飞角随自己的 Δx 变化,兄弟边在星旁自然分开。 */
+      var k = (y2 - y1) * 0.5;
+      /* 越深越暗,主干则作为一条温和的航迹 */
+      var op = n._main ? 0.96 : Math.max(0.20, 0.70 - n._d * 0.055);
+      var gid = 'eg' + n.id;
+      /* 渐变沿边的实际走向铺(userSpaceOnUse),不用 objectBoundingBox:
+         后者在 Δx 为 0 的竖直边上 bbox 宽度为 0,按规范整条边不渲染。 */
+      edgeDefs += '<linearGradient id="' + gid + '" gradientUnits="userSpaceOnUse"'
+        + ' x1="' + pn._x + '" y1="' + y1.toFixed(1)
+        + '" x2="' + n._x + '" y2="' + y2.toFixed(1) + '">'
+        + '<stop class="' + (n._main ? 'egm-a' : 'egs-a') + '" offset="0"/>'
+        + '<stop class="' + (n._main ? 'egm-b' : 'egs-b') + '" offset="1"/></linearGradient>';
+      edges += '<path class="edge' + (n._main ? ' main' : '') + '" data-edge="' + n.id + '" pathLength="100"'
+        + ' stroke="url(#' + gid + ')"'
+        + ' stroke-width="' + w.toFixed(2) + '" opacity="' + op.toFixed(2) + '"'
+        + ' style="animation-delay:' + (n._d * 132) + 'ms"'
+        + ' d="M' + pn._x + ' ' + y1.toFixed(1)
+        + ' C' + (pn._x + dx * 0.25).toFixed(1) + ' ' + (y1 + k).toFixed(1)
+        + ', ' + (n._x - dx * 0.25).toFixed(1) + ' ' + (y2 - k).toFixed(1)
+        + ', ' + n._x + ' ' + y2.toFixed(1) + '"/>';
+    });
+    world.nodes.forEach(function(n){
+      var isRoot = n.p === null || n.p === undefined;
+      /* 只有开场与岔路有标签;岔路默认压低,靠近或路径点亮时再完整显露。 */
+      var named = isRoot || n.b;
+      var cls = 'node' + (n.s === 'wait' ? ' wait' : '') + (n.b ? ' branch' : '')
+              + (n._main ? ' main' : '') + (isRoot ? ' root' : '') + (named ? ' named' : '');
+      var aria = (n.s === 'wait' ? '待揭示 · ' : '') + n.t
+        + (n.b ? ',' + n.a + ' 的岔路' : '') + ',走过 ' + num(n.plays) + ' 次';
+      var fs = isRoot ? 13.5 : 12;
+      var tw = Math.round(n.t.length * fs + 22);
+      stars += '<g class="' + cls + '" data-node="' + n.id + '" tabindex="-1" role="button"'
+        + ' aria-label="' + aria + '" transform="translate(' + n._x + ',' + n._y + ')"'
+        + ' style="animation-delay:' + (n._d * 132 + 130) + 'ms"'
+        + ' data-od-id="graph-node-' + n.id + '">'
+        + '<circle class="hit" r="' + Math.max(26, n._r * 3.4).toFixed(0) + '"/>'
+        + '<circle class="ring" r="' + (n._r + 10).toFixed(1) + '"/>'
+        + (n.b ? '<circle class="kick" r="' + (n._r + 5.4).toFixed(1) + '"/>' : '')
+        + '<circle class="core" r="' + (n.s === 'wait' ? 4.6 : n._r.toFixed(1)) + '"/>'
+        + '<g class="tag" transform="translate(0,' + (n._r + 14).toFixed(0) + ')">'
+        +   '<rect class="bg" x="' + (-tw / 2) + '" y="0" width="' + tw + '" height="24" rx="12"/>'
+        +   '<text class="tx" text-anchor="middle" y="16.4">' + n.t + '</text>'
+        + '</g></g>';
+    });
+    svg.setAttribute('viewBox', '0 0 ' + g.w + ' ' + (g.h + 60));
+    vp.innerHTML = '<defs>' + edgeDefs + '</defs>'
+      + bloom
+      + '<g class="halos" aria-hidden="true">' + halos + '</g>'
+      + '<g class="edges">' + edges + '</g>'
+      + '<g class="stars">' + stars + '</g>';
+    /* 入场生长:重挂 class 以重启动画。结束后摘掉,免得长期占着合成层。 */
+    if(!RM){
+      starmap.classList.remove('grow');
+      void starmap.offsetWidth;                 /* 强制重排,让动画真的重来一遍 */
+      starmap.classList.add('grow');
+      clearTimeout(growT);
+      growT = setTimeout(function(){ starmap.classList.remove('grow'); },
+                         (g.maxDepth * 132) + 1700);
+    }
+
+    /* —— 一维缩进列表(小屏) —— */
+    function rowHTML(n, note){
+      var w = weight(n.plays, minPlays);
+      return '<button class="nrow' + (n.s === 'wait' ? ' wait' : '') + (n.b ? ' branch' : '')
+        + '" type="button" data-node="' + n.id + '" aria-current="false"'
+        + ' data-od-id="graph-row-' + n.id + '">'
+        + '<span class="bead" aria-hidden="true"></span>'
+        + '<span class="txt"><span class="t1">' + n.t + '</span>'
+        + '<span class="t2">走过 ' + num(n.plays) + ' 次 · ' + n.a
+        + (note ? ' · ' + note : '') + (n.s === 'wait' ? ' · 待揭示' : '') + '</span></span>'
+        + '<span class="bar" style="width:' + (w * 9).toFixed(0) + 'px" aria-hidden="true"></span>'
+        + '</button>';
+    }
+    function branchOf(id){
+      return '<ul>' + g.kids[id].map(function(k){
+        return '<li>' + rowHTML(g.byId[k], g.byId[k].b ? '岔路' : '')
+          + (g.kids[k].length ? branchOf(k) : '') + '</li>';
+      }).join('') + '</ul>';
+    }
+    listview.innerHTML = '<ul><li>' + rowHTML(root, '开场') + branchOf(g.root) + '</li></ul>';
+
+    bindNodes();
+    resetView();
+    var first = vp.querySelector('[data-node="' + g.root + '"]');
+    if(first) first.setAttribute('tabindex', '0');
+    closePanel();
+  }
+
+  /* ---------------- 漫游 / 缩放 ---------------- */
+  var ZMIN = 0.5, ZMAX = 2.5;
+  var tx = 0, ty = 0, sc = 1;
+  var zIn = document.getElementById('zoom-in');
+  var zOut = document.getElementById('zoom-out');
+  var zLevel = document.getElementById('zoom-level');
+  var zSay = document.getElementById('zoom-say');
+  var armed = false, drag = false, lx = 0, ly = 0, ox = 0, oy = 0;
+  var vx = 0, vy = 0, glideFrame = 0;
+  function stopGlide(){
+    if(glideFrame) cancelAnimationFrame(glideFrame);
+    glideFrame = 0; vx = 0; vy = 0;
+  }
+  function apply(){
+    vp.setAttribute('transform', 'translate(' + tx.toFixed(1) + ',' + ty.toFixed(1) + ') scale(' + sc.toFixed(3) + ')');
+    zLevel.textContent = Math.round(sc * 100) + '%';
+    /* 到上下限就禁用,而不是留一个按了没反应的按钮 */
+    zIn.disabled = sc >= ZMAX - 1e-6;
+    zOut.disabled = sc <= ZMIN + 1e-6;
+  }
+  /* 只有按键操作才播报,滚轮缩放不刷屏 */
+  function sayZoom(){ zSay.textContent = '缩放 ' + Math.round(sc * 100) + '%'; }
+  function resetView(){ stopGlide(); tx = 0; ty = 0; sc = 1; apply(); }
+  function zoomBy(f, cx, cy){
+    stopGlide();
+    var next = Math.max(ZMIN, Math.min(ZMAX, sc * f));
+    if(next === sc) return;
+    if(cx !== undefined){
+      tx = cx - (cx - tx) * (next / sc);
+      ty = cy - (cy - ty) * (next / sc);
+    }
+    sc = next; apply();
+  }
+  function svgScale(){
+    var box = svg.getBoundingClientRect();
+    if(!box.width || !svg.viewBox.baseVal.width) return 1;
+    return svg.viewBox.baseVal.width / box.width;
+  }
+  zIn.addEventListener('click', function(){ zoomBy(1.16); sayZoom(); });
+  zOut.addEventListener('click', function(){ zoomBy(1 / 1.16); sayZoom(); });
+  document.getElementById('zoom-reset').addEventListener('click', function(){ resetView(); sayZoom(); });
+  starmap.addEventListener('wheel', function(e){
+    e.preventDefault();
+    var box = svg.getBoundingClientRect(), k = svgScale();
+    zoomBy(e.deltaY < 0 ? 1.07 : 1 / 1.07, (e.clientX - box.left) * k, (e.clientY - box.top) * k);
+  }, {passive:false});
+  function startGlide(){
+    if(RM || Math.abs(vx) + Math.abs(vy) < 0.16) return;
+    function glide(){
+      tx += vx; ty += vy;
+      vx *= 0.88; vy *= 0.88;
+      apply();
+      if(Math.abs(vx) + Math.abs(vy) >= 0.16) glideFrame = requestAnimationFrame(glide);
+      else stopGlide();
+    }
+    glideFrame = requestAnimationFrame(glide);
+  }
+  starmap.addEventListener('pointerdown', function(e){
+    if(e.pointerType === 'mouse' && e.button !== 0) return;   /* 只认主键 */
+    if(e.target.closest('.node')) return;
+    stopGlide();
+    armed = true; drag = false;
+    lx = ox = e.clientX; ly = oy = e.clientY;
+    starmap.setPointerCapture(e.pointerId);
+  });
+  starmap.addEventListener('pointermove', function(e){
+    if(!armed) return;
+    if(!drag){
+      /* 3px 阈值:按下时的轻微抖动不算拖拽。 */
+      if(Math.abs(e.clientX - ox) + Math.abs(e.clientY - oy) < 3) return;
+      drag = true;
+      starmap.classList.add('dragging');
+    }
+    var k = svgScale();
+    var dx = (e.clientX - lx) * k, dy = (e.clientY - ly) * k;
+    tx += dx; ty += dy;
+    vx = Math.max(-32, Math.min(32, dx));
+    vy = Math.max(-32, Math.min(32, dy));
+    lx = e.clientX; ly = e.clientY;
+    apply();
+  });
+  function endDrag(shouldGlide){
+    var wasDragging = drag;
+    armed = false; drag = false;
+    starmap.classList.remove('dragging');
+    if(wasDragging && shouldGlide) startGlide();
+  }
+  starmap.addEventListener('pointerup', function(){ endDrag(true); });
+  starmap.addEventListener('pointercancel', function(){ stopGlide(); endDrag(false); });
+  /* 指针捕获意外丢失(切窗口、元素被重建、指针移出文档)也要复位。 */
+  starmap.addEventListener('lostpointercapture', function(){ if(armed){ stopGlide(); endDrag(false); } });
+
+  /* ---------------- 选中与键盘导航 ---------------- */
+  function clearSparks(){
+    clearTimeout(sparkT);
+    var old = vp.querySelector('.sparks');
+    if(old) old.parentNode.removeChild(old);
+  }
+  /* 一道光顺着「开场 → 选中节点」逐段跑过去。一次性,不循环。 */
+  function runSpark(chain){
+    clearSparks();
+    if(RM || chain.length < 2) return;
+    var ns = 'http://www.w3.org/2000/svg';
+    var g = document.createElementNS(ns, 'g');
+    g.setAttribute('class', 'sparks');
+    g.setAttribute('aria-hidden', 'true');
+    /* chain 是 root → 选中节点;每条边对应它的子节点 id */
+    chain.slice(1).forEach(function(id, i){
+      var src = vp.querySelector('.edge[data-edge="' + id + '"]');
+      if(!src) return;
+      var p = document.createElementNS(ns, 'path');
+      p.setAttribute('class', 'spark');
+      p.setAttribute('d', src.getAttribute('d'));
+      p.setAttribute('pathLength', '100');
+      p.setAttribute('stroke-width',
+        Math.max(1.4, parseFloat(src.getAttribute('stroke-width')) * 0.8).toFixed(2));
+      p.style.setProperty('--sd', (i * 128) + 'ms');
+      g.appendChild(p);
+    });
+    if(!g.childNodes.length) return;
+    vp.appendChild(g);
+    sparkT = setTimeout(clearSparks, chain.length * 128 + 900);
+  }
+
+  function markPath(id){
+    vp.querySelectorAll('.edge').forEach(function(p){ p.classList.remove('lit'); });
+    vp.querySelectorAll('.node').forEach(function(g){ g.classList.remove('onpath'); });
+    var cur = id, chain = [];
+    while(cur !== null && cur !== undefined && laidOut.byId[cur]){
+      var e = vp.querySelector('.edge[data-edge="' + cur + '"]');
+      if(e) e.classList.add('lit');
+      var g = vp.querySelector('.node[data-node="' + cur + '"]');
+      if(g) g.classList.add('onpath');
+      chain.unshift(cur);
+      cur = laidOut.byId[cur].p;
+    }
+    return chain;
+  }
+  function select(id){
+    var n = laidOut.byId[id];
+    if(!n) return;
+    selId = id;
+    vp.querySelectorAll('.node').forEach(function(g){
+      var on = g.dataset.node === String(id);
+      g.classList.toggle('sel', on);
+      g.setAttribute('tabindex', on ? '0' : '-1');
+    });
+    listview.querySelectorAll('.nrow').forEach(function(b){
+      b.setAttribute('aria-current', b.dataset.node === String(id) ? 'true' : 'false');
+    });
+    runSpark(markPath(id));
+
+    document.getElementById('p-scene').innerHTML = sceneHTML(current, n);
+    var cue;
+    if(n.p === null || n.p === undefined){
+      cue = '从这里开始,故事第一次有了回声。';
+    }else if(n.s === 'wait'){
+      cue = '这条路还没有被点亮。';
+    }else if(n._kids.length){
+      cue = '从这里开始,故事分成 ' + n._kids.length + ' 条路。';
+    }else{
+      cue = '这一笔,把故事带到了这里。';
+    }
+    document.getElementById('p-pathline').textContent = cue;
+    document.getElementById('p-excerpt').textContent = n.x;
+    document.getElementById('p-chips').innerHTML =
+      '<span>' + (n.s === 'wait' ? '待揭示 · 剧情推进后才点亮' : '已揭示') + '</span>'
+      + '<span>' + (n.p === null || n.p === undefined ? '开场节点' : '第 ' + (n._d + 1) + ' 层') + '</span>'
+      + '<span>' + (n.b ? n.a + ' 的岔路' : '原作主干') + '</span>';
+    var panelRead = document.getElementById('panel-read');
+    panelRead.hidden = !current.playable;
+    if(current.playable){
+      panelRead.href = window.WANXIANG_WORK_LINK(current);
+      panelRead.setAttribute('aria-label', '从《' + current.n + '》这里开始读');
+    }
+    document.getElementById('p-row').innerHTML =
+        '<span>走过 <b>' + num(n.plays) + '</b> 次</span>'
+      + '<span>从这里岔开 <b>' + n._kids.length + '</b> 条</span>'
+      + '<span>写下这段的人 <b>' + n.a + '</b></span>';
+    panel.classList.add('on');
+  }
+  function closePanel(){
+    stopGlide();
+    panel.classList.remove('on');
+    selId = null;
+    clearSparks();
+    vp.querySelectorAll('.node').forEach(function(g){ g.classList.remove('sel', 'onpath'); });
+    vp.querySelectorAll('.edge').forEach(function(p){ p.classList.remove('lit'); });
+    listview.querySelectorAll('.nrow').forEach(function(b){ b.setAttribute('aria-current', 'false'); });
+  }
+  function dismissPanel(){
+    var back = panelReturn;
+    closePanel();
+    if(back && back.isConnected) back.focus();
+  }
+  document.getElementById('p-close').addEventListener('click', dismissPanel);
+  document.addEventListener('keydown', function(e){
+    if(e.key !== 'Escape') return;
+    if(!document.getElementById('fork-modal').hidden) return;   /* 弹层优先 */
+    if(panel.classList.contains('on')) dismissPanel();
+  });
+
+  function siblings(id){
+    var n = laidOut.byId[id];
+    if(n.p === null || n.p === undefined) return [id];
+    return laidOut.kids[n.p];
+  }
+  function bindNodes(){
+    vp.querySelectorAll('.node').forEach(function(g){
+      var id = +g.dataset.node;
+      g.addEventListener('click', function(){ panelReturn = g; select(id); });
+      g.addEventListener('keydown', function(e){
+        var n = laidOut.byId[id], next = null;
+        if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); panelReturn = g; select(id); return; }
+        if(e.key === 'ArrowUp')   next = n.p;
+        if(e.key === 'ArrowDown') next = n._kids[0];
+        if(e.key === 'ArrowLeft' || e.key === 'ArrowRight'){
+          var sib = siblings(id), at = sib.indexOf(id);
+          next = sib[at + (e.key === 'ArrowRight' ? 1 : -1)];
+        }
+        if(next === null || next === undefined) return;
+        e.preventDefault();
+        var target = vp.querySelector('[data-node="' + next + '"]');
+        if(!target) return;
+        vp.querySelectorAll('.node').forEach(function(x){ x.setAttribute('tabindex', '-1'); });
+        target.setAttribute('tabindex', '0');
+        target.focus();
+        panelReturn = target;
+        if(panel.classList.contains('on')) select(next);
+        else markPath(next);
+      });
+    });
+    listview.querySelectorAll('.nrow').forEach(function(b){
+      b.addEventListener('click', function(){ panelReturn = b; select(+b.dataset.node); });
+    });
+  }
+
+  /* ---------------- 提示条 ---------------- */
+  var toast = document.getElementById('toast'), toastT;
+  function say(msg){
+    toast.textContent = msg;
+    toast.classList.add('on');
+    clearTimeout(toastT);
+    toastT = setTimeout(function(){ toast.classList.remove('on'); }, 3200);
+  }
+
+  /* ---------------- 分叉弹层 ---------------- */
+  var modal = document.getElementById('fork-modal');
+  var form = document.getElementById('fork-form');
+  var doneBox = document.getElementById('fork-done');
+  var nameInput = document.getElementById('fork-name');
+  var nameField = document.getElementById('fork-name-field');
+  var nameErr = document.getElementById('fork-name-err');
+  var nameCount = document.getElementById('fork-name-count');
+  var hookInput = document.getElementById('fork-hook');
+  var forkFrom = null;
+
+  document.getElementById('p-fork').addEventListener('click', function(){
+    if(selId === null || !laidOut) return;
+    forkFrom = laidOut.byId[selId];
+    document.getElementById('fork-title').textContent = forkFrom.t;
+    document.getElementById('fork-sub').textContent =
+      '你将在《' + current.n + '》第 ' + (forkFrom._d + 1) + ' 层的这个节点上岔出一条新路。'
+      + '此前的剧情会被继承,之后的走向归你。';
+    form.hidden = false; doneBox.hidden = true;
+    nameInput.value = ''; hookInput.value = '';
+    nameCount.textContent = '0 / 20';
+    nameField.classList.remove('invalid'); nameErr.hidden = true;
+    modal.hidden = false;
+    document.body.style.overflow = 'hidden';
+    setTimeout(function(){ nameInput.focus(); }, RM ? 0 : 60);
+  });
+  function closeFork(){
+    modal.hidden = true;
+    document.body.style.overflow = '';
+    document.getElementById('p-fork').focus();
+  }
+  nameInput.addEventListener('input', function(){
+    nameCount.textContent = nameInput.value.length + ' / 20';
+    if(nameInput.value.trim().length >= 2){
+      nameField.classList.remove('invalid'); nameErr.hidden = true;
+    }
+  });
+  form.addEventListener('submit', function(e){
+    e.preventDefault();
+    var v = nameInput.value.trim();
+    if(v.length < 2){
+      nameField.classList.add('invalid'); nameErr.hidden = false; nameInput.focus();
+      return;
+    }
+    form.hidden = true; doneBox.hidden = false;
+    document.getElementById('fork-done-msg').textContent =
+      '「' + v + '」已从《' + current.n + '》的节点「' + forkFrom.t + '」上岔出。'
+      + (hookInput.value.trim() ? '钩子已记下:' + hookInput.value.trim() : '钩子留空,可以之后再写。');
+    document.getElementById('fork-close').focus();
+    say('分支「' + v + '」已建立');
+  });
+  document.getElementById('fork-cancel').addEventListener('click', closeFork);
+  document.getElementById('fork-close').addEventListener('click', closeFork);
+  modal.addEventListener('click', function(e){ if(e.target === modal) closeFork(); });
+  document.addEventListener('keydown', function(e){
+    if(e.key === 'Escape' && !modal.hidden) closeFork();
+  });
+  modal.addEventListener('keydown', function(e){
+    if(e.key !== 'Tab') return;
+    var f = Array.prototype.filter.call(
+      modal.querySelectorAll('button:not([disabled]),input,textarea'),
+      function(el){ return el.offsetParent !== null; });
+    if(!f.length) return;
+    var first = f[0], last = f[f.length - 1];
+    if(e.shiftKey && document.activeElement === first){ e.preventDefault(); last.focus(); }
+    else if(!e.shiftKey && document.activeElement === last){ e.preventDefault(); first.focus(); }
+  });
+
+  /* ---------------- 星点 ---------------- */
+  (function(){
+    var box = document.getElementById('stars'), html = '', i;
+    for(i=0;i<120;i++){
+      var s = Math.random() < 0.86 ? 1 : 2;
+      var o = (0.12 + Math.random()*0.5).toFixed(2);
+      var tw = (!RM && Math.random() < 0.18)
+        ? 'animation:twinkle '+(3+Math.random()*4).toFixed(1)+'s ease-in-out infinite;animation-delay:'+(Math.random()*5).toFixed(1)+'s;'
+        : '';
+      html += '<i style="left:'+(Math.random()*100).toFixed(2)+'%;top:'+(Math.random()*100).toFixed(2)
+           + '%;width:'+s+'px;height:'+s+'px;opacity:'+o+';'+tw+'"></i>';
+    }
+    box.innerHTML = html;
+  })();
+
+  /* ---------------- 启动:?world= 决定初始世界 ---------------- */
+  var q = (function(){
+    var key = new URLSearchParams(window.location.search).get('world');
+    return key ? key.toLowerCase() : null;
+  })();
+  var known = q && (!!WORLDS[q] || NO_GRAPH.some(function(d){ return d.key === q; }));
+  if(q === null) render('radio');
+  else if(known) render(q);
+  else showUnknownWorld(q);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="description" content="这片坐标上,还没有星。你要找的世界可能已经改名、被作者收回,或者只存在于某次手滑的地址栏里。" />
+<title>这片坐标上还没有星 · 万象 Story Editor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;510;590&family=Noto+Serif+SC:wght@500;700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:        oklch(0.13 0.022 265);
+    --bg-deep:   oklch(0.09 0.018 265);
+    --surface:   oklch(0.19 0.030 265);
+    --fg:        oklch(0.96 0.010 90);
+    --muted:     oklch(0.72 0.020 265);
+    --border:    oklch(1 0 0 / 0.11);
+    --border-2:  oklch(1 0 0 / 0.20);
+    --accent:    oklch(0.82 0.125 85);
+    --accent-dim:oklch(0.66 0.100 85);
+    --bright:    oklch(0.88 0.008 265);
+
+    --font-display:"Noto Serif SC", Georgia, "Songti SC", serif;
+    --font-ui:"Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+    --r-sm:8px; --r-md:12px; --r-lg:18px; --r-pill:999px;
+    --ease:cubic-bezier(.2,0,0,1);
+    --ring:0 0 0 2px oklch(0.09 0.018 265), 0 0 0 4px oklch(0.82 0.125 85);
+
+    /* 404 不属于任何世界,环境色相锁死在回落值 252,不冒充某部作品的天空 */
+    --ambient-hue:252;
+  }
+  /* 场景用的世界作用域。hue 固定 252,声明在 .scene 上而不是 :root(见 DESIGN.md §4) */
+  .world-scope{
+    --w-line:   oklch(0.72 0.140 var(--hue) / .85);
+    --w-glow:   oklch(0.72 0.140 var(--hue) / .50);
+    --w-sky-hi: oklch(0.34 0.115 var(--hue));
+    --w-sky-md: oklch(0.22 0.085 var(--hue));
+    --w-sky-lo: oklch(0.11 0.040 var(--hue));
+    --w-halo:   oklch(0.48 0.130 var(--hue) / .75);
+    --w-star:   oklch(0.98 0.020 var(--hue) / .90);
+    --w-ink:    oklch(0.055 0.015 var(--hue));
+    --w-text:   oklch(0.97 0.010 var(--hue));
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg-deep);color:var(--fg);font-family:var(--font-ui);
+    -webkit-font-smoothing:antialiased;min-height:100%}
+  a{color:inherit;text-decoration:none}
+  button{font-family:inherit;cursor:pointer;color:inherit}
+  :focus-visible{outline:none;box-shadow:var(--ring);border-radius:var(--r-sm)}
+  .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+
+  /* ================= 深空背景:天就是整个视口 ================= */
+  .space{position:fixed;inset:0;z-index:0;
+    background:
+      radial-gradient(58% 46% at 74% 12%, oklch(0.30 0.075 var(--ambient-hue) / .40), transparent 62%),
+      radial-gradient(46% 34% at 14% 86%, oklch(0.28 0.070 calc(var(--ambient-hue) + 52) / .26), transparent 66%),
+      radial-gradient(70% 60% at 50% 46%, oklch(0.16 0.028 var(--ambient-hue)), oklch(0.08 0.016 var(--ambient-hue)) 78%)}
+  .stars{position:fixed;inset:0;z-index:1;pointer-events:none}
+  .stars i{position:absolute;border-radius:50%;background:oklch(1 0 0);display:block}
+  @keyframes twinkle{0%,100%{opacity:.25}50%{opacity:.95}}
+  .grain{position:fixed;inset:0;z-index:2;pointer-events:none;opacity:.05;mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='140' height='140' filter='url(%23n)'/></svg>");
+    background-size:140px 140px}
+  .vignette{position:fixed;inset:0;z-index:3;pointer-events:none;
+    background:radial-gradient(126% 100% at 50% 40%, transparent 56%, oklch(0.05 0.01 265 / .70) 100%)}
+
+  /* ================= 顶栏 ================= */
+  .topbar{position:relative;z-index:40;display:flex;align-items:center;gap:14px;
+    padding:16px 26px;background:linear-gradient(180deg, oklch(0.09 0.018 265 / .94), oklch(0.09 0.018 265 / 0))}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:590;font-size:15px;letter-spacing:.02em}
+  .brand .mark{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;flex:none;
+    background:oklch(1 0 0 / .05);border:1px solid var(--border)}
+  .brand .zh{font-family:var(--font-display);font-weight:700;font-size:16px;letter-spacing:.1em}
+  .brand .en{color:var(--muted);font-size:11.5px;letter-spacing:.16em;padding-left:10px;
+    border-left:1px solid var(--border)}
+  .topnav{margin-left:auto;display:flex;align-items:center;gap:6px}
+  .topnav a{min-height:44px;padding:0 13px;border-radius:var(--r-sm);color:var(--muted);font-size:13.5px;
+    font-weight:510;letter-spacing:.02em;display:inline-flex;align-items:center;
+    transition:color .15s var(--ease),background .15s var(--ease)}
+  .topnav a:hover{color:var(--fg);background:oklch(1 0 0 / .07)}
+
+  /* =================================================================
+     版式:左文 · 右景。两栏是 flex 兄弟,几何上不可能重叠——
+     场景是竖向构图(700:660),天在上、人在下,而不是压扁的横带。
+     ================================================================= */
+  .shell{position:relative;z-index:10;max-width:1180px;margin:0 auto;
+    min-height:calc(100dvh - 74px);
+    display:flex;align-items:center;gap:clamp(26px,4vw,64px);
+    padding:4px clamp(22px,5vw,64px) 60px}
+  .copy{flex:1 1 auto;min-width:0;max-width:480px}
+  .scenecol{flex:0 0 46%;min-width:0;display:flex;align-items:center;justify-content:center}
+
+  .eyebrow{font-size:11px;letter-spacing:.26em;color:var(--muted);font-weight:590;
+    display:flex;align-items:center;gap:12px}
+  .eyebrow .code{font-family:var(--font-ui);font-variant-numeric:tabular-nums;
+    padding:3px 9px;border-radius:var(--r-pill);border:1px solid var(--border);
+    background:oklch(1 0 0 / .04);letter-spacing:.14em;color:var(--bright)}
+
+  /* ---- 场景:熄灭的星 × 断掉的航迹 ---- */
+  .scene{width:100%;aspect-ratio:700 / 660;max-height:min(70vh,600px)}
+  /* overflow 必须裁切:地平线余光伸到 viewBox 之外,放出去会漏到版心里 */
+  .scene > svg{width:100%;height:100%;display:block;overflow:hidden}
+
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .deadstar{transform-box:fill-box;transform-origin:50% 50%;animation:spin 56s linear infinite}
+
+  /* 航点默认是终态(减动效与无脚本时直接可见),入场淡入由脚本接管 */
+  .wp{opacity:1}
+  .trail{will-change:stroke-dashoffset}
+
+  /* ---- 文案 ---- */
+  h1{font-family:var(--font-display);font-weight:900;
+    font-size:clamp(31px,3.5vw,46px);line-height:1.36;letter-spacing:0;
+    margin-top:22px}
+  /* 标题的换行是排过的:6 字 / 5 字。交给自动换行会在窄栏留下 2 字孤行 */
+  h1 span{display:block}
+  .lead{margin-top:20px;font-family:var(--font-display);font-size:15px;line-height:2;
+    color:var(--muted)}
+
+  /* ---- 出口:唯一实心暖金是「回到星海」 ---- */
+  .acts{margin-top:32px;display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+  .btn-primary{min-height:48px;padding:0 24px;border-radius:var(--r-pill);
+    background:var(--accent);color:oklch(0.16 0.020 265);border:1px solid transparent;
+    font-size:14.5px;font-weight:590;letter-spacing:.02em;
+    display:inline-flex;align-items:center;gap:9px;
+    transition:background .16s var(--ease)}
+  .btn-primary:hover{background:oklch(0.88 0.125 85);color:oklch(0.14 0.020 265)}
+  .btn-ghost{min-height:48px;padding:0 20px;border-radius:var(--r-pill);
+    border:1px solid var(--border-2);background:transparent;color:var(--fg);
+    font-size:14px;font-weight:510;letter-spacing:.02em;
+    display:inline-flex;align-items:center;gap:8px;
+    transition:background .16s var(--ease),border-color .16s var(--ease)}
+  .btn-ghost:hover{background:oklch(1 0 0 / .10);border-color:oklch(1 0 0 / .32);color:var(--fg)}
+
+  /* 页脚说明退成一条细线上的小字,不再是一个方盒子 */
+  .note{margin-top:36px;padding-top:16px;border-top:1px solid var(--border);
+    font-size:12.5px;line-height:1.85;color:var(--muted)}
+  .note b{color:var(--bright);font-weight:590}
+
+  /* ================= 响应式 ================= */
+  /* ≤980px:双栏塌成单列,场景提到文字前面(先看图,再读字) */
+  @media (max-width:980px){
+    .shell{flex-direction:column;align-items:flex-start;gap:0;
+      min-height:auto;padding:4px clamp(20px,5vw,40px) 72px}
+    .scenecol{order:-1;flex:none;width:100%;justify-content:flex-start}
+    .scene{width:min(100%,420px);max-height:min(44vh,400px);margin-bottom:22px}
+    .copy{max-width:600px}
+    .topnav a{padding:0 10px;font-size:13px}
+    h1{margin-top:18px}
+    .lead{font-size:14.5px;line-height:1.95}
+  }
+  @media (max-width:640px){
+    .topbar{padding:14px 18px}
+    .brand .en{display:none}
+    .topnav{gap:2px}
+    .topnav a{padding:0 8px;font-size:12.5px}
+    .shell{padding:4px 18px 64px}
+    .scene{width:min(100%,330px);max-height:36vh}
+    .acts{gap:10px}
+    .btn-primary,.btn-ghost{width:100%;justify-content:center}
+  }
+  @media (max-width:400px){
+    .topnav a[data-secondary]{display:none}
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    *{animation:none!important;transition:none!important}
+  }
+</style>
+</head>
+<body>
+<div class="space" data-od-id="space-backdrop"></div>
+<div class="stars" id="stars" aria-hidden="true"></div>
+<div class="grain" aria-hidden="true"></div>
+<div class="vignette" aria-hidden="true"></div>
+
+<header class="topbar" data-od-id="topbar">
+  <a class="brand" href="home-galaxy.html" aria-label="万象 · Story Editor · 回到星海">
+    <span class="mark" aria-hidden="true">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 19.5v-6M12 13.5 7.7 8.9M12 13.5l4.3-4.6"/>
+        <circle cx="12" cy="20" r="1.3" fill="currentColor" stroke="none"/>
+        <circle cx="7.4" cy="8.3" r="2.2" fill="var(--accent)" stroke="none"/>
+        <circle cx="16.6" cy="8.3" r="2.2" fill="currentColor" stroke="none"/>
+      </svg>
+    </span>
+    <span class="zh">万象</span>
+    <span class="en">STORY EDITOR</span>
+  </a>
+  <nav class="topnav" aria-label="主导航" data-od-id="primary-navigation">
+    <a href="home-galaxy.html" data-od-id="nav-galaxy">星海</a>
+    <a href="works-library.html" data-od-id="nav-works-library">作品馆</a>
+    <a href="community.html" data-od-id="nav-community">社区</a>
+    <a href="profile-space.html" data-secondary data-od-id="nav-my-space">我的空间</a>
+  </nav>
+</header>
+
+<main class="shell" data-od-id="lost-main">
+  <div class="copy" data-od-id="lost-copy">
+    <p class="eyebrow" data-od-id="lost-eyebrow">
+      <span class="code">404</span>
+      <span>坐标失效</span>
+    </p>
+
+    <h1 data-od-id="lost-title"><span>这片坐标上,</span><span>还没有星。</span></h1>
+
+    <p class="lead" data-od-id="lost-lead">
+      你要找的世界可能已经改名、被作者收回,或者只存在于某次手滑的地址栏里。航迹到这里就断了,但星海一直在上面,换条路仍然到得了。
+    </p>
+
+    <nav class="acts" aria-label="离开这里" data-od-id="lost-actions">
+      <a class="btn-primary" href="home-galaxy.html" data-od-id="cta-back-galaxy">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="m11 18-6-6 6-6"/></svg>
+        回到星海
+      </a>
+      <a class="btn-ghost" href="works-library.html" data-od-id="cta-works-library">去作品馆找找</a>
+      <a class="btn-ghost" href="community.html" data-od-id="cta-community">去社区看看</a>
+    </nav>
+
+    <p class="note" data-od-id="lost-note">
+      这是静态原型,<b>没有服务端路由</b>——真实部署时把服务器的 404 指向本页即可。
+    </p>
+  </div>
+
+  <!-- 场景:竖向构图。星在上、人在下,航迹从左下升起并在抵达前散掉 -->
+  <div class="scenecol">
+    <div class="scene world-scope" style="--hue:252" data-od-id="lost-scene" aria-hidden="true">
+      <svg viewBox="0 0 700 660" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <!-- 航迹:实到虚,在抵达那颗星之前散掉。末段 82%→100% 归零 -->
+          <linearGradient id="trailFade" x1="0" y1="1" x2="1" y2="0">
+            <stop offset="0"    stop-color="oklch(0.72 0.140 252 / .08)"/>
+            <stop offset="0.14" stop-color="oklch(0.72 0.140 252 / .62)"/>
+            <stop offset="0.62" stop-color="oklch(0.72 0.140 252 / .74)"/>
+            <stop offset="0.82" stop-color="oklch(0.72 0.140 252 / .30)"/>
+            <stop offset="1"    stop-color="oklch(0.72 0.140 252 / 0)"/>
+          </linearGradient>
+          <!-- 地平线残光:本页没有渐变天空,这是唯一让纯黑剪影读得出轮廓的光源 -->
+          <radialGradient id="groundGlow" cx="0.5" cy="0.5" r="0.5">
+            <stop offset="0"   stop-color="oklch(0.34 0.115 252 / .44)"/>
+            <stop offset="0.5" stop-color="oklch(0.24 0.090 252 / .21)"/>
+            <stop offset="1"   stop-color="oklch(0.18 0.060 252 / 0)"/>
+          </radialGradient>
+          <radialGradient id="wpGlow" cx="0.5" cy="0.5" r="0.5">
+            <stop offset="0" stop-color="oklch(0.72 0.140 252 / .50)"/>
+            <stop offset="1" stop-color="oklch(0.72 0.140 252 / 0)"/>
+          </radialGradient>
+          <linearGradient id="horizonFade" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0"    stop-color="oklch(0.62 0.090 252 / 0)"/>
+            <stop offset="0.36" stop-color="oklch(0.62 0.090 252 / .26)"/>
+            <stop offset="0.74" stop-color="oklch(0.62 0.090 252 / .10)"/>
+            <stop offset="1"    stop-color="oklch(0.62 0.090 252 / 0)"/>
+          </linearGradient>
+        </defs>
+
+        <!-- 地平线余光 + 地平线。ry 收到 70,正好在底边 660 之前衰减为 0 -->
+        <ellipse cx="380" cy="584" rx="330" ry="70" fill="url(#groundGlow)"/>
+        <path d="M70 590 H660" stroke="url(#horizonFade)" stroke-width="1.2" fill="none"/>
+
+        <!-- 走过的航迹:一次性绘制。三个航点都是这条路径的锚点,不会浮在线外 -->
+        <path id="trail" class="trail"
+              d="M-24 626 C 60 608, 130 584, 190 552
+                 C 246 522, 280 504, 300 480
+                 C 330 444, 356 420, 378 392
+                 C 404 358, 428 320, 452 268"
+              fill="none" stroke="url(#trailFade)" stroke-width="2.6" stroke-linecap="round"/>
+
+        <!-- 已经点亮的航点:你确实走过这些地方 -->
+        <g class="wps">
+          <g class="wp">
+            <circle cx="190" cy="552" r="17" fill="url(#wpGlow)"/>
+            <circle cx="190" cy="552" r="2.9" fill="var(--w-star)"/>
+          </g>
+          <g class="wp">
+            <circle cx="300" cy="480" r="16" fill="url(#wpGlow)"/>
+            <circle cx="300" cy="480" r="2.6" fill="var(--w-star)"/>
+          </g>
+          <g class="wp">
+            <circle cx="378" cy="392" r="14" fill="url(#wpGlow)"/>
+            <circle cx="378" cy="392" r="2.3" fill="var(--w-star)"/>
+          </g>
+        </g>
+
+        <!-- 熄灭的星:空心虚线、不发光、缓慢自转(与星图的「待揭示节点」同一形态) -->
+        <g class="deadstar">
+          <circle cx="486" cy="150" r="40" fill="none"
+                  stroke="oklch(0.62 0.030 252 / .46)" stroke-width="1.5"
+                  stroke-dasharray="5 10" stroke-linecap="round"/>
+          <circle cx="486" cy="150" r="24" fill="none"
+                  stroke="oklch(0.62 0.030 252 / .22)" stroke-width="1"
+                  stroke-dasharray="3 12" stroke-linecap="round"/>
+        </g>
+        <circle cx="486" cy="150" r="3.4" fill="none"
+                stroke="oklch(0.70 0.025 252 / .58)" stroke-width="1.3"/>
+
+        <!-- 剪影:站在地平线上仰头看那颗不亮的星。占场景高度约 10.6% -->
+        <svg x="396" y="529" width="76" height="70" viewBox="0 0 100 92">
+          <g fill="var(--w-ink)" stroke="var(--w-ink)">
+            <circle cx="49" cy="13" r="7.4"/>
+            <path d="M50 22c-5.4 0-9.4 3.6-10.1 8.7l-1.7 12.9c-.3 2.3 1.5 4.2 3.8 4.2h16c2.3 0 4.1-1.9 3.8-4.2l-1.7-12.9C59.4 25.6 55.4 22 50 22z"/>
+            <path d="M45.6 47 43.6 80" stroke-width="6" stroke-linecap="round" fill="none"/>
+            <path d="M54.4 47 56.4 80" stroke-width="6" stroke-linecap="round" fill="none"/>
+            <path d="M41 30 35 49" stroke-width="5" stroke-linecap="round" fill="none"/>
+            <path d="M59 30 66 47" stroke-width="5" stroke-linecap="round" fill="none"/>
+          </g>
+        </svg>
+      </svg>
+    </div>
+  </div>
+</main>
+
+<script>
+(function(){
+  'use strict';
+  var RM = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ---------------- 背景星点 ---------------- */
+  (function(){
+    var box = document.getElementById('stars'), html = '', i;
+    for(i=0;i<120;i++){
+      var s  = Math.random() < 0.86 ? 1 : 2;
+      var o  = (0.14 + Math.random()*0.54).toFixed(2);
+      var tw = (!RM && Math.random() < 0.18)
+        ? 'animation:twinkle '+(3+Math.random()*4).toFixed(1)+'s ease-in-out infinite;animation-delay:'+(Math.random()*5).toFixed(1)+'s;'
+        : '';
+      html += '<i style="left:'+(Math.random()*100).toFixed(2)+'%;top:'+(Math.random()*100).toFixed(2)
+           +  '%;width:'+s+'px;height:'+s+'px;opacity:'+o+';'+tw+'"></i>';
+    }
+    box.innerHTML = html;
+  })();
+
+  /* ---------------- 航迹绘制:进场播一次,不循环 ---------------- */
+  (function(){
+    var trail = document.getElementById('trail');
+    var wps   = document.querySelectorAll('.wp');
+    if(!trail) return;
+
+    if(RM){
+      /* 减动效:直接给终态,不绘制、不淡入 */
+      trail.style.willChange = 'auto';
+      return;
+    }
+
+    var L = 0;
+    try { L = trail.getTotalLength(); } catch(e){ L = 0; }
+    if(!L){ trail.style.willChange = 'auto'; return; }
+
+    trail.style.strokeDasharray  = L + ' ' + L;
+    trail.style.strokeDashoffset = L;
+
+    var i;
+    for(i=0;i<wps.length;i++){ wps[i].style.opacity = '0'; }
+
+    requestAnimationFrame(function(){
+      requestAnimationFrame(function(){
+        trail.style.transition = 'stroke-dashoffset 1.5s var(--ease, cubic-bezier(.2,0,0,1))';
+        trail.style.strokeDashoffset = '0';
+        for(var j=0;j<wps.length;j++){
+          wps[j].style.transition = 'opacity .5s ease';
+          wps[j].style.transitionDelay = (0.42 + j*0.30) + 's';
+          wps[j].style.opacity = '1';
+        }
+      });
+    });
+
+    /* 动效结束后把临时的 will-change 释回 auto */
+    window.setTimeout(function(){ trail.style.willChange = 'auto'; }, 1800);
+  })();
+})();
+</script>
+</body>
+</html>

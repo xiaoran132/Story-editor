@@ -1,0 +1,1071 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="description" content="万象 · 社区广场 —— 世界正在分叉。看别人的世界长出岔路,然后从那里接着写。" />
+<title>社区广场 · 万象</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;510;590&family=Noto+Serif+SC:wght@500;700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:        oklch(0.13 0.022 265);
+    --bg-deep:   oklch(0.09 0.018 265);
+    --surface:   oklch(0.19 0.030 265);
+    --fg:        oklch(0.96 0.010 90);
+    --muted:     oklch(0.72 0.020 265);
+    --border:    oklch(1 0 0 / 0.11);
+    --border-2:  oklch(1 0 0 / 0.20);
+    --accent:    oklch(0.82 0.125 85);       /* 暖金 · 全站唯一强调,不参与 hue 染色 */
+
+    --font-display:"Noto Serif SC", Georgia, "Songti SC", serif;
+    --font-ui:"Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+    --r-sm:8px; --r-md:12px; --r-lg:18px; --r-pill:999px;
+    --ease:cubic-bezier(.2,0,0,1);
+    --ring:0 0 0 2px oklch(0.09 0.018 265), 0 0 0 4px oklch(0.82 0.125 85);
+
+    /* 环境色相:跟随当前悬停/聚焦的那条衍生,离开后回落 252 */
+    --ambient-hue:252;
+  }
+
+  /* 世界作用域:只设 --hue,角色 token 全部自动重算。
+     L / C 写死,只有 H 变 —— 换色相时明度层级不会崩。
+     必须声明在使用它的元素上(.pane / .avatar / .modal-panel),放 :root 会被锁死成同一个色。 */
+  .world-scope{
+    --w-line:   oklch(0.72 0.140 var(--hue) / .85);
+    --w-glow:   oklch(0.72 0.140 var(--hue) / .50);
+    --w-sky-hi: oklch(0.34 0.115 var(--hue));
+    --w-sky-md: oklch(0.22 0.085 var(--hue));
+    --w-sky-lo: oklch(0.11 0.040 var(--hue));
+    --w-halo:   oklch(0.48 0.130 var(--hue) / .75);
+    --w-cloud:  oklch(0.20 0.050 var(--hue) / .85);
+    --w-cloud2: oklch(0.44 0.090 var(--hue) / .50);
+    --w-star:   oklch(0.98 0.020 var(--hue) / .90);
+    --w-ink:    oklch(0.055 0.015 var(--hue));
+    --w-plate:  oklch(0.050 0.015 var(--hue) / .92);
+    --w-text:   oklch(0.97 0.010 var(--hue));
+    --w-kick:   oklch(0.86 0.090 var(--hue));
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    min-height:100%;background:var(--bg-deep);color:var(--fg);
+    font-family:var(--font-ui);-webkit-font-smoothing:antialiased;
+  }
+  button,input,select,textarea{font-family:inherit;color:inherit}
+  button{cursor:pointer}
+  a{color:inherit;text-decoration:none}
+  :focus-visible{outline:none;box-shadow:var(--ring);border-radius:var(--r-sm)}
+  .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+
+  /* ================= 深空背景(整片跟随环境色相) ================= */
+  .space{position:fixed;inset:0;z-index:0;
+    background:
+      radial-gradient(58% 46% at 74% 12%, oklch(0.30 0.075 var(--ambient-hue) / .46), transparent 62%),
+      radial-gradient(46% 34% at 12% 86%, oklch(0.28 0.070 calc(var(--ambient-hue) + 52) / .32), transparent 66%),
+      radial-gradient(74% 62% at 50% 42%, oklch(0.16 0.028 var(--ambient-hue)), oklch(0.08 0.016 var(--ambient-hue)) 80%);
+    transition:background 1.1s var(--ease)}
+  .stars{position:fixed;inset:0;z-index:1;pointer-events:none}
+  .stars i{position:absolute;border-radius:50%;background:oklch(1 0 0);display:block}
+  @keyframes twinkle{0%,100%{opacity:.25}50%{opacity:.95}}
+  .grain{position:fixed;inset:0;z-index:2;pointer-events:none;opacity:.05;mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='140' height='140' filter='url(%23n)'/></svg>");
+    background-size:140px 140px}
+  .vignette{position:fixed;inset:0;z-index:3;pointer-events:none;
+    background:radial-gradient(126% 96% at 50% 40%, transparent 54%, oklch(0.05 0.01 265 / .74) 100%)}
+
+  /* ================= 顶栏 ================= */
+  .topbar{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:14px;padding:16px 26px;
+    background:linear-gradient(180deg, oklch(0.09 0.018 265 / .92), oklch(0.09 0.018 265 / .58) 70%, transparent);
+    backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:590;font-size:15px;letter-spacing:.02em}
+  .brand .mark{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;flex:none;
+    background:oklch(1 0 0 / .05);border:1px solid var(--border)}
+  .brand .zh{font-family:var(--font-display);font-weight:700;font-size:16px;letter-spacing:.1em}
+  .brand .en{color:var(--muted);font-size:11.5px;letter-spacing:.16em;padding-left:10px;
+    border-left:1px solid var(--border)}
+  .topnav{margin-left:auto;display:flex;align-items:center;gap:6px}
+  .topnav a{min-height:44px;padding:0 13px;border-radius:var(--r-sm);color:var(--muted);font-size:13.5px;
+    font-weight:510;letter-spacing:.02em;display:inline-flex;align-items:center;
+    transition:color .15s var(--ease),background .15s var(--ease)}
+  .topnav a:hover{color:var(--fg);background:oklch(1 0 0 / .07)}
+  .topnav a[aria-current="page"]{color:var(--fg);background:oklch(1 0 0 / .07)}
+  .nav-soon{min-height:44px;padding:0 13px;border-radius:var(--r-sm);border:0;background:transparent;
+    color:oklch(0.62 0.018 265);font-size:13.5px;font-weight:510;letter-spacing:.02em;
+    display:inline-flex;align-items:center;gap:7px;
+    transition:color .15s var(--ease),background .15s var(--ease)}
+  .nav-soon:hover{color:var(--fg);background:oklch(1 0 0 / .07)}
+  .nav-soon .tag{font-size:10px;letter-spacing:.1em;padding:2px 6px;border-radius:var(--r-pill);
+    border:1px solid var(--border);color:var(--muted)}
+  .btn-create{margin-left:8px;height:44px;padding:0 17px;border-radius:var(--r-pill);
+    border:1px solid var(--border-2);background:transparent;color:var(--fg);
+    font-size:13.5px;font-weight:590;letter-spacing:.02em;text-decoration:none;
+    display:inline-flex;align-items:center;gap:7px;
+    transition:background .16s var(--ease),border-color .16s var(--ease)}
+  .btn-create:hover{background:oklch(1 0 0 / .10);border-color:oklch(1 0 0 / .32)}
+
+  /* ================= 页头 ================= */
+  .wrap{position:relative;z-index:10;max-width:1010px;margin:0 auto;padding:0 26px 96px}
+  .pagehead{padding:44px 0 30px}
+  .pagehead .eyebrow{font-size:11px;letter-spacing:.26em;color:var(--muted);font-weight:590;margin-bottom:14px}
+  .pagehead h1{font-family:var(--font-display);font-weight:900;font-size:clamp(30px,4.4vw,46px);
+    line-height:1.34;letter-spacing:0}
+  .pagehead p.lead{margin-top:16px;max-width:46ch;font-family:var(--font-display);font-size:15px;
+    line-height:1.95;color:var(--muted)}
+  .pagehead .tally{margin-top:22px;display:flex;flex-wrap:wrap;gap:10px 20px;font-size:12.5px;
+    letter-spacing:.04em;color:oklch(0.64 0.018 265)}
+  .pagehead .tally b{color:var(--fg);font-weight:590;font-variant-numeric:tabular-nums}
+
+  /* ================= 筛选条 ================= */
+  .filters{position:sticky;top:76px;z-index:30;display:flex;flex-wrap:wrap;align-items:center;gap:10px;
+    margin:0 -10px 26px;padding:10px;border-radius:var(--r-pill);
+    background:oklch(0.12 0.020 265 / .82);border:1px solid var(--border);
+    backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+  .seg{display:flex;align-items:center;gap:2px}
+  .seg button{height:40px;padding:0 14px;border:0;border-radius:var(--r-pill);background:transparent;
+    color:var(--muted);font-size:13px;font-weight:510;letter-spacing:.03em;
+    display:inline-flex;align-items:center;gap:7px;
+    transition:background .15s var(--ease),color .15s var(--ease)}
+  .seg button:hover{color:var(--fg);background:oklch(1 0 0 / .09)}
+  /* 选中态用中性亮态,不占暖金配额 */
+  .seg button[aria-pressed="true"]{background:oklch(0.88 0.008 265);color:oklch(0.16 0.02 265);font-weight:590}
+  .seg button svg{flex:none}
+  .filters .spacer{margin-left:auto}
+  .follow-only{display:inline-flex;align-items:center;gap:10px;min-height:44px;padding:0 12px 0 4px;
+    border:0;background:transparent;font-size:13px;letter-spacing:.03em;color:var(--muted);
+    border-radius:var(--r-pill);transition:color .15s var(--ease),background .15s var(--ease)}
+  .follow-only:hover{color:var(--fg);background:oklch(1 0 0 / .07)}
+  .follow-only .track{width:38px;height:22px;border-radius:var(--r-pill);flex:none;
+    background:oklch(1 0 0 / .12);border:1px solid var(--border-2);position:relative;
+    transition:background .18s var(--ease)}
+  .follow-only .track::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;
+    border-radius:50%;background:oklch(0.86 0.010 265);transition:transform .18s var(--ease)}
+  .follow-only[aria-pressed="true"]{color:var(--fg)}
+  .follow-only[aria-pressed="true"] .track{background:oklch(0.62 0.020 265)}
+  .follow-only[aria-pressed="true"] .track::after{transform:translateX(16px)}
+
+  /* ================= 事件流 ================= */
+  .feed{display:flex;flex-direction:column;gap:16px}
+  .event{display:grid;grid-template-columns:400px minmax(0,1fr);gap:20px;padding:16px;
+    border:1px solid var(--border);border-radius:var(--r-lg);
+    background:oklch(0.155 0.024 265 / .62);
+    opacity:0;transform:translateY(10px);
+    transition:opacity .5s var(--ease),transform .5s var(--ease),
+               border-color .3s var(--ease),box-shadow .3s var(--ease),background .3s var(--ease)}
+  .event.in{opacity:1;transform:none}
+  .event[hidden]{display:none}
+  /* hover / 键盘聚焦:只加亮描边+辉光+抬底,前景一律不变暗 */
+  .event:hover,.event.active{background:oklch(0.175 0.026 265 / .78);
+    border-color:var(--evt-line);box-shadow:0 0 40px -18px var(--evt-glow),0 22px 50px -34px oklch(0.02 0 0 / .9)}
+  .event:focus-within{border-color:var(--evt-line)}
+
+  /* —— 双世界 + 分叉线 —— */
+  .lineage{display:flex;align-items:center;gap:0}
+  .pane{position:relative;width:168px;height:112px;flex:none;border-radius:var(--r-md);overflow:hidden;
+    border:1px solid oklch(1 0 0 / .13);background:var(--bg);
+    transition:border-color .3s var(--ease)}
+  .event:hover .pane.to,.event.active .pane.to{border-color:var(--w-line)}
+  .sky{position:absolute;inset:0;
+    background:
+      radial-gradient(120% 62% at 68% 6%, var(--w-halo), transparent 62%),
+      linear-gradient(178deg, var(--w-sky-hi) 0%, var(--w-sky-md) 46%, var(--w-sky-lo) 100%)}
+  .sky .cloud{position:absolute;border-radius:50%;filter:blur(6px);background:var(--w-cloud)}
+  .sky .cloud.c1{width:150%;height:34%;left:-30%;bottom:6%}
+  .sky .cloud.c2{width:110%;height:24%;left:22%;bottom:18%;background:var(--w-cloud2)}
+  .sky .dot{position:absolute;width:1.5px;height:1.5px;border-radius:50%;background:var(--w-star)}
+  .sky .streak{position:absolute;height:1px;background:linear-gradient(90deg,transparent,var(--w-star));
+    transform:rotate(28deg);transform-origin:right center}
+  .horizon{position:absolute;left:0;right:0;bottom:0;height:36%;
+    background:linear-gradient(180deg, transparent, var(--w-ink) 64%)}
+  .figure{position:absolute;left:50%;bottom:15%;width:30px;height:30px;margin-left:-15px;color:var(--w-ink)}
+  .figure svg{width:100%;height:100%;display:block}
+  .plate{position:absolute;left:0;right:0;bottom:0;padding:9px 10px 10px;
+    background:linear-gradient(180deg,transparent,var(--w-plate) 44%)}
+  .plate .kicker{display:block;font-size:9.5px;font-weight:590;letter-spacing:.11em;color:var(--w-kick);
+    margin-bottom:3px}
+  .plate .name{display:block;font-family:var(--font-display);font-weight:700;font-size:12px;line-height:1.4;
+    color:var(--w-text)}
+  .pane .role{position:absolute;top:7px;left:8px;font-size:9px;letter-spacing:.14em;font-weight:590;
+    padding:3px 7px;border-radius:var(--r-pill);color:oklch(0.97 0.006 265);
+    background:oklch(0.10 0.02 265 / .72);border:1px solid oklch(1 0 0 / .16)}
+
+  .fork-line{width:64px;height:112px;flex:none;display:block}
+  .fork-line .base{fill:none;stroke:oklch(1 0 0 / .16);stroke-width:1.4;stroke-linecap:round}
+  .fork-line .old{fill:none;stroke:oklch(1 0 0 / .13);stroke-width:1.4;stroke-linecap:round;stroke-dasharray:3 4}
+  .fork-line .live{fill:none;stroke-width:2;stroke-linecap:round}
+  .fork-line .knot{stroke:none}
+  @keyframes pulse{0%,100%{opacity:.72}50%{opacity:1}}
+  .event:hover .fork-line .live,.event.active .fork-line .live{animation:pulse 2.4s ease-in-out infinite}
+
+  /* —— 卡片正文 —— */
+  .ebody{display:flex;flex-direction:column;min-width:0}
+  .byline{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  /* 头像也是剪影:天空用较亮的两档,保证纯黑剪影在小尺寸下仍读得出轮廓 */
+  .avatar{width:28px;height:28px;border-radius:50%;flex:none;position:relative;overflow:hidden;
+    border:1px solid oklch(1 0 0 / .18);
+    background:linear-gradient(178deg,var(--w-halo),var(--w-sky-hi))}
+  .avatar .figure{width:19px;height:19px;margin-left:-9.5px;bottom:6%}
+  .byline .who{font-size:13px;font-weight:510;letter-spacing:.02em}
+  .byline .ago{font-size:12px;color:oklch(0.64 0.018 265);letter-spacing:.03em}
+  .chip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:510;letter-spacing:.05em;
+    padding:4px 10px;border-radius:var(--r-pill);border:1px solid var(--border);
+    color:var(--muted);background:oklch(1 0 0 / .04)}
+  .event:hover .chip,.event.active .chip{color:var(--fg);border-color:var(--border-2)}
+  .btn-follow{margin-left:auto;min-height:36px;padding:0 13px;border-radius:var(--r-pill);
+    border:1px solid var(--border-2);background:transparent;color:var(--fg);
+    font-size:12.5px;font-weight:510;letter-spacing:.03em;
+    transition:background .16s var(--ease),border-color .16s var(--ease)}
+  .btn-follow:hover{background:oklch(1 0 0 / .10);border-color:oklch(1 0 0 / .34)}
+  .btn-follow[aria-pressed="true"]{background:oklch(1 0 0 / .13);border-color:oklch(1 0 0 / .30)}
+
+  .esum{margin-top:12px;font-family:var(--font-display);font-size:14.5px;line-height:1.9;color:var(--fg)}
+  .ebranch{margin-top:9px;font-size:12.5px;line-height:1.7;color:var(--muted);letter-spacing:.02em}
+  .ebranch b{color:var(--fg);font-weight:590}
+  .efoot{margin-top:auto;padding-top:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .stats{display:flex;align-items:center;gap:12px;font-size:12px;letter-spacing:.03em;
+    color:oklch(0.66 0.018 265)}
+  .stats span{display:inline-flex;align-items:center;gap:5px}
+  .stats b{color:var(--fg);font-weight:510;font-variant-numeric:tabular-nums}
+  .efoot .grow{margin-left:auto}
+  .btn-icon{width:36px;height:36px;border-radius:50%;border:1px solid var(--border);background:transparent;
+    display:grid;place-items:center;color:var(--muted);
+    transition:background .16s var(--ease),border-color .16s var(--ease),color .16s var(--ease)}
+  .btn-icon:hover{background:oklch(1 0 0 / .10);border-color:var(--border-2);color:var(--fg)}
+  .btn-icon[aria-pressed="true"]{color:var(--fg);border-color:var(--border-2);background:oklch(1 0 0 / .11)}
+  .btn-icon[aria-pressed="true"] svg{fill:currentColor}
+  .link-graph{min-height:36px;display:inline-flex;align-items:center;gap:6px;padding:0 6px;
+    font-size:12.5px;font-weight:510;letter-spacing:.03em;color:var(--muted);border-radius:var(--r-sm);
+    transition:color .15s var(--ease),background .15s var(--ease)}
+  .link-graph:hover{color:var(--fg);background:oklch(1 0 0 / .07)}
+  /* 主动作:默认描边,仅在该卡 hover / 聚焦时变实心。
+     同屏因此永远只有一个实心「从这里分叉」——不与行动经济冲突。 */
+  .btn-fork{min-height:40px;padding:0 16px;border-radius:var(--r-pill);
+    border:1px solid var(--border-2);background:transparent;color:var(--fg);
+    font-size:13px;font-weight:590;letter-spacing:.03em;display:inline-flex;align-items:center;gap:8px;
+    transition:background .16s var(--ease),border-color .16s var(--ease),color .16s var(--ease)}
+  .btn-fork:hover{background:oklch(0.88 0.008 265);border-color:oklch(0.88 0.008 265);color:oklch(0.16 0.02 265)}
+  .event.active .btn-fork{background:oklch(0.88 0.008 265);border-color:oklch(0.88 0.008 265);
+    color:oklch(0.16 0.02 265)}
+
+  /* ================= 创作者轨道 ================= */
+  .creators{margin:10px 0;padding:20px 0 22px;border-top:1px solid var(--border);
+    border-bottom:1px solid var(--border)}
+  .creators h2{font-family:var(--font-display);font-weight:700;font-size:17px;line-height:1.45;
+    letter-spacing:0;display:flex;align-items:baseline;gap:12px}
+  .creators h2 small{font-family:var(--font-ui);font-weight:450;font-size:12px;letter-spacing:.04em;
+    color:var(--muted)}
+  .track{margin-top:16px;display:flex;gap:12px;overflow-x:auto;padding-bottom:6px;
+    scrollbar-width:thin;scroll-snap-type:x proximity}
+  .track::-webkit-scrollbar{height:6px}
+  .track::-webkit-scrollbar-thumb{background:oklch(1 0 0 / .14);border-radius:99px}
+  .creator{flex:none;width:212px;scroll-snap-align:start;padding:14px;border-radius:var(--r-md);
+    border:1px solid var(--border);background:oklch(0.155 0.024 265 / .6);
+    transition:border-color .3s var(--ease),background .3s var(--ease),box-shadow .3s var(--ease)}
+  .creator:hover{background:oklch(0.175 0.026 265 / .8);border-color:var(--w-line);
+    box-shadow:0 0 32px -18px var(--w-glow)}
+  .creator .top{display:flex;align-items:center;gap:10px}
+  .creator .avatar{width:44px;height:44px}
+  .creator .avatar .figure{width:29px;height:29px;margin-left:-14.5px}
+  .creator .cname{font-size:13.5px;font-weight:590;letter-spacing:.02em}
+  .creator .cmeta{margin-top:3px;font-size:11.5px;letter-spacing:.03em;color:oklch(0.66 0.018 265);
+    font-variant-numeric:tabular-nums}
+  .creator .cnote{margin-top:11px;font-size:12px;line-height:1.75;color:var(--muted)}
+  .creator .btn-follow{margin:13px 0 0;width:100%;text-align:center}
+
+  /* ================= 空态与页脚 ================= */
+  .empty{padding:56px 20px;text-align:center;border:1px solid var(--border);border-radius:var(--r-lg);
+    background:oklch(0.15 0.024 265 / .6)}
+  .empty p{font-family:var(--font-display);font-size:16px;line-height:1.6}
+  .empty small{display:block;margin-top:9px;font-size:12.5px;line-height:1.75;color:var(--muted)}
+  .feedfoot{margin-top:34px;text-align:center}
+  .feedfoot a{min-height:44px;display:inline-flex;align-items:center;gap:8px;padding:0 10px;
+    font-size:13.5px;letter-spacing:.04em;color:var(--muted);border-radius:var(--r-sm);
+    transition:color .15s var(--ease),background .15s var(--ease)}
+  .feedfoot a:hover{color:var(--fg);background:oklch(1 0 0 / .07)}
+
+  /* ================= 分叉弹层 ================= */
+  .toast{position:fixed;left:50%;bottom:32px;transform:translate(-50%,10px);z-index:90;
+    max-width:min(420px,calc(100vw - 32px));padding:12px 18px;border-radius:var(--r-pill);
+    font-size:13px;line-height:1.5;letter-spacing:.02em;text-align:center;
+    background:oklch(0.17 0.026 265 / .97);border:1px solid var(--border-2);color:var(--fg);
+    box-shadow:0 20px 50px -28px oklch(0.02 0 0 / .9);
+    opacity:0;visibility:hidden;transition:opacity .22s var(--ease),transform .22s var(--ease),visibility .22s}
+  .toast.on{opacity:1;visibility:visible;transform:translate(-50%,0)}
+
+  .modal{position:fixed;inset:0;z-index:80;display:grid;place-items:center;padding:24px;
+    background:oklch(0.06 0.014 265 / .78);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+  .modal[hidden]{display:none}
+  .modal-panel{width:min(100%,468px);max-height:calc(100vh - 48px);overflow:auto;
+    border-radius:var(--r-lg);border:1px solid var(--border-2);padding:26px;
+    background:
+      linear-gradient(180deg, oklch(0.24 0.060 var(--hue) / .34), transparent 42%),
+      oklch(0.145 0.024 265 / .98);
+    box-shadow:0 40px 96px -46px oklch(0.02 0 0 / .95)}
+  .modal-eyebrow{font-size:10.5px;letter-spacing:.24em;font-weight:590;color:var(--w-kick)}
+  .modal-panel h2{margin-top:12px;font-family:var(--font-display);font-weight:700;font-size:22px;
+    line-height:1.4;letter-spacing:0}
+  .modal-panel .sub{margin-top:9px;font-size:12.5px;line-height:1.8;color:var(--muted)}
+  .field{margin-top:20px;display:block}
+  .field > span,.field > label > span{display:block;font-size:12px;font-weight:590;letter-spacing:.08em;color:var(--muted);
+    margin-bottom:8px}
+  .field input,.field select,.field textarea{width:100%;min-height:44px;padding:11px 13px;
+    border-radius:var(--r-sm);border:1px solid var(--border-2);background:oklch(0.10 0.018 265 / .8);
+    color:var(--fg);font-size:14px;line-height:1.6;
+    transition:border-color .16s var(--ease),background .16s var(--ease)}
+  .field textarea{min-height:82px;resize:vertical;font-family:var(--font-display);line-height:1.85}
+  .field input:hover,.field select:hover,.field textarea:hover{border-color:oklch(1 0 0 / .32)}
+  .field input:focus-visible,.field select:focus-visible,.field textarea:focus-visible{
+    border-color:var(--accent);box-shadow:var(--ring)}
+  .field .counter{margin-top:7px;font-size:11.5px;letter-spacing:.04em;color:oklch(0.64 0.018 265);
+    font-variant-numeric:tabular-nums}
+  .err{margin-top:8px;font-size:12.5px;line-height:1.6;color:oklch(0.78 0.150 25);
+    display:flex;align-items:center;gap:7px}
+  .err[hidden]{display:none}
+  .field.invalid input{border-color:oklch(0.66 0.150 25)}
+  .modal-foot{margin-top:26px;display:flex;align-items:center;gap:12px}
+  .btn-ghost{min-height:44px;padding:0 15px;border-radius:var(--r-pill);border:1px solid var(--border-2);
+    background:transparent;color:var(--fg);font-size:13.5px;font-weight:510;letter-spacing:.03em;
+    transition:background .16s var(--ease),border-color .16s var(--ease)}
+  .btn-ghost:hover{background:oklch(1 0 0 / .10);border-color:oklch(1 0 0 / .34)}
+  /* 全页唯一的实心暖金按钮(第 2 处暖金,第 1 处是品牌标记) */
+  .btn-accent{margin-left:auto;min-height:48px;padding:0 24px;border-radius:var(--r-pill);border:0;
+    background:var(--accent);color:oklch(0.16 0.03 85);font-size:14.5px;font-weight:590;letter-spacing:.03em;
+    display:inline-flex;align-items:center;gap:9px;transition:background .16s var(--ease),transform .1s}
+  .btn-accent:hover{background:oklch(0.90 0.135 85);color:oklch(0.14 0.03 85)}
+  .btn-accent:active{transform:translateY(1px)}
+  .done{padding:6px 0 0}
+  .done p{font-family:var(--font-display);font-size:15.5px;line-height:1.9}
+  .done .path{margin-top:14px;padding:13px 15px;border-radius:var(--r-md);border:1px solid var(--border);
+    background:oklch(1 0 0 / .04);font-size:12.5px;line-height:1.85;color:var(--muted)}
+  .done .path b{color:var(--fg);font-weight:590}
+
+  /* ================= 响应式 ================= */
+  @media(max-width:1024px){
+    .event{grid-template-columns:340px minmax(0,1fr)}
+    .pane{width:138px;height:98px}
+    .fork-line{width:56px;height:98px}
+  }
+  @media(max-width:880px){
+    .topbar{padding:12px 16px;gap:8px}
+    .brand .en{display:none}
+    .topnav{gap:2px}
+    .topnav a,.nav-soon{padding:0 9px;font-size:12.5px}
+    .nav-soon .tag{display:none}
+    .btn-create{margin-left:4px;height:44px;padding:0 13px;font-size:12.5px}
+    .wrap{padding:0 16px 80px}
+    .pagehead{padding:30px 0 24px}
+    .filters{position:static;margin:0 0 20px;border-radius:var(--r-md)}
+    .filters .spacer{margin-left:0;flex-basis:100%;height:0}
+    .follow-only{margin-left:-4px}
+    /* 小屏重新编排:双世界横排改为上下承接,分叉线转 90° */
+    .event{grid-template-columns:minmax(0,1fr);gap:14px}
+    .lineage{display:grid;grid-template-columns:minmax(0,1fr) 52px minmax(0,1fr);align-items:center}
+    .pane{width:auto;height:104px}
+    .fork-line{width:52px;height:104px}
+    .btn-follow{margin-left:0}
+    .efoot{padding-top:14px}
+    .efoot .grow{flex-basis:100%;height:0;margin:0}
+    .btn-fork{width:100%;justify-content:center}
+    .creator{width:186px}
+  }
+  @media(max-width:560px){
+    .topnav .nav-soon{display:none}
+    .btn-create{width:44px;padding:0;justify-content:center}
+    .btn-create .label{display:none}
+    .seg{flex-wrap:wrap}
+    .seg button{height:38px;padding:0 11px;font-size:12.5px}
+    .seg button .lbl{display:inline}
+    .pane .role{font-size:8.5px;padding:2px 6px}
+    .lineage{grid-template-columns:minmax(0,1fr) 40px minmax(0,1fr)}
+    .fork-line{width:40px}
+    .modal-panel{padding:20px}
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    *{animation:none!important;transition:none!important}
+    .event{opacity:1;transform:none}
+  }
+</style>
+</head>
+<body>
+<div class="space" data-od-id="space-backdrop"></div>
+<div class="stars" id="stars" aria-hidden="true"></div>
+<div class="grain" aria-hidden="true"></div>
+<div class="vignette" aria-hidden="true"></div>
+
+<!-- ============ 顶栏 ============ -->
+<header class="topbar" data-od-id="topbar">
+  <a class="brand" href="home-galaxy.html" aria-label="万象 · Story Editor · 回到星海">
+    <span class="mark" aria-hidden="true">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 19.5v-6M12 13.5 7.7 8.9M12 13.5l4.3-4.6"/>
+        <circle cx="12" cy="20" r="1.3" fill="currentColor" stroke="none"/>
+        <circle cx="7.4" cy="8.3" r="2.2" fill="var(--accent)" stroke="none"/>
+        <circle cx="16.6" cy="8.3" r="2.2" fill="currentColor" stroke="none"/>
+      </svg>
+    </span>
+    <span class="zh">万象</span>
+    <span class="en">STORY EDITOR</span>
+  </a>
+  <nav class="topnav" aria-label="主导航" data-od-id="primary-navigation">
+    <a href="home-galaxy.html" data-od-id="nav-galaxy">星海</a>
+    <a href="works-library.html" data-od-id="nav-works-library">作品馆</a>
+    <a href="reading-history.html" data-od-id="nav-history">历史记录</a>
+    <a href="profile-space.html" data-od-id="nav-my-space">我的空间</a>
+    <a href="community.html" aria-current="page" data-od-id="nav-community">社区</a>
+  </nav>
+  <a class="btn-create" href="create-editor.html" data-od-id="cta-create"
+     aria-label="写一个世界 · 打开创作编辑器">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+    <span class="label">写一个世界</span>
+  </a>
+</header>
+
+<div class="wrap">
+  <!-- ============ 页头 ============ -->
+  <section class="pagehead" data-od-id="page-head">
+    <p class="eyebrow">万象 · 社区广场</p>
+    <h1>世界正在分叉。</h1>
+    <p class="lead">这里流动的不是动态,是岔路。每一条都是某个人在别人的世界里,拐了一个原作者没想到的弯。</p>
+    <p class="tally" data-od-id="feed-tally">
+      <span>本页 <b id="tally-events">—</b> 条衍生</span>
+      <span>涉及 <b id="tally-worlds">—</b> 个世界</span>
+      <span>你关注了 <b id="tally-following">—</b> 位创作者</span>
+    </p>
+  </section>
+
+  <!-- ============ 筛选条 ============ -->
+  <div class="filters" data-od-id="feed-filters">
+    <div class="seg" role="group" aria-label="按衍生类型筛选">
+      <button type="button" data-filter="all" aria-pressed="true" data-od-id="filter-all">全部</button>
+      <button type="button" data-filter="fork" aria-pressed="false" data-od-id="filter-fork">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v6a4 4 0 0 0 4 4h6"/><path d="M15 11l3 3-3 3"/><path d="M7 14v6"/></svg>
+        <span class="lbl">开新分支</span>
+      </button>
+      <button type="button" data-filter="continue" aria-pressed="false" data-od-id="filter-continue">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h13"/><path d="M15 8l4 4-4 4"/></svg>
+        <span class="lbl">续写节点</span>
+      </button>
+      <button type="button" data-filter="rewrite" aria-pressed="false" data-od-id="filter-rewrite">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v4h-4"/></svg>
+        <span class="lbl">世界被改写</span>
+      </button>
+    </div>
+    <span class="spacer"></span>
+    <button class="follow-only" type="button" id="follow-only" aria-pressed="false" data-od-id="filter-following-only">
+      <span class="track" aria-hidden="true"></span>
+      只看我关注的
+    </button>
+  </div>
+
+  <!-- ============ 事件流 ============ -->
+  <main class="feed" id="feed" aria-label="衍生事件流" data-od-id="derivation-feed"></main>
+  <div class="empty" id="feed-empty" hidden data-od-id="feed-empty">
+    <p>这个筛选下暂时没有衍生</p>
+    <small>换一个类型,或者关掉「只看我关注的」。</small>
+  </div>
+
+  <p class="feedfoot" data-od-id="feed-footer">
+    <a href="works-library.html">去作品馆看全部世界
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h13"/><path d="M13 6l6 6-6 6"/></svg>
+    </a>
+  </p>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<!-- ============ 分叉弹层 ============ -->
+<div class="modal" id="fork-modal" role="dialog" aria-modal="true" aria-labelledby="fork-title" hidden data-od-id="fork-dialog">
+  <div class="modal-panel world-scope" id="fork-panel" style="--hue:252">
+    <p class="modal-eyebrow">从这里分叉</p>
+    <h2 id="fork-title">母世界</h2>
+    <p class="sub" id="fork-sub"></p>
+
+    <form id="fork-form" novalidate data-od-id="fork-form">
+      <label class="field" for="fork-node"><span>分支起点</span>
+        <select id="fork-node" data-od-id="fork-field-node"></select>
+      </label>
+      <div class="field" id="fork-name-field">
+        <label for="fork-name"><span>分支名</span></label>
+        <input id="fork-name" type="text" maxlength="20" autocomplete="off"
+               placeholder="给这条岔路起个名字" aria-describedby="fork-name-err fork-name-count"
+               data-od-id="fork-field-name" />
+        <p class="counter" id="fork-name-count">0 / 20</p>
+        <p class="err" id="fork-name-err" role="alert" hidden>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M12 8v5M12 16.5v.5"/><circle cx="12" cy="12" r="9"/></svg>
+          分支名至少要 2 个字。
+        </p>
+      </div>
+      <label class="field" for="fork-hook"><span>一句钩子(可留空)</span>
+        <textarea id="fork-hook" maxlength="60" placeholder="读者看到的第一句话。" data-od-id="fork-field-hook"></textarea>
+      </label>
+      <div class="modal-foot">
+        <button class="btn-ghost" type="button" id="fork-cancel" data-od-id="fork-cancel">取消</button>
+        <button class="btn-accent" type="submit" data-od-id="fork-submit">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v6a4 4 0 0 0 4 4h6"/><path d="M15 11l3 3-3 3"/><path d="M7 14v6"/></svg>
+          建立分支
+        </button>
+      </div>
+    </form>
+
+    <div class="done" id="fork-done" hidden>
+      <p id="fork-done-msg"></p>
+      <p class="path">分支已经先记在你的空间里,可以在<a href="profile-drafts.html">「我的空间 · 草稿箱」</a>找到。创作编辑器已经上线,但它<b>还不能直接载入这条分支</b>——要等接上后端,现在打开会是一份空白草稿。</p>
+      <div class="modal-foot">
+        <button class="btn-ghost" type="button" id="fork-close" data-od-id="fork-close">回到广场</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="assets/works-data.js"></script>
+<script>
+(function(){
+  'use strict';
+  var RM = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var STORE = 'wanxiang-community-v1';
+
+  /* ---------------- 母世界:沿用 home-galaxy 的 12 部作品与 hue ---------------- */
+  var WORKS = window.WANXIANG_WORKS_BY_KEY || {};
+  /* 已有分支图谱的世界(其余卡片不显示图谱入口,不做假跳转) */
+  var GRAPHS = {radio:1, opera:1, sakura:1};
+  /* 各世界可作为分叉起点的节点。无图谱数据的世界给出两个通用起点。 */
+  var STARTS = {
+    radio:  ['第七个雨夜(开场)','回应呼救','保持静默','城南居民楼','低语开始重复你的名字'],
+    opera:  ['推开戏楼那扇门(开场)','坐进空着的第三排','走上后台','锣声停下的一拍'],
+    sakura: ['开学第一天的天桥(开场)','早出门七分钟','第二年的雨季','毕业前最后一次同路'],
+    _:      ['从这个世界的开场','从我读到的地方']
+  };
+
+  /* ---------------- 衍生事件:演示数据(尚未接后端 /api/v1/stories) ---------------- */
+  var EVENTS = [
+    {t:'fork', w:'radio', ago:'2 小时前', who:'沉默的信号员', wf:'radio',
+     bn:'第七夜的回声', bh:196, bf:'gaze', node:'回应呼救',
+     s:'把原作的救援频段改成一段无人应答的独白——如果始终没人回应,你还会继续呼叫吗?',
+     plays:812, forks:3, follow:true,  save:false},
+    {t:'continue', w:'opera', ago:'4 小时前', who:'后台阿七', wf:'walk',
+     bn:'散场之后', bh:38, bf:'walk', node:'锣声停下的一拍',
+     s:'续写了戏散那一刻:观众席空了,可锣声还往下走了三拍。第四拍是谁敲的,留给下一个人写。',
+     plays:604, forks:1, follow:false, save:true},
+    {t:'rewrite', w:'neon', ago:'6 小时前', who:'灰街修理工', wf:'umbrella',
+     bn:'义体索引 v2', bh:288, bf:'umbrella', node:'黑市醒来',
+     s:'把「嫌疑度」从隐藏属性改成渐显——玩家会在第三章亲眼看到自己被这座城市标记。',
+     plays:1240, forks:2, follow:false, save:false},
+    {t:'fork', w:'sakura', ago:'8 小时前', who:'天桥常客', wf:'walk',
+     bn:'早七分钟', bh:20, bf:'walk', node:'早出门七分钟',
+     s:'原作里那七分钟只是习惯。这条岔路上,它变成了一场持续三年的、双方都没承认的等待。',
+     plays:2106, forks:5, follow:true, save:true},
+    {t:'fork', w:'diver', ago:'11 小时前', who:'白鲸号残页', wf:'gaze',
+     bn:'八百米之下', bh:232, bf:'gaze', node:'声呐照出轮廓',
+     s:'让日志变成不可靠叙述:潜航员写下的每一行,都比他真正看见的少一点。',
+     plays:733, forks:2, follow:false, save:false},
+    {t:'continue', w:'bakery', ago:'14 小时前', who:'凌晨四点的烤箱', wf:'walk',
+     bn:'第八年的第一炉', bh:108, bf:'walk', node:'第七年的最后一天',
+     s:'外婆的配方少了一味。续写的人把它留成空白,让每个玩家自己填进去一样东西。',
+     plays:488, forks:1, follow:false, save:false},
+    {t:'fork', w:'blade', ago:'昨天', who:'关外驿卒', wf:'blade',
+     bn:'棺中人的名字', bh:264, bf:'blade', node:'大雪封城的除夕',
+     s:'原作到出关为止。这条岔路把棺盖打开了——里面的人还有一口气,而且认得你。',
+     plays:1518, forks:4, follow:true, save:false},
+    {t:'rewrite', w:'guest', ago:'昨天', who:'第十四把椅子', wf:'gaze',
+     bn:'席位重排', bh:220, bf:'gaze', node:'主人举杯致辞',
+     s:'改写了座位表的生成规则:每次进入,多出来的那个人都换一张脸。',
+     plays:967, forks:2, follow:false, save:true},
+    {t:'fork', w:'sun', ago:'2 天前', who:'留守站信使', wf:'reach',
+     bn:'未寄出的第九封', bh:60, bf:'reach', node:'星舰起航前夜',
+     s:'前八封都寄到了另一条时间线。第九封留在抽屉里,因为写信的人改了主意。',
+     plays:1072, forks:3, follow:false, save:false},
+    {t:'continue', w:'rust', ago:'2 天前', who:'陆行舰驾驶座', wf:'walk',
+     bn:'九百公里之后', bh:24, bf:'walk', node:'最后一格油',
+     s:'把「幻觉」这条隐藏属性接到了续写里:油越少,前方那片水看得越清楚。',
+     plays:645, forks:1, follow:false, save:false},
+    {t:'fork', w:'cicada', ago:'3 天前', who:'八月十四日', wf:'gaze',
+     bn:'第二个八月', bh:148, bf:'gaze', node:'蝉同时安静',
+     s:'原作是一个人记得。这条岔路上,第二个人也开始记得了——而他们的版本并不一致。',
+     plays:1394, forks:6, follow:true, save:true},
+    {t:'rewrite', w:'immortal', ago:'3 天前', who:'桃木簪', wf:'blade',
+     bn:'尘缘不斩', bh:344, bf:'blade', node:'雷云压顶',
+     s:'把「尘缘」从渐显改成一开始就摆在面前——飞升不再是选择题,是代价表。',
+     plays:1183, forks:2, follow:false, save:false},
+    {t:'fork', w:'radio', ago:'4 天前', who:'夜航员K', wf:'radio',
+     bn:'城北还有人吗', bh:300, bf:'radio', node:'有人循声而来',
+     s:'把镜头交给对讲机另一端:你终于回应了,但说话的人不在城南。',
+     plays:640, forks:1, follow:false, save:false},
+    {t:'continue', w:'sakura', ago:'5 天前', who:'第三教学楼', wf:'walk',
+     bn:'毕业那天的天桥', bh:356, bf:'walk', node:'毕业前最后一次同路',
+     s:'三年后的同一座天桥,同一个时刻。这次先开口的人换了。',
+     plays:1836, forks:3, follow:true, save:false},
+    {t:'fork', w:'opera', ago:'6 天前', who:'十五的月亮', wf:'umbrella',
+     bn:'第二出戏', bh:96, bf:'umbrella', node:'坐进空着的第三排',
+     s:'原作只演一出。这条岔路让戏一出接一出地演下去,而每一出都比上一出更像你的生平。',
+     plays:702, forks:2, follow:false, save:false},
+    {t:'fork', w:'neon', ago:'6 天前', who:'别去找自己', wf:'umbrella',
+     bn:'别去找自己', bh:200, bf:'umbrella', node:'终端里的未读消息',
+     s:'把那条警告当成任务提示:你花了整条支线去找自己,找到的时候后悔了。',
+     plays:1455, forks:4, follow:false, save:true},
+    {t:'continue', w:'diver', ago:'上周', who:'日志第四十页', wf:'gaze',
+     bn:'日志第四十一页', bh:180, bf:'gaze', node:'任务日志要求记录一切',
+     s:'第四十一页被撕掉了。续写从第四十二页开始,而读者永远读不到中间那一页。',
+     plays:521, forks:1, follow:false, save:false},
+    {t:'rewrite', w:'sakura', ago:'上周', who:'每秒五厘米', wf:'walk',
+     bn:'距离改为可见', bh:316, bf:'walk', node:'开学第一天的天桥',
+     s:'把「距离」从数值改成一句会变的话,玩家看到的不是数字,是今天还差多少步。',
+     plays:2247, forks:7, follow:false, save:false}
+  ];
+
+  var CREATORS = [
+    {who:'沉默的信号员', f:'radio', h:196, worlds:7,  forks:126, note:'专写「没人回应」的场景。三部作品都在同一座雨里的城市。'},
+    {who:'天桥常客',     f:'walk',  h:20,  worlds:12, forks:341, note:'写日常里迟到七分钟的那种心动,从不写告白成功。'},
+    {who:'关外驿卒',     f:'blade', h:264, worlds:5,  forks:88,  note:'刀在鞘里的篇幅比出鞘长。擅长把仇家写成故人。'},
+    {who:'白鲸号残页',   f:'gaze',  h:232, worlds:4,  forks:73,  note:'所有分支都伪装成任务日志,读者要自己发现哪一页在说谎。'},
+    {who:'八月十四日',   f:'gaze',  h:148, worlds:9,  forks:204, note:'只写循环。每条岔路都是同一个夏天的第 N 次重来。'},
+    {who:'灰街修理工',   f:'umbrella', h:288, worlds:6, forks:151, note:'改属性系统比写正文多。义体、嫌疑度、算力全出自他手。'}
+  ];
+
+  var TYPE_META = {
+    fork:     {label:'开新分支', icon:'<path d="M7 4v6a4 4 0 0 0 4 4h6"/><path d="M15 11l3 3-3 3"/><path d="M7 14v6"/>'},
+    continue: {label:'续写节点', icon:'<path d="M3 12h13"/><path d="M15 8l4 4-4 4"/>'},
+    rewrite:  {label:'世界被改写', icon:'<path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v4h-4"/>'}
+  };
+
+  /* ---------------- 剪影(复用 home-galaxy 的 figure API) ---------------- */
+  function figure(type){
+    var head='<circle cx="50" cy="14" r="7.4"/>';
+    var torso='<path d="M50 22c-5.4 0-9.4 3.6-10.1 8.7l-1.7 12.9c-.3 2.3 1.5 4.2 3.8 4.2h16c2.3 0 4.1-1.9 3.8-4.2l-1.7-12.9C59.4 25.6 55.4 22 50 22z"/>';
+    var legs='<path d="M45.6 47 43.6 80" stroke-width="6" stroke-linecap="round" fill="none"/>'+
+             '<path d="M54.4 47 56.4 80" stroke-width="6" stroke-linecap="round" fill="none"/>';
+    var arms='';
+    if(type==='gaze'){
+      head='<circle cx="49" cy="13" r="7.4"/>';
+      arms='<path d="M41 30 35 49" stroke-width="5" stroke-linecap="round" fill="none"/>'+
+           '<path d="M59 30 66 47" stroke-width="5" stroke-linecap="round" fill="none"/>';
+    }else if(type==='radio'){
+      arms='<path d="M41 30 36 50" stroke-width="5" stroke-linecap="round" fill="none"/>'+
+           '<path d="M59 31 64 38 57 23" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>'+
+           '<rect x="53" y="15" width="6" height="9" rx="1.4"/>';
+    }else if(type==='blade'){
+      arms='<path d="M41 30 36 50" stroke-width="5" stroke-linecap="round" fill="none"/>'+
+           '<path d="M59 30 64 50" stroke-width="5" stroke-linecap="round" fill="none"/>'+
+           '<path d="M64 52 72 16" stroke-width="2.6" stroke-linecap="round" fill="none"/>';
+    }else if(type==='umbrella'){
+      arms='<path d="M41 30 36 50" stroke-width="5" stroke-linecap="round" fill="none"/>'+
+           '<path d="M59 30 63 19" stroke-width="5" stroke-linecap="round" fill="none"/>'+
+           '<path d="M63 19 63 8" stroke-width="2.2" stroke-linecap="round" fill="none"/>'+
+           '<path d="M47 12q16-13 32 0z"/>';
+    }else if(type==='reach'){
+      arms='<path d="M41 30 29 19" stroke-width="5" stroke-linecap="round" fill="none"/>'+
+           '<path d="M59 30 71 19" stroke-width="5" stroke-linecap="round" fill="none"/>';
+    }else{
+      legs='<path d="M45.6 47 40 79" stroke-width="6" stroke-linecap="round" fill="none"/>'+
+           '<path d="M54.4 47 61 78" stroke-width="6" stroke-linecap="round" fill="none"/>';
+      arms='<path d="M41 30 45 49" stroke-width="5" stroke-linecap="round" fill="none"/>'+
+           '<path d="M59 30 55 49" stroke-width="5" stroke-linecap="round" fill="none"/>';
+    }
+    return '<svg viewBox="0 0 100 92" aria-hidden="true"><g fill="currentColor" stroke="currentColor">'
+      + head + torso + legs + arms + '</g></svg>';
+  }
+
+  /* 一片天空:星点由 hue 与序号决定,刷新一致 */
+  function skyHTML(hue, pose){
+    var dots='', i;
+    for(i=0;i<12;i++){
+      var x = ((hue*(i+3)*37) % 97) + 1;
+      var y = ((hue*(i+7)*19) % 50) + 2;
+      var o = 0.35 + (((hue*(i+5)) % 60)/100);
+      dots += '<span class="dot" style="left:'+x+'%;top:'+y+'%;opacity:'+o.toFixed(2)+'"></span>';
+    }
+    return '<span class="sky">'+dots+
+      '<span class="streak" style="left:12%;top:12%;width:38px"></span>'+
+      '<span class="cloud c1"></span><span class="cloud c2"></span></span>'+
+      '<span class="horizon"></span>'+
+      '<span class="figure">'+figure(pose)+'</span>';
+  }
+  function num(v){ return String(v).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+
+  /* ---------------- 持久化关注 / 收藏 ---------------- */
+  var saved = {};
+  try{ saved = JSON.parse(window.localStorage.getItem(STORE) || '{}') || {}; }catch(e){ saved = {}; }
+  var state = {
+    filter: saved.filter || 'all',
+    followOnly: !!saved.followOnly,
+    follows: saved.follows || {},
+    saves:   saved.saves   || {}
+  };
+  EVENTS.forEach(function(ev, i){
+    if(!(ev.who in state.follows)) state.follows[ev.who] = ev.follow;
+    if(!(i in state.saves)) state.saves[i] = ev.save;
+  });
+  CREATORS.forEach(function(c){
+    if(!(c.who in state.follows)) state.follows[c.who] = false;
+  });
+  function persist(){
+    try{ window.localStorage.setItem(STORE, JSON.stringify(state)); }catch(e){}
+  }
+
+  /* ---------------- 分叉线 ---------------- */
+  function forkLine(type, i){
+    var id = 'lg-' + i;
+    var defs = '<defs><linearGradient id="'+id+'" x1="0" y1="0" x2="1" y2="0">'
+      + '<stop class="a" offset="0"/><stop class="b" offset="1"/></linearGradient></defs>';
+    var g = 'url(#'+id+')';
+    var body;
+    if(type === 'fork'){
+      body = '<path class="base" d="M0 56 H24"/>'
+           + '<path class="old" d="M24 56 C38 56 40 84 64 84"/>'
+           + '<path class="live" stroke="'+g+'" d="M24 56 C38 56 40 28 64 28"/>'
+           + '<circle class="knot" cx="24" cy="56" r="3" fill="'+g+'"/>';
+    }else if(type === 'continue'){
+      body = '<path class="live" stroke="'+g+'" d="M0 56 H58"/>'
+           + '<path class="live" stroke="'+g+'" d="M52 50 L60 56 L52 62"/>'
+           + '<circle class="knot" cx="22" cy="56" r="3" fill="'+g+'"/>';
+    }else{
+      body = '<path class="old" d="M0 62 C22 62 40 70 64 70"/>'
+           + '<path class="live" stroke="'+g+'" d="M0 50 C22 50 40 42 64 42"/>'
+           + '<circle class="knot" cx="32" cy="46" r="3.4" fill="'+g+'"/>';
+    }
+    return '<svg class="fork-line" viewBox="0 0 64 112" preserveAspectRatio="none" aria-hidden="true">'
+      + defs + body + '</svg>';
+  }
+
+  /* ---------------- 建卡 ---------------- */
+  var feed = document.getElementById('feed');
+  var emptyBox = document.getElementById('feed-empty');
+  var nodes = [];
+
+  function creatorTrack(from, count, title, note){
+    var sec = document.createElement('section');
+    sec.className = 'creators';
+    sec.setAttribute('data-od-id', 'creator-track-' + (from === 0 ? '1' : '2'));
+    var cards = CREATORS.slice(from, from + count).map(function(c, i){
+      return '<article class="creator world-scope" style="--hue:'+c.h+'" data-od-id="creator-'+(from+i+1)+'">'
+        + '<div class="top">'
+        +   '<span class="avatar world-scope" style="--hue:'+c.h+'" aria-hidden="true">'
+        +     '<span class="figure">'+figure(c.f)+'</span></span>'
+        +   '<div><p class="cname">'+c.who+'</p>'
+        +   '<p class="cmeta">'+c.worlds+' 个世界 · '+num(c.forks)+' 条分叉</p></div>'
+        + '</div>'
+        + '<p class="cnote">'+c.note+'</p>'
+        + '<button class="btn-follow" type="button" data-follow="'+c.who+'" aria-pressed="'
+        +   (state.follows[c.who] ? 'true' : 'false')+'">'
+        +   (state.follows[c.who] ? '已关注' : '关注')+'</button>'
+        + '</article>';
+    }).join('');
+    sec.innerHTML = '<h2>'+title+' <small>'+note+'</small></h2>'
+      + '<div class="track" tabindex="0" role="group" aria-label="'+title+'(可横向滚动)">'+cards+'</div>';
+    return sec;
+  }
+
+  function build(){
+    feed.textContent = '';
+    nodes = [];
+    EVENTS.forEach(function(ev, i){
+      var w = WORKS[ev.w];
+      var meta = TYPE_META[ev.t];
+      var el = document.createElement('article');
+      el.className = 'event';
+      el.dataset.type = ev.t;
+      el.dataset.index = String(i);
+      el.dataset.who = ev.who;
+      el.dataset.hue = String(ev.bh);
+      el.setAttribute('data-od-id', 'event-card-' + (i + 1));
+      /* 卡级别的描边/辉光取新分支的 hue —— 焦点在「长出来的东西」上 */
+      el.style.setProperty('--evt-line', 'oklch(0.72 0.140 ' + ev.bh + ' / .60)');
+      el.style.setProperty('--evt-glow', 'oklch(0.72 0.140 ' + ev.bh + ' / .55)');
+
+      var graphLink = GRAPHS[ev.w]
+        ? '<a class="link-graph" href="derivation-graph.html?world='+ev.w+'" data-od-id="event-graph-'+(i+1)+'">'
+          + '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v5"/><path d="M12 9 6.5 15"/><path d="M12 9l5.5 6"/><circle cx="12" cy="3.4" r="1.6"/><circle cx="6" cy="16.6" r="1.6"/><circle cx="18" cy="16.6" r="1.6"/></svg>'
+          + '看这个世界的分支图谱</a>'
+        : '';
+
+      el.innerHTML =
+        '<div class="lineage" data-od-id="event-lineage-'+(i+1)+'"'
+        + ' style="--from-line:oklch(0.72 0.140 '+w.h+' / .85);--to-line:oklch(0.72 0.140 '+ev.bh+' / .85)">'
+        +   '<div class="pane from world-scope" style="--hue:'+w.h+'">'
+        +     skyHTML(w.h, w.f)
+        +     '<span class="role">母世界</span>'
+        +     '<span class="plate"><span class="kicker">'+w.k+'</span><span class="name">'+w.n+'</span></span>'
+        +   '</div>'
+        +   forkLine(ev.t, i)
+        +   '<div class="pane to world-scope" style="--hue:'+ev.bh+'">'
+        +     skyHTML(ev.bh, ev.bf)
+        +     '<span class="role">新分支</span>'
+        +     '<span class="plate"><span class="kicker">'+meta.label+'</span><span class="name">'+ev.bn+'</span></span>'
+        +   '</div>'
+        + '</div>'
+        + '<div class="ebody">'
+        +   '<div class="byline">'
+        +     '<span class="avatar world-scope" style="--hue:'+ev.bh+'" aria-hidden="true">'
+        +       '<span class="figure">'+figure(ev.wf)+'</span></span>'
+        +     '<span class="who">'+ev.who+'</span>'
+        +     '<span class="ago">'+ev.ago+'</span>'
+        +     '<span class="chip"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+meta.icon+'</svg>'+meta.label+'</span>'
+        +     '<button class="btn-follow" type="button" data-follow="'+ev.who+'" aria-pressed="'
+        +       (state.follows[ev.who] ? 'true' : 'false')+'" data-od-id="event-follow-'+(i+1)+'">'
+        +       (state.follows[ev.who] ? '已关注' : '关注')+'</button>'
+        +   '</div>'
+        +   '<p class="esum">'+ev.s+'</p>'
+        +   '<p class="ebranch">在 <b>'+w.n+'</b> 的节点「'+ev.node+'」上,长出 <b>'+ev.bn+'</b></p>'
+        +   '<div class="efoot">'
+        +     '<span class="stats">'
+        +       '<span><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>走过 <b>'+num(ev.plays)+'</b> 次</span>'
+        +       '<span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v6a4 4 0 0 0 4 4h6"/><path d="M7 14v6"/></svg>已长出 <b>'+ev.forks+'</b> 条岔路</span>'
+        +     '</span>'
+        +     graphLink
+        +     '<span class="grow"></span>'
+        +     '<button class="btn-icon" type="button" data-save="'+i+'" aria-pressed="'
+        +       (state.saves[i] ? 'true' : 'false')+'" aria-label="收藏这条衍生" data-od-id="event-save-'+(i+1)+'">'
+        +       '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4h12v16l-6-4.6L6 20z"/></svg></button>'
+        +     '<button class="btn-fork" type="button" data-fork="'+i+'" data-od-id="event-fork-'+(i+1)+'">'
+        +       '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v6a4 4 0 0 0 4 4h6"/><path d="M15 11l3 3-3 3"/><path d="M7 14v6"/></svg>'
+        +       '从这里分叉</button>'
+        +   '</div>'
+        + '</div>';
+      feed.appendChild(el);
+      nodes.push(el);
+      /* 分叉线渐变端点:两侧各取自己 hue 的 --w-line,L / C 写死不变 */
+      var stops = el.querySelectorAll('.fork-line stop');
+      if(stops.length === 2){
+        stops[0].setAttribute('stop-color', 'oklch(0.72 0.140 ' + w.h + ' / .85)');
+        stops[1].setAttribute('stop-color', 'oklch(0.72 0.140 ' + ev.bh + ' / .85)');
+      }
+      if(i === 5)  feed.appendChild(creatorTrack(0, 3, '正在被追的创作者', '按分叉被继续的次数排'));
+      if(i === 11) feed.appendChild(creatorTrack(3, 3, '改世界的人', '这些人改属性系统比写正文多'));
+    });
+    bindCards();
+    applyFilter(true);
+  }
+
+  /* ---------------- 筛选 ---------------- */
+  function applyFilter(first){
+    var shown = 0;
+    nodes.forEach(function(el){
+      var okType = state.filter === 'all' || el.dataset.type === state.filter;
+      var okFollow = !state.followOnly || state.follows[el.dataset.who];
+      var on = okType && okFollow;
+      el.hidden = !on;
+      if(on){
+        el.classList.remove('in');
+        var d = RM ? 0 : Math.min(shown, 8) * 38;
+        setTimeout(function(){ el.classList.add('in'); }, first ? d + 40 : d);
+        shown++;
+      }
+    });
+    /* 创作者轨道只在「全部 + 不限关注」下出现,避免筛选结果被无关内容打断 */
+    var plain = state.filter === 'all' && !state.followOnly;
+    document.querySelectorAll('.creators').forEach(function(s){ s.hidden = !plain; });
+    emptyBox.hidden = shown > 0;
+    document.getElementById('tally-events').textContent = shown;
+    var worlds = {};
+    nodes.forEach(function(el){ if(!el.hidden) worlds[EVENTS[+el.dataset.index].w] = 1; });
+    document.getElementById('tally-worlds').textContent = Object.keys(worlds).length;
+    var fc = 0;
+    Object.keys(state.follows).forEach(function(k){ if(state.follows[k]) fc++; });
+    document.getElementById('tally-following').textContent = fc;
+  }
+
+  document.querySelectorAll('.seg button').forEach(function(b){
+    if(b.dataset.filter === state.filter) b.setAttribute('aria-pressed', 'true');
+    else b.setAttribute('aria-pressed', 'false');
+    b.addEventListener('click', function(){
+      state.filter = b.dataset.filter;
+      document.querySelectorAll('.seg button').forEach(function(x){
+        x.setAttribute('aria-pressed', String(x === b));
+      });
+      persist(); applyFilter(false);
+    });
+  });
+  var followOnlyBtn = document.getElementById('follow-only');
+  followOnlyBtn.setAttribute('aria-pressed', String(state.followOnly));
+  followOnlyBtn.addEventListener('click', function(){
+    state.followOnly = !state.followOnly;
+    followOnlyBtn.setAttribute('aria-pressed', String(state.followOnly));
+    persist(); applyFilter(false);
+  });
+
+  /* ---------------- 关注 / 收藏 / 环境染色 ---------------- */
+  var root = document.documentElement;
+  var leaveT = null, activeEl = null;
+  function tint(hue){
+    if(RM) return;                       /* 减动效:锁 252,不跟随 */
+    clearTimeout(leaveT);
+    root.style.setProperty('--ambient-hue', hue);
+  }
+  function untint(){
+    if(RM) return;
+    clearTimeout(leaveT);
+    /* 380ms 延迟回落:鼠标穿过卡片间隙时不闪 */
+    leaveT = setTimeout(function(){ root.style.setProperty('--ambient-hue', 252); }, 380);
+  }
+  function setActive(el){
+    if(activeEl && activeEl !== el) activeEl.classList.remove('active');
+    activeEl = el;
+    if(el){ el.classList.add('active'); tint(el.dataset.hue); }
+  }
+
+  function syncFollow(who){
+    document.querySelectorAll('[data-follow="'+who+'"]').forEach(function(b){
+      b.setAttribute('aria-pressed', String(!!state.follows[who]));
+      b.textContent = state.follows[who] ? '已关注' : '关注';
+    });
+  }
+  function bindCards(){
+    document.querySelectorAll('[data-follow]').forEach(function(b){
+      b.addEventListener('click', function(){
+        var who = b.dataset.follow;
+        state.follows[who] = !state.follows[who];
+        syncFollow(who); persist();
+        say(state.follows[who] ? '已关注 ' + who : '已取消关注 ' + who);
+        applyFilter(false);
+      });
+    });
+    document.querySelectorAll('[data-save]').forEach(function(b){
+      b.addEventListener('click', function(){
+        var i = b.dataset.save;
+        state.saves[i] = !state.saves[i];
+        b.setAttribute('aria-pressed', String(!!state.saves[i]));
+        b.setAttribute('aria-label', state.saves[i] ? '取消收藏这条衍生' : '收藏这条衍生');
+        persist();
+        say(state.saves[i] ? '已收藏,可在「我的空间 · 收藏」里找到' : '已取消收藏');
+      });
+    });
+    document.querySelectorAll('[data-fork]').forEach(function(b){
+      b.addEventListener('click', function(){ openFork(+b.dataset.fork, b); });
+    });
+    nodes.forEach(function(el){
+      el.addEventListener('pointerenter', function(){ setActive(el); });
+      el.addEventListener('pointerleave', function(){
+        el.classList.remove('active');
+        if(activeEl === el) activeEl = null;
+        untint();
+      });
+      el.addEventListener('focusin', function(){ setActive(el); });
+      el.addEventListener('focusout', function(e){
+        if(el.contains(e.relatedTarget)) return;
+        el.classList.remove('active');
+        if(activeEl === el) activeEl = null;
+        untint();
+      });
+    });
+  }
+
+  /* 触屏没有 hover:视口垂直中央的那条卡片作为染色源 */
+  if(!RM && !window.matchMedia('(hover:hover)').matches && 'IntersectionObserver' in window){
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(en){
+        if(en.isIntersecting && !en.target.hidden) tint(en.target.dataset.hue);
+      });
+    }, {rootMargin:'-45% 0px -45% 0px', threshold:0});
+    setTimeout(function(){ nodes.forEach(function(el){ io.observe(el); }); }, 0);
+  }
+
+  /* ---------------- 提示条 ---------------- */
+  var toast = document.getElementById('toast'), toastT;
+  function say(msg){
+    toast.textContent = msg;
+    toast.classList.add('on');
+    clearTimeout(toastT);
+    toastT = setTimeout(function(){ toast.classList.remove('on'); }, 3200);
+  }
+  document.querySelectorAll('[data-soon]').forEach(function(b){
+    b.addEventListener('click', function(){ say(b.dataset.soon); });
+  });
+
+  /* ---------------- 分叉弹层 ---------------- */
+  var modal = document.getElementById('fork-modal');
+  var panel = document.getElementById('fork-panel');
+  var form = document.getElementById('fork-form');
+  var doneBox = document.getElementById('fork-done');
+  var nameInput = document.getElementById('fork-name');
+  var nameField = document.getElementById('fork-name-field');
+  var nameErr = document.getElementById('fork-name-err');
+  var nameCount = document.getElementById('fork-name-count');
+  var hookInput = document.getElementById('fork-hook');
+  var nodeSelect = document.getElementById('fork-node');
+  var forkReturn = null, forkIndex = -1;
+
+  function openFork(i, trigger){
+    var ev = EVENTS[i], w = WORKS[ev.w];
+    forkIndex = i; forkReturn = trigger;
+    panel.style.setProperty('--hue', ev.bh);
+    document.getElementById('fork-title').textContent = ev.bn;
+    document.getElementById('fork-sub').textContent =
+      '你正在从《' + w.n + '》的分支「' + ev.bn + '」上再岔出一条。原作者 ' + ev.who + ' 的设定会被继承,你改动的部分只属于你。';
+    var starts = STARTS[ev.w] || STARTS._;
+    nodeSelect.innerHTML = starts.map(function(s, k){
+      return '<option value="'+k+'"'+(s.indexOf(ev.node) === 0 ? ' selected' : '')+'>'+s+'</option>';
+    }).join('');
+    form.hidden = false; doneBox.hidden = true;
+    nameInput.value = ''; hookInput.value = '';
+    nameCount.textContent = '0 / 20';
+    nameField.classList.remove('invalid'); nameErr.hidden = true;
+    modal.hidden = false;
+    document.body.style.overflow = 'hidden';
+    setTimeout(function(){ nameInput.focus(); }, RM ? 0 : 60);
+  }
+  function closeFork(){
+    modal.hidden = true;
+    document.body.style.overflow = '';
+    if(forkReturn) forkReturn.focus();
+  }
+  nameInput.addEventListener('input', function(){
+    nameCount.textContent = nameInput.value.length + ' / 20';
+    if(nameInput.value.trim().length >= 2){
+      nameField.classList.remove('invalid'); nameErr.hidden = true;
+    }
+  });
+  form.addEventListener('submit', function(e){
+    e.preventDefault();
+    var v = nameInput.value.trim();
+    if(v.length < 2){
+      nameField.classList.add('invalid'); nameErr.hidden = false;
+      nameInput.focus();
+      return;
+    }
+    var ev = EVENTS[forkIndex], w = WORKS[ev.w];
+    form.hidden = true; doneBox.hidden = false;
+    document.getElementById('fork-done-msg').textContent =
+      '「' + v + '」已从《' + w.n + '》的节点「' + nodeSelect.options[nodeSelect.selectedIndex].text +
+      '」上岔出。' + (hookInput.value.trim() ? '钩子已记下:' + hookInput.value.trim() : '钩子留空,可以之后再写。');
+    document.getElementById('fork-close').focus();
+    say('分支「' + v + '」已建立');
+  });
+  document.getElementById('fork-cancel').addEventListener('click', closeFork);
+  document.getElementById('fork-close').addEventListener('click', closeFork);
+  modal.addEventListener('click', function(e){ if(e.target === modal) closeFork(); });
+  document.addEventListener('keydown', function(e){
+    if(e.key === 'Escape' && !modal.hidden) closeFork();
+  });
+  /* 浮层内焦点回环 */
+  modal.addEventListener('keydown', function(e){
+    if(e.key !== 'Tab') return;
+    var f = Array.prototype.filter.call(
+      modal.querySelectorAll('a[href],button:not([disabled]),input,select,textarea'),
+      function(el){ return el.offsetParent !== null; });
+    if(!f.length) return;
+    var first = f[0], last = f[f.length - 1];
+    if(e.shiftKey && document.activeElement === first){ e.preventDefault(); last.focus(); }
+    else if(!e.shiftKey && document.activeElement === last){ e.preventDefault(); first.focus(); }
+  });
+
+  /* ---------------- 星点 ---------------- */
+  (function(){
+    var box = document.getElementById('stars'), html = '', i;
+    for(i=0;i<130;i++){
+      var s = Math.random() < 0.86 ? 1 : 2;
+      var o = (0.14 + Math.random()*0.56).toFixed(2);
+      var tw = (!RM && Math.random() < 0.2)
+        ? 'animation:twinkle '+(3+Math.random()*4).toFixed(1)+'s ease-in-out infinite;animation-delay:'+(Math.random()*5).toFixed(1)+'s;'
+        : '';
+      html += '<i style="left:'+(Math.random()*100).toFixed(2)+'%;top:'+(Math.random()*100).toFixed(2)
+           + '%;width:'+s+'px;height:'+s+'px;opacity:'+o+';'+tw+'"></i>';
+    }
+    box.innerHTML = html;
+  })();
+
+  build();
+})();
+</script>
+</body>
+</html>

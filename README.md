@@ -21,11 +21,12 @@
 |---|---|---|---|
 | 1 | [开发交接手册](docs/handoff.md) | 当前实现、代码入口、数据契约、运行/验证、风险和下一步 | **当前事实总览** |
 | 2 | [CLAUDE.md](CLAUDE.md) | 仓库规则、分层边界、实现约定、可执行命令 | **开发规范** |
-| 3 | 本 README | 项目定位、架构、快速启动、当前优先级 | 项目入口 |
-| 4 | [后端 README](backend/README.md) / [Agent README](agent/README.md) / [前端 README](frontend/README.md) | 分别接手 后端中枢 / AI 链路 / 游玩前端时阅读 | 模块事实 |
-| 5 | [设计思路](docs/design.md) | 剧情树、JSONB、Agent 演进等技术决策与扩展方案 | 技术设计 |
-| 6 | [功能设计](docs/prd.md) | 产品愿景、功能边界、长期路线 | PRD；不等于已实现 |
-| 7 | [infa/sql](infa/sql/) | 完整数据模型蓝本；部分表尚未在 GORM 中落地 | 数据设计蓝本 |
+| 3 | [视觉化技术导览](docs/visual-guide.html) | 当前运行时架构、玩家续写数据流、Agent 质量闭环的图解 | 快速理解；不替代源码与交接手册 |
+| 4 | 本 README | 项目定位、架构、快速启动、当前优先级 | 项目入口 |
+| 5 | [后端 README](backend/README.md) / [Agent README](agent/README.md) / [前端 README](frontend/README.md) | 分别接手 后端中枢 / AI 链路 / 游玩前端时阅读 | 模块事实 |
+| 6 | [设计思路](docs/design.md) | 剧情树、JSONB、Agent 演进等技术决策与扩展方案 | 技术设计 |
+| 7 | [功能设计](docs/prd.md) | 产品愿景、功能边界、长期路线 | PRD；不等于已实现 |
+| 8 | [infa/sql](infa/sql/) | 完整数据模型蓝本；部分表尚未在 GORM 中落地 | 数据设计蓝本 |
 
 > **判定冲突时的顺序**：运行中的代码 / 测试 > `docs/handoff.md` > `CLAUDE.md` > 模块 README > 技术设计 > PRD。设计文档中保留了早期设想，不能据此假定功能已存在。
 
@@ -54,6 +55,8 @@
 | 付费、成就 | 未完成 | 仅作为后续方向 |
 
 ## 架构
+
+> 想先建立全局心智模型：打开 [视觉化技术导览](docs/visual-guide.html#runtime)。其中的“玩家续写数据流”和“Agent 质量闭环”分别补足了下方静态结构图无法表达的时序与重试语义。
 
 ```text
 Next.js 前端 :3000

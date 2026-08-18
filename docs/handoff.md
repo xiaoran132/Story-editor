@@ -53,6 +53,8 @@ flowchart LR
   AG -->|"OpenAI-compatible"| LLM["DeepSeek"]
 ```
 
+> **视觉版：**[当前运行时架构](visual-guide.html#runtime) 展示进程边界和唯一写库入口；[一次选择的流式续写](visual-guide.html#player-stream) 展示 `delta` / `revise` / `done` 的时序；[Agent 质量闭环](visual-guide.html#agent-quality) 明确当前单流水线与多 Agent 愿景的区别。它们用于快速定位，路由与契约细节仍以本手册和源码为准。
+
 ### 3.1 三个进程的硬边界
 
 - **`frontend/`**：只调用 Go 后端的 `/api/v1`，不持有数据库或 DeepSeek 凭证。
@@ -137,6 +139,8 @@ handler → service → repository
 
 ### 6.1 开局与续写
 
+> 先看 [一次选择的流式续写图](visual-guide.html#player-stream) 再阅读下方逐步说明：它强调“正文先流、完整结果后持久化”的边界，以及审校重写时的 `revise` 事件。
+
 开局与续写**都走流式**。关键：`StartSession` 只建**空会话**（无根节点、`current_node_id=null`、`node_count=0`），开局正文改由游玩页触发流式生成——这样开局也能逐字流到浏览器（生成发生在游玩页，而非建会话时）。建空会话由**作品详情页**（`/story/:id`）的「开始新游戏」触发。
 
 ```text
@@ -164,6 +168,7 @@ handler → service → repository
 流式与审校共存（Writer / Structurer 分责）：Agent 先由 Writer 流式输出纯正文，结束后由复用同一 `llm_write` 配置的 Structurer 生成 options、state_delta、summary 等元数据；再规整并执行可选 review。拒绝则发 revise，并完整重跑 Writer → Structurer → Reviewer（上限同 `AI_REVIEW_MAX_RETRIES`）。Writer + Structurer 的累计用量回传为 `usage.write`，不新增模型配置或计费阶段。落库/去重/合并只能在流结束后做（依赖完整 delta/options）。前端游玩页 `load()` 见 `current_node=null` 即触发 `startOpening()`，有按 sessionId 的去重守卫防严格模式双触发。
 
 ### 6.2 Agent 质量闭环
+
 
 ```text
 prepare

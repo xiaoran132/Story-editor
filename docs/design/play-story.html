@@ -1,0 +1,1772 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="description" content="万象 · 游玩《最后的深夜电台》—— 世界在你身后活着,你的每一次选择都会把它染成另一种颜色。" />
+<title>最后的深夜电台 · 万象</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;510;590&family=Noto+Serif+SC:wght@500;700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    /* ——— 深空基底(与星海页同一套) ——— */
+    --bg:        oklch(0.13 0.022 265);
+    --bg-deep:   oklch(0.09 0.018 265);
+    --surface:   oklch(0.19 0.030 265);
+    --fg:        oklch(0.96 0.010 90);
+    --muted:     oklch(0.72 0.020 265);
+    --border:    oklch(1 0 0 / 0.11);
+    --border-2:  oklch(1 0 0 / 0.20);
+    --accent:    oklch(0.82 0.125 85);      /* 暖金 · 全局唯一强调,不参与 hue 染色 */
+
+    --font-display:"Noto Serif SC", Georgia, "Songti SC", serif;
+    --font-ui:"Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+    --r-sm:8px; --r-md:12px; --r-lg:18px; --r-pill:999px;
+    --ease:cubic-bezier(.2,0,0,1);
+    /* 双层焦点环:内圈压深底,外圈暖金。单层暖金落在亮态按钮上会消失。 */
+    --ring:0 0 0 2px oklch(0.09 0.018 265), 0 0 0 4px oklch(0.82 0.125 85);
+
+    /* 当前世界的色相。选择会让它偏移,场景 1.1s 过渡跟上。 */
+    --hue:252;
+
+    /* 阅读遮罩浓度。⚠️ 下限锁 0.52:再低正文对比度掉出 AA。
+       滑杆 min 与 JS clamp 双重护栏。 */
+    --reader-veil:.74;
+    --reader-size:17px;
+    --reader-lead:2.05;
+
+    /* 自传背景图替换点:填 url(...) 即可,该层压在场景之上、
+       颗粒/暗角/阅读遮罩之下,护栏因此自动生效。 */
+    --reader-bg:none;
+    --reader-bg-opacity:.42;
+
+    --floor:0%;              /* 地平线所在高度,窄屏上移让出天空 */
+  }
+
+  /* ——— 世界作用域:只设 --hue,角色 token 全部自动重算 ———
+     纪律取自 Mizuki:每个角色的 L / C 固定,只有 H 变化。 */
+  .world-scope{
+    --w-line:   oklch(0.72 0.140 var(--hue) / .85);
+    --w-glow:   oklch(0.72 0.140 var(--hue) / .50);
+    --w-sky-hi: oklch(0.34 0.115 var(--hue));
+    --w-sky-md: oklch(0.22 0.085 var(--hue));
+    --w-sky-lo: oklch(0.11 0.040 var(--hue));
+    --w-halo:   oklch(0.48 0.130 var(--hue) / .75);
+    --w-cloud:  oklch(0.20 0.050 var(--hue) / .85);
+    --w-cloud2: oklch(0.44 0.090 var(--hue) / .50);
+    --w-star:   oklch(0.98 0.020 var(--hue) / .90);
+    --w-ink:    oklch(0.055 0.015 var(--hue));
+    --w-plate:  oklch(0.050 0.015 var(--hue) / .92);
+    --w-text:   oklch(0.97 0.010 var(--hue));
+    --w-kick:   oklch(0.86 0.090 var(--hue));
+  }
+
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg-deep); color:var(--fg);
+    font-family:var(--font-ui); -webkit-font-smoothing:antialiased;
+    overflow:hidden; overscroll-behavior:none;
+  }
+  button,input,textarea{font-family:inherit;color:inherit}
+  button{cursor:pointer}
+  a{color:inherit;text-decoration:none}
+  /* 不在这里改 border-radius:焦点环跟随元素自身圆角,否则 pill 按钮一聚焦就被压成方角 */
+  :focus-visible{outline:none;box-shadow:var(--ring)}
+  .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+
+  /* ============ 世界:身后活着的场景 ============ */
+  .scene{position:fixed;inset:0;z-index:0;overflow:hidden;
+    background:
+      radial-gradient(112% 58% at 70% 6%, var(--w-halo), transparent 60%),
+      linear-gradient(178deg, var(--w-sky-hi) 0%, var(--w-sky-md) 44%, var(--w-sky-lo) 100%);
+    transition:background 1.1s var(--ease)}
+  .scene.is-shifting{will-change:background}
+  /* 试探态:悬停选项时天空朝那条分支偏一点点。比正式变色(1.1s)快,
+     幅度也只走 40%——试探不是抵达。 */
+  .is-probing.scene,.is-probing .cloud,.is-probing .horizon{
+    transition:background .42s var(--ease)}
+  .scene .cloud{position:absolute;border-radius:50%;filter:blur(26px);background:var(--w-cloud);
+    transition:background 1.1s var(--ease)}
+  .scene .c1{width:78%;height:20%;left:-14%;bottom:calc(var(--floor) + 16%);
+    animation:drift1 96s linear infinite}
+  .scene .c2{width:62%;height:14%;left:44%;bottom:calc(var(--floor) + 27%);
+    background:var(--w-cloud2);animation:drift2 132s linear infinite}
+  .scene .c3{width:52%;height:11%;left:8%;bottom:calc(var(--floor) + 38%);opacity:.6;
+    animation:drift1 168s linear infinite reverse}
+  @keyframes drift1{from{transform:translateX(-4%)}to{transform:translateX(10%)}}
+  @keyframes drift2{from{transform:translateX(6%)}to{transform:translateX(-8%)}}
+  .scene .dot{position:absolute;width:1.7px;height:1.7px;border-radius:50%;background:var(--w-star)}
+  .scene .streak{position:absolute;height:1px;width:120px;transform:rotate(26deg);
+    transform-origin:right center;
+    background:linear-gradient(90deg,transparent,var(--w-star));
+    opacity:0;animation:shoot 17s ease-in-out infinite}
+  @keyframes shoot{0%,88%{opacity:0;transform:translate(0,0) rotate(26deg)}
+    92%{opacity:.9}100%{opacity:0;transform:translate(-260px,128px) rotate(26deg)}}
+  .horizon{position:absolute;left:0;right:0;bottom:var(--floor);height:32%;
+    background:linear-gradient(180deg,transparent,var(--w-ink) 64%);
+    transition:background 1.1s var(--ease)}
+  /* 人小,世界大:剪影高度锁 ≤13vh */
+  .stagefig{position:fixed;left:63%;bottom:calc(var(--floor) + 8%);z-index:1;
+    width:clamp(56px,9vh,104px);height:clamp(56px,13vh,132px);
+    color:var(--w-ink);pointer-events:none;
+    animation:breathe 11s ease-in-out infinite}
+  .stagefig svg{width:100%;height:100%;display:block}
+  @keyframes breathe{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+
+  /* 自传背景图层:场景之上,颗粒/暗角/遮罩之下 */
+  .reader-bg{position:fixed;inset:0;z-index:2;pointer-events:none;
+    background-image:var(--reader-bg);background-size:cover;background-position:center;
+    opacity:var(--reader-bg-opacity)}
+  .grain{position:fixed;inset:0;z-index:3;pointer-events:none;opacity:.05;mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='140' height='140' filter='url(%23n)'/></svg>");
+    background-size:140px 140px}
+  .vignette{position:fixed;inset:0;z-index:4;pointer-events:none;
+    background:radial-gradient(122% 96% at 50% 44%, transparent 48%, oklch(0.045 0.01 265 / .82) 100%)}
+
+  /* ============ 顶栏 ============ */
+  .topbar{position:fixed;top:0;left:0;right:0;z-index:40;height:62px;
+    display:flex;align-items:center;gap:12px;padding:0 22px;
+    background:linear-gradient(180deg, oklch(0.06 0.015 var(--hue) / .88), transparent);
+    transition:background 1.1s var(--ease)}
+  .icon-btn{width:44px;height:44px;flex:none;display:grid;place-items:center;border-radius:var(--r-sm);
+    border:1px solid transparent;background:transparent;color:var(--muted);
+    transition:background .15s var(--ease),color .15s var(--ease),border-color .15s var(--ease)}
+  .icon-btn:hover{background:oklch(1 0 0 / .09);color:var(--fg);border-color:var(--border)}
+  .icon-btn[aria-expanded="true"]{background:oklch(1 0 0 / .12);color:var(--fg);border-color:var(--border-2)}
+  .now{min-width:0}
+  .now .t{font-family:var(--font-display);font-weight:700;font-size:15px;line-height:1.4;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .now .s{font-size:11.5px;letter-spacing:.06em;color:var(--muted);margin-top:2px}
+  .demo-chip{margin-left:10px;flex:none;font-size:10.5px;letter-spacing:.1em;color:var(--muted);
+    border:1px solid var(--border);border-radius:var(--r-pill);padding:4px 10px}
+  .topright{margin-left:auto;display:flex;align-items:center;gap:6px}
+  .saved{font-size:11.5px;letter-spacing:.06em;color:var(--muted);opacity:0;
+    transition:opacity .3s var(--ease);white-space:nowrap}
+  .saved.on{opacity:1}
+  .saved.fail{color:oklch(0.78 0.120 30)}
+
+  /* ============ 阅读栏 ============ */
+  .reader{position:fixed;inset:62px 0 0 0;z-index:10;overflow-y:auto;overscroll-behavior:contain;
+    padding:0 26px 26px;scrollbar-width:thin}
+  .reader::-webkit-scrollbar{width:8px}
+  .reader::-webkit-scrollbar-thumb{background:oklch(1 0 0 / .14);border-radius:99px}
+  .column{width:min(660px,100%);margin:0 0 0 clamp(0px,5vw,72px)}
+
+  /* 阅读遮罩:正文坐在它上面。浓度由 --reader-veil 控,下限 0.52。 */
+  .plate{border-radius:var(--r-lg);padding:34px 38px 30px;
+    background:oklch(0.085 0.020 var(--hue) / var(--reader-veil));
+    border:1px solid oklch(1 0 0 / .09);
+    backdrop-filter:blur(15px);-webkit-backdrop-filter:blur(15px);
+    box-shadow:0 30px 80px -46px oklch(0.02 0 0 / .95);
+    transition:background 1.1s var(--ease)}
+
+  .chapter{display:flex;align-items:center;gap:12px;margin-bottom:24px}
+  .chapter .no{font-size:10.5px;letter-spacing:.24em;color:var(--accent);font-weight:590}
+  .chapter .rule{flex:1;height:1px;background:var(--border-2)}
+  .chapter .cnt{font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+
+  .beat{font-family:var(--font-display);font-size:var(--reader-size);line-height:var(--reader-lead);
+    color:oklch(0.94 0.012 var(--hue));margin-bottom:1.05em;
+    opacity:0;transform:translateY(9px);animation:beatIn .58s var(--ease) forwards}
+  @keyframes beatIn{to{opacity:1;transform:none}}
+  .beat.voice{padding-left:16px;border-left:2px solid var(--w-line);
+    color:oklch(0.90 0.030 var(--hue));font-style:normal}
+  .beat.voice b{display:block;font-family:var(--font-ui);font-size:11.5px;font-weight:590;
+    letter-spacing:.14em;color:var(--w-kick);margin-bottom:6px}
+  .beat.mine{color:oklch(0.88 0.012 var(--hue));
+    padding:12px 16px;border-radius:var(--r-md);background:oklch(1 0 0 / .05);
+    border:1px solid var(--border)}
+  .beat.mine b{display:block;font-family:var(--font-ui);font-size:11px;font-weight:590;
+    letter-spacing:.14em;color:var(--muted);margin-bottom:6px}
+  /* 系统行:属性变化 / 演示说明。Inter,小号,不冒充正文。 */
+  .sys{font-family:var(--font-ui);font-size:12px;letter-spacing:.04em;color:var(--muted);
+    margin:-.25em 0 1.15em;display:flex;flex-wrap:wrap;gap:8px;align-items:center;
+    opacity:0;animation:beatIn .5s .1s var(--ease) forwards}
+  .sys em{font-style:normal;color:oklch(0.86 0.070 var(--hue));
+    border:1px solid oklch(0.72 0.140 var(--hue) / .42);border-radius:var(--r-pill);
+    padding:3px 9px;font-variant-numeric:tabular-nums}
+
+  /* ============ 选择 ============ */
+  .choices{margin-top:30px;display:flex;flex-direction:column;gap:10px}
+  .choice{width:100%;text-align:left;padding:16px 18px;border-radius:var(--r-md);
+    background:oklch(1 0 0 / .04);border:1px solid var(--border);
+    display:flex;align-items:flex-start;gap:13px;
+    transition:background .16s var(--ease),border-color .16s var(--ease),transform .1s var(--ease)}
+  .choice:hover{background:oklch(1 0 0 / .10);border-color:var(--w-line)}
+  .choice:active{transform:translateY(1px)}
+  .choice .idx{flex:none;width:22px;height:22px;border-radius:6px;display:grid;place-items:center;
+    font-size:11px;font-weight:590;color:var(--w-kick);
+    border:1px solid oklch(0.72 0.140 var(--hue) / .40);margin-top:1px}
+  .choice .txt{font-family:var(--font-display);font-size:15.5px;line-height:1.75;
+    color:oklch(0.95 0.010 var(--hue))}
+  .choice .txt small{display:block;font-family:var(--font-ui);font-size:11.5px;line-height:1.6;
+    letter-spacing:.03em;color:var(--muted);margin-top:5px}
+  /* 代价标签:选择的重量在按下之前就要看得见。
+     数据来自剧本自身的 fx / reveal / add,不新增内容。
+     常驻渲染而非只在 hover——触屏没有悬停,键盘用户也需要它。
+     复用 .sys em 的胶囊语言,不引入新的视觉母题。 */
+  .choice .cost{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+  .choice .cost span{font-family:var(--font-ui);font-size:11px;letter-spacing:.02em;
+    padding:2px 8px;border-radius:var(--r-pill);font-variant-numeric:tabular-nums;
+    border:1px solid oklch(0.72 0.140 var(--hue) / .34);
+    color:oklch(0.84 0.055 var(--hue));white-space:nowrap;
+    transition:border-color .16s var(--ease)}
+  .choice:hover .cost span,.choice:focus-visible .cost span{
+    border-color:oklch(0.72 0.140 var(--hue) / .62)}
+
+  /* 自由输入:互动剧情的共创入口 */
+  .compose{margin-top:16px;display:flex;gap:10px;align-items:flex-end;
+    padding-top:16px;border-top:1px dashed var(--border)}
+  .compose label{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+  .compose textarea{flex:1;min-height:46px;max-height:120px;resize:none;padding:13px 15px;
+    border-radius:var(--r-md);border:1px solid var(--border);background:oklch(1 0 0 / .04);
+    font-size:14px;line-height:1.6;
+    transition:border-color .16s var(--ease),background .16s var(--ease)}
+  .compose textarea::placeholder{color:oklch(0.60 0.015 265)}
+  .compose textarea:hover{background:oklch(1 0 0 / .07)}
+  .compose textarea:focus{outline:none;border-color:var(--w-line);background:oklch(1 0 0 / .07)}
+  .compose textarea:focus-visible{box-shadow:var(--ring)}
+  /* 全站同一动作唯一的实心主 CTA */
+  .btn-send{flex:none;height:46px;padding:0 20px;border-radius:var(--r-pill);border:0;
+    background:var(--accent);color:oklch(0.16 0.03 85);font-size:14px;font-weight:590;
+    letter-spacing:.03em;display:inline-flex;align-items:center;gap:8px;
+    transition:background .16s var(--ease),transform .1s var(--ease)}
+  .btn-send:hover{background:oklch(0.90 0.135 85)}
+  .btn-send:active{transform:translateY(1px)}
+  .btn-send:disabled{background:oklch(0.42 0.030 85);color:oklch(0.72 0.010 85);cursor:not-allowed}
+  .btn-send .dots{display:inline-block;width:14px;text-align:left}
+  /* 演绎中:表单留在原地进入忙碌态,不留空白 */
+  .compose.busy textarea{opacity:.55}
+  .compose .meter{position:absolute;right:2px;bottom:-18px;font-size:11px;letter-spacing:.03em;
+    color:oklch(0.62 0.015 265);font-variant-numeric:tabular-nums}
+  .compose .meter.over{color:oklch(0.78 0.120 30)}
+  .compose{position:relative;margin-bottom:62px}
+  .compose-note{position:absolute;left:0;bottom:-60px;max-width:62ch;font-size:11px;line-height:1.65;
+    color:oklch(0.62 0.015 265)}
+
+  /* 章末 */
+  .chapend{margin-top:30px;padding:26px 24px;border-radius:var(--r-md);
+    border:1px solid var(--border-2);background:oklch(1 0 0 / .04);text-align:center}
+  .chapend p{font-family:var(--font-display);font-size:15px;line-height:1.9;color:var(--muted)}
+  .chapend .row{margin-top:20px;display:flex;justify-content:center;gap:14px;flex-wrap:wrap}
+  .btn-ghost{height:44px;padding:0 20px;border-radius:var(--r-pill);
+    border:1px solid var(--border-2);background:transparent;font-size:14px;font-weight:510;
+    transition:background .16s var(--ease),border-color .16s var(--ease)}
+  .btn-ghost:hover{background:oklch(1 0 0 / .10);border-color:var(--w-line)}
+
+  /* ============ 属性面板 ============ */
+  .attrs{position:fixed;right:22px;top:74px;width:274px;z-index:30;
+    border-radius:var(--r-lg);padding:18px 18px 16px;
+    background:oklch(0.075 0.018 var(--hue) / .84);border:1px solid var(--border);
+    backdrop-filter:blur(15px);-webkit-backdrop-filter:blur(15px);
+    transition:background 1.1s var(--ease),opacity .3s var(--ease),transform .3s var(--ease)}
+  .attrs h2{font-size:10.5px;letter-spacing:.22em;color:var(--muted);font-weight:590;margin-bottom:15px}
+  .attr{margin-bottom:14px}
+  .attr:last-of-type{margin-bottom:0}
+  .attr .row{display:flex;align-items:baseline;gap:8px;margin-bottom:6px}
+  .attr .k{font-size:12.5px;font-weight:510;letter-spacing:.03em}
+  .attr .v{margin-left:auto;font-size:12.5px;font-variant-numeric:tabular-nums;
+    color:oklch(0.90 0.050 var(--hue))}
+  .attr .bar{position:relative;height:3px;border-radius:99px;background:oklch(1 0 0 / .10);
+    overflow:hidden}
+  .attr .bar i{display:block;height:100%;border-radius:99px;background:var(--w-line);
+    transition:width .5s var(--ease)}
+  /* 幽灵段:悬停某个选择时,这一条会长出/退回的那一截。
+     只做加亮,不降低任何已有前景的对比度。 */
+  .attr .bar u{position:absolute;top:0;height:100%;border-radius:99px}
+  .attr .bar u.gain{background:var(--w-kick);opacity:.7}
+  .attr .bar u.loss{background:var(--w-line);opacity:.3}
+  .attr .v em{font-style:normal;margin-left:7px;color:var(--w-kick);
+    font-variant-numeric:tabular-nums}
+  .attr .set{display:flex;flex-wrap:wrap;gap:6px}
+  .attr .set span{font-size:11px;letter-spacing:.02em;padding:3px 9px;border-radius:var(--r-pill);
+    border:1px solid var(--border);color:var(--muted)}
+  .attr.is-hidden .k{color:var(--muted)}
+  .attr.is-hidden .v{color:oklch(0.62 0.015 265)}
+  .attr .lock{width:11px;height:11px;flex:none;color:oklch(0.60 0.015 265)}
+  .attr.just{animation:justIn .42s var(--ease)}
+  @keyframes justIn{0%{background:oklch(0.72 0.140 var(--hue) / .22)}100%{background:transparent}}
+  .attrs .note{margin-top:15px;padding-top:13px;border-top:1px solid var(--border);
+    font-size:11px;line-height:1.7;color:oklch(0.62 0.015 265)}
+  .attrs .close{display:none}
+
+  /* ============ 星图 · 世界航迹 ============
+     节点与航线在运行时由 NODES 图结构生成,剧本改动后星图自动跟上。
+     强调色纪律:本浮层除焦点环外不用暖金,所有高亮走 hue 派生的 --w-* token,
+     这样每屏暖金仍只有「章节标记 + 发送键」两处。 */
+  .map-scrim{position:fixed;inset:0;z-index:54;background:oklch(0.035 0.012 265 / .62);
+    backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);
+    opacity:0;visibility:hidden;transition:opacity .22s var(--ease),visibility .22s}
+  .map-scrim.on{opacity:1;visibility:visible}
+
+  .starmap{position:fixed;left:50%;top:50%;z-index:55;
+    width:min(760px,calc(100vw - 32px));max-height:calc(100dvh - 40px);overflow-y:auto;
+    padding:22px 22px 18px;
+    background:oklch(0.082 0.020 var(--hue) / .96);
+    border:1px solid var(--border-2);border-radius:var(--r-lg);
+    box-shadow:0 40px 100px -40px oklch(0.02 0 0 / .98);
+    backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+    opacity:0;visibility:hidden;transform:translate(-50%,-48%) scale(.985);
+    transition:opacity .22s var(--ease),transform .22s var(--ease),visibility .22s,
+               background 1.1s var(--ease)}
+  .starmap.on{opacity:1;visibility:visible;transform:translate(-50%,-50%) scale(1)}
+  .starmap .close{position:absolute;right:12px;top:12px}
+
+  /* — 头部:章节名在左,进度数字在右,不抢正文重心 — */
+  .map-head{display:flex;align-items:flex-end;gap:18px;padding-right:52px}
+  .map-head .kicker{font-size:10.5px;font-weight:590;letter-spacing:.22em;color:var(--muted)}
+  .map-head h2{margin-top:7px;font-family:var(--font-display);font-size:22px;font-weight:700;
+    line-height:1.4;letter-spacing:0}
+  .map-progress{margin-left:auto;flex:none;text-align:right}
+  .map-progress b{display:block;font-family:var(--font-ui);font-size:20px;font-weight:590;
+    line-height:1.2;font-variant-numeric:tabular-nums;color:var(--w-kick)}
+  .map-progress span{display:block;margin-top:4px;font-size:10.5px;letter-spacing:.14em;
+    color:var(--muted)}
+  /* — 视口:一片属于这部作品的天空,深度由 perspective + 视差尘埃层给出 — */
+  .map-viewport{position:relative;margin:16px 0 12px;overflow:hidden;isolation:isolate;
+    border:1px solid oklch(1 0 0 / .09);border-radius:14px;perspective:1100px;
+    background:
+      radial-gradient(128% 96% at 50% 0%, oklch(0.20 0.070 var(--hue) / .62), transparent 66%),
+      linear-gradient(180deg, oklch(0.10 0.032 var(--hue)), oklch(0.048 0.014 var(--hue)));
+    transition:background 1.1s var(--ease)}
+  .map-viewport::before{content:"";position:absolute;inset:0;z-index:0;opacity:.42;
+    background-image:linear-gradient(oklch(1 0 0 / .032) 1px,transparent 1px),
+                     linear-gradient(90deg,oklch(1 0 0 / .032) 1px,transparent 1px);
+    background-size:30px 30px;
+    -webkit-mask-image:radial-gradient(ellipse at center,black,transparent 78%);
+    mask-image:radial-gradient(ellipse at center,black,transparent 78%)}
+
+  /* 远景尘埃:压在 z=-90,与前景共享同一组倾斜变量,倾斜时错开——视差即深度。
+     变量声明在 .map-viewport 上,两个子层才能一起读到(自定义属性只向下继承)。 */
+  .map-depth{position:absolute;inset:0;z-index:1;pointer-events:none;
+    transform:rotateX(var(--map-tilt-x,0deg)) rotateY(var(--map-tilt-y,0deg))
+              translateZ(-90px) scale(1.09);
+    transition:transform .34s var(--ease);
+    background-image:
+      radial-gradient(1.5px 1.5px at 11% 21%, var(--w-star), transparent 62%),
+      radial-gradient(1.2px 1.2px at 27% 74%, var(--w-star), transparent 62%),
+      radial-gradient(1.7px 1.7px at 42% 12%, var(--w-star), transparent 62%),
+      radial-gradient(1.1px 1.1px at 56% 88%, var(--w-star), transparent 62%),
+      radial-gradient(1.6px 1.6px at 68% 33%, var(--w-star), transparent 62%),
+      radial-gradient(1.2px 1.2px at 81% 64%, var(--w-star), transparent 62%),
+      radial-gradient(1.4px 1.4px at 92% 17%, var(--w-star), transparent 62%),
+      radial-gradient(1px 1px at 34% 47%, var(--w-star), transparent 62%),
+      radial-gradient(1px 1px at 74% 92%, var(--w-star), transparent 62%);
+    opacity:.5}
+
+  .map-field{position:absolute;inset:8px;z-index:2;transform-style:preserve-3d;
+    transform:rotateX(var(--map-tilt-x,0deg)) rotateY(var(--map-tilt-y,0deg));
+    transition:transform .34s var(--ease)}
+  .map-viewport.is-tilting .map-field,
+  .map-viewport.is-tilting .map-depth{will-change:transform;transition:transform .12s linear}
+  .map-chart{display:block;width:100%;height:100%}
+
+  .map-orbit{fill:none;stroke:oklch(1 0 0 / .07);stroke-width:1}
+  .map-orbit.is-warm{stroke:var(--w-glow);stroke-dasharray:2 10;
+    animation:mapOrbit 18s linear infinite}
+
+  /* 航线:未走过的是虚线,走过的实心并有一束信号在上面跑 */
+  .map-route{fill:none;stroke:oklch(1 0 0 / .14);stroke-width:1.4;stroke-linecap:round;
+    stroke-dasharray:3 8;transition:stroke .35s var(--ease),stroke-dasharray .35s var(--ease)}
+  .map-route.complete{stroke:var(--w-line);stroke-dasharray:none;stroke-width:1.7}
+  .map-pulse{fill:none;stroke:var(--w-star);stroke-width:2;stroke-linecap:round;
+    stroke-dasharray:2 18;opacity:0}
+  .map-pulse.active{opacity:.9;animation:mapSignal 2s linear infinite}
+  /* — 航点 — */
+  .map-node{cursor:pointer;outline:none}
+  .map-node .hit{fill:transparent;pointer-events:all}
+  .map-node .halo{fill:none;stroke:var(--w-glow);stroke-width:1;opacity:0;
+    transform-box:fill-box;transform-origin:center}
+  /* 焦点环:SVG 上 box-shadow 不渲染,所以用一对同心描边代替全局 --ring */
+  .map-node .ring-in,.map-node .ring{fill:none;stroke:transparent;stroke-width:2}
+  .map-node:focus-visible .ring-in{stroke:oklch(0.09 0.018 265)}
+  .map-node:focus-visible .ring{stroke:var(--accent)}
+  .map-node .spike path{stroke:var(--w-star);stroke-width:1;opacity:0;
+    transition:opacity .3s var(--ease)}
+  .map-node .core{fill:oklch(0.24 0.048 var(--hue));stroke:oklch(1 0 0 / .26);stroke-width:1.2;
+    transition:fill .22s var(--ease),stroke .22s var(--ease)}
+  .map-node .pip{fill:oklch(0.86 0.020 var(--hue));opacity:.42}
+  .map-node text{fill:oklch(0.74 0.016 265);font-family:var(--font-ui);font-size:11.5px;
+    letter-spacing:.04em;transition:fill .22s var(--ease)}
+
+  /* 未抵达:靠形态(空芯 + 虚线)区分,不靠降低透明度——降透明度会把标签压出 AA */
+  .map-node.future .core{fill:oklch(0.14 0.028 var(--hue))}
+  .map-node.future .pip{opacity:.2}
+  .map-node.visited .core{fill:var(--w-line);stroke:var(--w-star)}
+  .map-node.visited .pip{opacity:.9;fill:oklch(0.14 0.030 var(--hue))}
+  .map-node.visited text{fill:oklch(0.88 0.014 265)}
+  .map-node.current .core{fill:var(--w-star);stroke:var(--w-line);
+    filter:drop-shadow(0 0 9px var(--w-glow))}
+  .map-node.current .pip{fill:oklch(0.20 0.060 var(--hue));opacity:1}
+  .map-node.current .halo{opacity:.9;animation:mapPulse 2.8s ease-out infinite}
+  .map-node.current .spike path{opacity:.6}
+  .map-node.current text{fill:var(--fg);font-weight:590}
+  .map-node:hover .core,.map-node.inspected .core{stroke:var(--w-star)}
+  .map-node:hover .halo,.map-node.inspected .halo{opacity:.7}
+  .map-node.inspected text{fill:var(--fg);font-weight:590}
+
+  /* — 图例 / 读数 — */
+  .map-legend{display:flex;gap:16px;flex-wrap:wrap;padding:0 2px;font-size:11px;
+    color:var(--muted)}
+  .map-legend span{display:inline-flex;align-items:center;gap:7px}
+  .map-legend i{width:8px;height:8px;border-radius:50%;flex:none;
+    background:oklch(0.14 0.028 var(--hue));border:1px solid oklch(1 0 0 / .26)}
+  .map-legend .done{background:var(--w-line);border-color:var(--w-star)}
+  .map-legend .now{background:var(--w-star);border-color:var(--w-line);
+    box-shadow:0 0 9px var(--w-glow)}
+
+  .map-readout{margin-top:14px;
+    padding:13px 14px;border:1px solid oklch(1 0 0 / .09);border-radius:var(--r-md);
+    background:oklch(1 0 0 / .04);min-height:74px}
+  .map-readout .state{flex:none;margin-top:2px;padding:4px 10px;border-radius:var(--r-pill);
+    font-size:10.5px;letter-spacing:.1em;white-space:nowrap;
+    border:1px solid oklch(1 0 0 / .18);color:oklch(0.82 0.014 265)}
+  .map-readout .state.is-visited{border-color:var(--w-line);color:var(--w-kick)}
+  .map-readout .state.is-current{border-color:var(--w-star);color:var(--fg);
+    background:oklch(1 0 0 / .07)}
+  .map-readout h3{font-family:var(--font-display);font-size:15px;font-weight:700;line-height:1.5;
+    letter-spacing:0}
+  .map-readout p{margin-top:5px;font-size:12px;line-height:1.75;color:oklch(0.80 0.015 265)}
+  /* 回溯:星图从「可查看」变成「可导航」。幽灵按钮,不和页面唯一的实心 CTA 抢。 */
+  .map-rewind{margin-top:11px;height:36px;padding:0 15px;border-radius:var(--r-pill);
+    border:1px solid var(--w-line);background:oklch(1 0 0 / .05);color:var(--fg);
+    font-size:12.5px;font-weight:510;letter-spacing:.02em;
+    display:inline-flex;align-items:center;gap:8px;
+    transition:background .16s var(--ease),border-color .16s var(--ease)}
+  .map-rewind:hover{background:oklch(1 0 0 / .13);border-color:var(--w-star)}
+  .map-rewind b{font-weight:510;color:oklch(0.80 0.015 265)}
+  .map-rewind[hidden]{display:none}
+  .map-hint{margin-top:9px;font-size:10.5px;letter-spacing:.06em;color:oklch(0.66 0.014 265)}
+
+  /* — 空 / 加载 / 错误:三态占位,与航迹图互斥 — */
+  .map-state{position:absolute;inset:0;z-index:3;display:none;place-content:center;
+    justify-items:center;gap:14px;padding:24px;text-align:center;
+    background:oklch(0.06 0.016 var(--hue) / .86)}
+  .map-state p{font-size:12.5px;line-height:1.8;color:oklch(0.80 0.015 265);max-width:34ch}
+  .map-viewport[data-state="loading"] .map-state.loading,
+  .map-viewport[data-state="empty"]   .map-state.empty,
+  .map-viewport[data-state="error"]   .map-state.error{display:grid}
+  .map-viewport:not([data-state="ready"]) .map-field,
+  .map-viewport:not([data-state="ready"]) .map-depth{opacity:0}
+  .map-skel{display:flex;align-items:center;gap:16px}
+  .map-skel i{width:11px;height:11px;border-radius:50%;background:oklch(1 0 0 / .2);
+    animation:mapSkel 1.25s ease-in-out infinite}
+  .map-skel i:nth-child(2){animation-delay:.16s}
+  .map-skel i:nth-child(3){animation-delay:.32s}
+  .btn-ghost.sm{height:36px;padding:0 16px;font-size:12.5px}
+
+  .starmap.motion-off .map-field,
+  .starmap.motion-off .map-depth{transform:none!important;transition:none}
+  .starmap.motion-off .map-orbit.is-warm,
+  .starmap.motion-off .map-pulse.active,
+  .starmap.motion-off .map-skel i,
+  .starmap.motion-off .map-node.current .halo{animation-play-state:paused}
+  @keyframes mapOrbit{to{stroke-dashoffset:-180}}
+  @keyframes mapSignal{to{stroke-dashoffset:-80}}
+  @keyframes mapPulse{0%{transform:scale(.72);opacity:.85}100%{transform:scale(2.3);opacity:0}}
+  @keyframes mapSkel{0%,100%{opacity:.24;transform:scale(.78)}50%{opacity:.9;transform:scale(1)}}
+
+  @media (max-width:640px){
+    .starmap{width:calc(100vw - 16px);max-height:calc(100dvh - 16px);padding:18px 14px 14px}
+    .map-head{gap:12px}
+    .map-head h2{font-size:19px}
+    .map-progress b{font-size:17px}
+    .map-viewport{margin-top:12px}
+    /* 纵向 viewBox 只有 360 单位宽,缩到手机上后要放大字号才读得清 */
+    .map-chart text{font-size:13px}
+    .map-legend{gap:12px}
+  }
+
+  /* ============ 阅读设置 ============ */
+
+  /* 星图读数面板：航迹在左，当前阅读位置在右。 */
+  .map-scrim{background:oklch(0.035 0.012 265 / .68);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)}
+  .starmap{width:min(1000px,calc(100vw - 48px));max-height:calc(100dvh - 48px);padding:28px;background:oklch(0.082 0.020 var(--hue) / .975);box-shadow:0 46px 120px -46px oklch(0.02 0 0 / .98);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px)}
+  .starmap .close{right:16px;top:16px}
+  .map-head{padding-right:54px}.map-head h2{font-size:25px}
+  .map-progress b{font-size:22px}
+  .map-layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(254px,.82fr);gap:20px;margin-top:20px}
+  .map-stage{min-width:0}
+  .map-viewport{margin:0;border-radius:16px;background:radial-gradient(128% 96% at 50% 0%,oklch(0.20 0.070 var(--hue) / .62),transparent 66%),linear-gradient(180deg,oklch(0.10 0.032 var(--hue)),oklch(0.048 0.014 var(--hue)))}
+  .map-legend{padding:12px 2px 0}
+  .map-inspector{display:flex;min-height:0;flex-direction:column;padding:20px;border:1px solid oklch(1 0 0 / .10);border-radius:16px;background:linear-gradient(160deg,oklch(0.16 0.038 var(--hue) / .72),oklch(0.095 0.020 var(--hue) / .80))}
+  .map-inspector .eyebrow{font-size:10px;font-weight:590;letter-spacing:.2em;color:var(--muted)}
+
+  .map-readout .state{display:inline-flex;padding:4px 10px;border:1px solid oklch(1 0 0 / .18);border-radius:var(--r-pill);font-size:10.5px;font-weight:590;letter-spacing:.08em;color:var(--muted)}
+  .map-readout .state.is-current{box-shadow:0 0 0 3px oklch(0.82 0.125 85 / .10)}
+  .map-readout h3{margin-top:12px;font-size:21px;line-height:1.4}
+  .map-readout p{margin-top:8px;font-size:13px;line-height:1.78}
+  .map-facts{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:auto;padding-top:24px}
+  .map-facts div{padding-top:10px;border-top:1px solid oklch(1 0 0 / .10)}
+  .map-facts dt{font-size:10px;letter-spacing:.11em;color:var(--muted)}
+  .map-facts dd{margin-top:4px;font-family:var(--font-ui);font-size:14px;font-weight:590;line-height:1.4;color:var(--fg);font-variant-numeric:tabular-nums}
+  .map-privacy{margin-top:15px;padding-top:14px;border-top:1px solid oklch(1 0 0 / .10);font-size:11px;line-height:1.65;color:var(--muted)}
+  .map-hint{margin-top:14px}
+  .map-state{background:oklch(0.07 0.020 var(--hue) / .70)}
+  @media(max-width:820px){.starmap{width:min(700px,calc(100vw - 28px));padding:24px}.map-layout{grid-template-columns:1fr;gap:16px}.map-facts{margin-top:18px;padding-top:0}}
+  @media(max-width:640px){.starmap{width:calc(100vw - 16px);max-height:calc(100dvh - 16px);padding:18px 14px 16px}.starmap .close{right:10px;top:10px}.map-head{gap:12px;padding-right:44px}.map-head h2{font-size:20px}.map-progress b{font-size:18px}.map-layout{margin-top:16px}.map-inspector{padding:16px}.map-readout h3{font-size:19px}.map-facts{gap:8px}.map-legend{gap:12px}}
+  @media(max-width:440px){.map-head{align-items:flex-start;flex-direction:column}.map-progress{margin-left:0;text-align:left}.map-viewport{border-radius:13px}.map-readout p{font-size:12.5px}}
+
+  .sheet{position:fixed;right:22px;top:74px;width:296px;z-index:50;
+    border-radius:var(--r-lg);padding:20px;background:oklch(0.11 0.020 265 / .96);
+    border:1px solid var(--border-2);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+    box-shadow:0 30px 70px -34px oklch(0.02 0 0 / .95);
+    opacity:0;visibility:hidden;transform:translateY(-8px);
+    transition:opacity .22s var(--ease),transform .22s var(--ease),visibility .22s}
+  .sheet.on{opacity:1;visibility:visible;transform:none}
+  .sheet h2{font-size:10.5px;letter-spacing:.22em;color:var(--muted);font-weight:590;margin-bottom:16px}
+  .sheet .close{position:absolute;right:10px;top:8px}
+  .field{margin-bottom:17px}
+  .field .lab{display:flex;align-items:baseline;font-size:12.5px;margin-bottom:9px}
+  .field .lab b{margin-left:auto;font-weight:510;color:var(--muted);font-variant-numeric:tabular-nums}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:3px;border-radius:99px;
+    background:oklch(1 0 0 / .16)}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;
+    border-radius:50%;background:var(--fg);border:0;cursor:pointer}
+  input[type=range]::-moz-range-thumb{width:15px;height:15px;border-radius:50%;background:var(--fg);
+    border:0;cursor:pointer}
+  .field .tip{margin-top:8px;font-size:11px;line-height:1.65;color:oklch(0.62 0.015 265)}
+  .switch{display:flex;align-items:center;gap:10px;font-size:12.5px}
+  .switch input{appearance:none;-webkit-appearance:none;width:38px;height:22px;border-radius:99px;
+    background:oklch(1 0 0 / .14);position:relative;flex:none;cursor:pointer;
+    transition:background .16s var(--ease)}
+  .switch input::after{content:"";position:absolute;left:3px;top:3px;width:16px;height:16px;
+    border-radius:50%;background:var(--fg);transition:transform .16s var(--ease)}
+  /* 开关用中性亮态,不占用暖金——每屏强调色只留给章节标记与发送键 */
+  .switch input:checked{background:oklch(0.86 0.010 265)}
+  .switch input:checked::after{transform:translateX(16px);background:oklch(0.16 0.02 265)}
+  .sheet .danger{margin-top:4px;width:100%;height:40px;border-radius:var(--r-sm);
+    border:1px solid var(--border);background:transparent;font-size:12.5px;color:var(--muted);
+    transition:background .16s var(--ease),color .16s var(--ease),border-color .16s var(--ease)}
+  .sheet .danger:hover{background:oklch(1 0 0 / .09);color:var(--fg);border-color:var(--border-2)}
+
+  /* ============ 响应式 ============ */
+  /* 面板可收起:宽屏默认展开,收起后让出天空 */
+  .attrs.collapsed{opacity:0;pointer-events:none;transform:translateX(14px)}
+
+  @media (max-width:1180px){
+    .column{width:min(560px,100%);margin-left:0;margin-right:auto}
+    .attrs{right:16px;width:250px}
+    .stagefig{left:64%}
+  }
+  @media (max-width:640px){
+    .demo-chip{display:none}
+  }
+  @media (max-width:1000px){
+    :root{--floor:56%}
+    .reader{padding:0 16px 24px}
+    .column{width:100%;margin:0;padding-top:30vh}
+    .plate{padding:26px 20px 24px}
+    .stagefig{left:50%;margin-left:-40px;bottom:calc(var(--floor) + 5%)}
+    /* 属性面板转为抽屉 */
+    .attrs{right:12px;left:12px;width:auto;top:auto;bottom:12px;max-height:62vh;overflow-y:auto;
+      transform:translateY(112%);opacity:0;pointer-events:none;
+      background:oklch(0.085 0.020 var(--hue) / .97);border-color:var(--border-2)}
+    .attrs.on{transform:none;opacity:1;pointer-events:auto}
+    .attrs .close{display:block;position:absolute;right:12px;top:12px}
+    .sheet{right:12px;left:12px;width:auto;max-height:70vh;overflow-y:auto}
+    .icon-btn{width:44px;height:44px}     /* 触摸目标 */
+    .compose{flex-direction:column;align-items:stretch;margin-bottom:0}
+    .compose-note{position:static;order:1;margin-top:1px}
+    .compose .meter{position:static;text-align:right;order:2;margin-top:-4px}
+    .btn-send{order:3;width:100%;justify-content:center}
+  }
+  @media (max-width:420px){
+    .plate{padding:22px 16px 20px}
+    .choice{padding:14px 14px}
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    *{animation:none!important;transition:none!important}
+    .beat,.sys{opacity:1;transform:none}
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ 世界(身后活着) ============ -->
+<div class="scene world-scope" id="scene" aria-hidden="true">
+  <span class="cloud c1"></span><span class="cloud c2"></span><span class="cloud c3"></span>
+  <span class="streak" style="right:22%;top:14%"></span>
+  <span class="horizon"></span>
+</div>
+<div class="stagefig world-scope" id="stagefig" aria-hidden="true"></div>
+<div class="reader-bg" aria-hidden="true"></div>
+<div class="grain" aria-hidden="true"></div>
+<div class="vignette" aria-hidden="true"></div>
+
+<!-- ============ 顶栏 ============ -->
+<header class="topbar" id="play-topbar" data-od-id="play-topbar">
+  <a class="icon-btn" href="home-galaxy.html" aria-label="回到星海" data-od-id="back-to-galaxy">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+  </a>
+  <div class="now">
+    <div class="t" id="work-name">最后的深夜电台</div>
+    <div class="s" id="work-kick">末世 · 电台</div>
+  </div>
+  <span class="demo-chip">演示剧本 · 未接入模型</span>
+  <div class="topright">
+    <span class="saved" id="saved" data-od-id="save-status" role="status" aria-live="polite">已存档</span>
+    <button class="icon-btn" type="button" id="btn-attrs" aria-label="属性面板" aria-expanded="false" aria-controls="attrs">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 18V9M10 18V5M16 18v-6M4 18h16"/></svg>
+    </button>
+    <a class="icon-btn" href="derivation-graph.html?world=radio" aria-label="查看《最后的深夜电台》的衍生星图" data-od-id="derivation-graph-link">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V12M12 12 7 7M12 12l5-5"/><circle cx="12" cy="19" r="1.5"/><circle cx="7" cy="7" r="1.5"/><circle cx="17" cy="7" r="1.5"/></svg>
+    </a>
+    <button class="icon-btn" type="button" id="btn-map" aria-label="世界星图" aria-expanded="false" aria-controls="starmap" data-od-id="world-starmap-toggle">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 1.7 5.3L19 10l-5.3 1.7L12 17l-1.7-5.3L5 10l5.3-1.7L12 3Z"/><path d="m19 16 .7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7L19 16Z"/></svg>
+    </button>
+    <button class="icon-btn" type="button" id="btn-set" aria-label="阅读设置" aria-expanded="false" aria-controls="sheet">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/></svg>
+    </button>
+  </div>
+</header>
+
+<!-- ============ 阅读栏 ============ -->
+<main class="reader" id="reader" data-od-id="story-reader">
+  <div class="column">
+    <div class="plate world-scope" id="plate">
+      <div class="chapter">
+        <span class="no" id="chap-no">第一章 · 雨夜的第七天</span>
+        <span class="rule" aria-hidden="true"></span>
+        <span class="cnt" id="chap-cnt" data-od-id="chapter-progress">1 / 4</span>
+      </div>
+      <h1 class="sr-only">最后的深夜电台 · 游玩</h1>
+      <div id="stream" aria-live="polite"></div>
+      <div id="act"></div>
+    </div>
+  </div>
+</main>
+
+<!-- ============ 属性面板(三态:常显 / 渐显 / 隐藏) ============ -->
+<aside class="attrs world-scope" id="attrs" aria-label="角色属性" data-od-id="attr-panel">
+  <button class="icon-btn close" type="button" id="attrs-close" aria-label="关闭属性面板">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+  </button>
+  <h2>此刻的你</h2>
+  <div id="attr-list" data-od-id="attribute-list"></div>
+  <p class="note" id="attr-note"></p>
+</aside>
+
+
+<div class="map-scrim" id="map-scrim" aria-hidden="true"></div>
+<aside class="starmap world-scope" id="starmap" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="map-title" aria-describedby="map-hint" data-od-id="world-starmap">
+  <button class="icon-btn close" type="button" id="map-close" aria-label="关闭世界航迹" data-od-id="world-starmap-close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+  <div class="map-head">
+    <div><p class="kicker">世界航迹</p><h2 id="map-title">你的世界航迹</h2></div>
+    <p class="map-progress"><b><span id="map-progress-n">1</span> / <span id="map-progress-t">6</span></b><span>已走航点</span></p>
+  </div>
+  <div class="map-layout">
+    <div class="map-stage">
+      <div class="map-viewport" id="map-viewport" data-state="loading" aria-busy="true" aria-label="可探索的世界航迹图" style="aspect-ratio:680 / 380" data-od-id="starmap-field">
+        <div class="map-depth" aria-hidden="true"></div><div class="map-field" id="map-field"></div>
+        <div class="map-state loading" role="status"><span class="map-skel" aria-hidden="true"><i></i><i></i><i></i></span><p>正在校准航迹…</p></div>
+        <div class="map-state empty" role="status"><p>还没有足够的航点。<br>继续推进剧情，世界会从这里展开。</p></div>
+        <div class="map-state error" role="alert"><p>航迹暂时无法展开，请重试。</p><button class="btn-ghost sm" type="button" id="map-retry" data-od-id="starmap-retry">重新展开</button></div>
+      </div>
+      <div class="map-legend" aria-hidden="true"><span><i class="done"></i>已抵达</span><span><i class="now"></i>所在处</span><span><i></i>未抵达</span></div>
+      <p class="map-hint" id="map-hint">用方向键移动焦点 · Enter 查看 · Esc 关闭</p>
+    </div>
+    <section class="map-inspector" aria-labelledby="map-inspector-title" data-od-id="starmap-inspector">
+      <p class="eyebrow" id="map-inspector-title">航点读数</p>
+      <div class="map-readout" role="status" aria-live="polite" aria-atomic="true"><span class="state is-current" id="map-read-state">所在处</span><h3 id="map-read-title">雨夜公寓</h3><p id="map-read-desc">选择任一航点，查看它在这次旅程中的位置。</p></div>
+      <button class="map-rewind" type="button" id="map-rewind" hidden data-od-id="starmap-rewind"></button>
+      <dl class="map-facts"><div><dt>剧情位置</dt><dd id="map-current-position">第 1 章</dd></div><div><dt>已绘航点</dt><dd id="map-visited-count">1 / 6</dd></div></dl>
+      <p class="map-privacy">查看任意航点不会改动剧情。只有「回到这里重新选择」会——它会清掉该航点之后的全部内容,包括你写下的自由行动。</p>
+    </section>
+  </div>
+</aside>
+
+<div class="sheet" id="sheet" role="dialog" aria-modal="false" aria-hidden="true" aria-labelledby="sheet-h" data-od-id="reader-settings">
+  <h2 id="sheet-h">阅读设置</h2>
+  <button class="icon-btn close" type="button" id="sheet-close" aria-label="关闭阅读设置" data-od-id="reader-settings-close">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+  </button>
+
+  <div class="field">
+    <label class="lab" for="r-veil">遮罩浓度 <b id="v-veil">0.74</b></label>
+    <input type="range" id="r-veil" min="0.52" max="0.95" step="0.01" value="0.74" aria-describedby="tip-veil" />
+    <p class="tip" id="tip-veil">下限锁 0.52。再低,正文与身后的天空就不足 4.5:1,读不下去。</p>
+  </div>
+
+  <div class="field">
+    <label class="lab" for="r-size">正文字号 <b id="v-size">17px</b></label>
+    <input type="range" id="r-size" min="15" max="22" step="1" value="17" />
+  </div>
+
+  <div class="field">
+    <label class="lab" for="r-lead">行距 <b id="v-lead">2.05</b></label>
+    <input type="range" id="r-lead" min="1.7" max="2.4" step="0.05" value="2.05" />
+  </div>
+
+  <div class="field">
+    <label class="switch"><input type="checkbox" id="r-motion" checked /> 世界在身后漂移</label>
+    <p class="tip">关闭后云与流星静止,阅读时更安静。</p>
+  </div>
+
+  <button class="danger" type="button" id="r-reset">从头开始这一章</button>
+</div>
+
+<script src="assets/works-data.js"></script>
+<script>
+(function(){
+  'use strict';
+  var RM = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var VEIL_MIN = 0.52;                     /* 阅读遮罩护栏,唯一真源 */
+  var MAX_INPUT = 160;                     /* 自由行动的长度上限,超过就不再是「一个动作」 */
+  var TOTAL_STEPS = 4;
+  var KEY = 'wanxiang.play.midnight-radio';
+
+  /* ---------------- 作品(字段沿用 §7 数据契约) ---------------- */
+  var WORK = {n:'最后的深夜电台', k:'末世 · 电台', h:252, f:'radio'};
+
+  /* ---------------- 属性:三态对应后端语义 ----------------
+     mode: open   = 常显
+           reveal = 剧情揭示后才显示
+           hidden = 仅 AI 可见,玩家永不显示数值(只留一个锁位) */
+  var ATTR_DEF = [
+    {k:'理智', type:'number', v:74, max:100, mode:'open'},
+    {k:'体温', type:'scalar', v:'微冷',      mode:'open'},
+    {k:'物资', type:'set',    v:['手电筒','半罐水'], mode:'reveal', shown:false},
+    {k:'警觉', type:'number', v:3, max:10,   mode:'hidden'}
+  ];
+
+  /* ---------------- 剧本 ----------------
+     hue: 该节点把世界推向的色相(选择时世界随之变色) */
+  var NODES = {
+    n1:{ hue:252, step:1, beats:[
+        {t:'雨下到第七天了。楼道里的应急灯早就灭了,你数着水滴敲在防盗窗上的节奏,把它当成还有时间在走的证据。'},
+        {t:'桌上那台旧对讲机整晚都是杂音。直到凌晨两点十一分,杂音里裂开一道缝。'},
+        {v:'未知频段', t:'……有人吗?任何人都行。我这边……我这边情况不太好。'}
+      ],
+      choices:[
+        {t:'按下通话键,回应她', s:'把自己暴露给一个陌生的声音', to:'n2a', hue:270,
+         fx:[['理智',-3],['警觉',1]], reveal:'物资'},
+        {t:'松开手,继续听', s:'先弄清楚对面是什么', to:'n2b', hue:238,
+         fx:[['理智',-6],['警觉',2]]},
+        {t:'调开频道', s:'避开这段对话', to:'n2c', hue:224,
+         fx:[['体温','发凉']]}
+      ]},
+
+    n2a:{ hue:270, step:2, beats:[
+        {t:'你按下通话键,喉咙干得发疼。「我在。」两个字出去之后,你才意识到自己有多久没出声了。'},
+        {v:'她', t:'太好了……太好了。我在城北中学的天台,门被我从里面顶死了。它们……它们在楼下,一直在学我说话。'},
+        {t:'她的呼吸很浅,像怕被什么听见。背景里有金属摩擦的声音,一下,又一下。'}
+      ],
+      choices:[
+        {t:'问她还能撑多久', s:'先确认时间', to:'n3', hue:276, fx:[['理智',-2]]},
+        {t:'告诉她你的位置', s:'把自己也放上台面', to:'n3', hue:282,
+         fx:[['理智',2],['警觉',2]], add:['物资','对讲机备用电池']},
+        {t:'让她别再出声', s:'学它们的东西,靠声音找人', to:'n3', hue:262, fx:[['理智',3],['警觉',-1]]}
+      ]},
+
+    n2b:{ hue:238, step:2, beats:[
+        {t:'你没有按下通话键。'},
+        {t:'那个声音又叫了三次,一次比一次轻。第四次的时候,它换了个语调——用的是你母亲的声音。'},
+        {v:'未知频段', t:'……有人吗?任何人都行。我这边……我这边情况不太好。'},
+        {t:'一字不差。连停顿的位置都一样。你的手从通话键上移开了。'}
+      ],
+      choices:[
+        {t:'关掉电源', s:'切断这条线', to:'n3', hue:228, fx:[['理智',-4],['体温','发抖']]},
+        {t:'继续录下去', s:'留一份证据', to:'n3', hue:244, fx:[['理智',-2],['警觉',2]], reveal:'物资'},
+        {t:'现在回应她', s:'哪怕对面不是人', to:'n3', hue:256, fx:[['理智',-8],['警觉',3]]}
+      ]},
+
+    n2c:{ hue:224, step:2, beats:[
+        {t:'你把旋钮向右推了一格。杂音沉下去,换成一段循环了不知道多少天的录音。'},
+        {v:'循环广播', t:'……原地待命,不要回应任何呼叫。重复,不要回应任何呼叫。第七日之后的信号,均不可信……'},
+        {t:'广播断了半秒,又从头开始。你数了一下——它一共只有十九秒。'}
+      ],
+      choices:[
+        {t:'调回原来的频道', s:'那个声音也许还在', to:'n3', hue:250, fx:[['理智',-3],['警觉',1]], reveal:'物资'},
+        {t:'把这段广播录下来', s:'十九秒,值得留着', to:'n3', hue:216, fx:[['理智',3]], add:['物资','录音带 A']},
+        {t:'关掉对讲机,去睡', s:'今晚不做决定', to:'n3', hue:210, fx:[['理智',5],['体温','麻木'],['警觉',-2]]}
+      ]},
+
+    n3:{ hue:266, step:3, beats:[
+        {t:'雨忽然停了。'},
+        {t:'停得毫无道理——不是渐渐变小,是被谁掐断的那种停。楼道里那种黏稠的安静重新长回来,你能听见自己耳鸣。'},
+        {t:'然后,楼下传来一声。不是脚步,不是敲门。是有人在很小声地,学着雨的声音。'}
+      ],
+      choices:[
+        {t:'走到窗边看一眼', s:'确认它在哪一层', to:'end', hue:288, fx:[['理智',-5],['警觉',3]]},
+        {t:'退到里屋,把门反锁', s:'今晚只求活过去', to:'end', hue:242, fx:[['理智',2],['体温','发抖']]},
+        {t:'重新打开对讲机', s:'如果她还在,现在该说话了', to:'end', hue:300, fx:[['理智',-2],['警觉',1]], add:['物资','一段没说完的话']}
+      ]},
+
+    end:{ hue:284, step:4, beats:[
+        {t:'你做完了这个决定。窗外那声模仿停了下来,像是在等你的下一步。'},
+        {t:'——第一章到此为止。'}
+      ],
+      end:true }
+  };
+
+  /* 自由输入落点:不假装模型在跑,明说是预写回应 */
+  var IMPROV = [
+    '你的动作让这个夜晚偏离了原本的轨道。楼道里那点声音停了两秒,又重新开始——它似乎在重新学你。',
+    '有些东西被你惊动了,但还没有决定要怎么对待你。'
+  ];
+
+  /* 自由输入的落点规则。演示模式没有模型,就用关键词匹配已有属性——
+     宁可规则简单并且明说,也不要让最「共创」的入口毫无后果。
+     不动 set 类属性:那需要凭空造出物品名。
+     警觉是隐藏属性,匹配到也只在暗中变化,不向玩家显示数值。 */
+  var IMPROV_RULES = [
+    {k:'理智', d: 2, w:['冷静','镇定','深呼吸','稳住','数到','告诉自己']},
+    {k:'理智', d:-3, w:['尖叫','大喊','崩溃','发抖','慌','哭']},
+    {k:'体温', v:'发凉', w:['冷','雨','湿','风','窗']},
+    {k:'体温', v:'回暖', w:['裹','毯','外套','热水','抱']},
+    {k:'警觉', d: 1, w:['听','躲','藏','屏息','悄','轻手','贴着']}
+  ];
+
+  function improvFx(text){
+    var fx = [];
+    IMPROV_RULES.forEach(function(r){
+      var hit = r.w.some(function(w){ return text.indexOf(w) > -1; });
+      if(hit) fx.push([r.k, r.d !== undefined ? r.d : r.v]);
+    });
+    return fx;
+  }
+
+  /* ---------------- 剪影(取自星海页 figure API) ---------------- */
+  function figure(type){
+    var head='<circle cx="50" cy="14" r="7.4"/>';
+    var torso='<path d="M50 22c-5.4 0-9.4 3.6-10.1 8.7l-1.7 12.9c-.3 2.3 1.5 4.2 3.8 4.2h16c2.3 0 4.1-1.9 3.8-4.2l-1.7-12.9C59.4 25.6 55.4 22 50 22z"/>';
+    var legs='<path d="M45.6 47 43.6 80" stroke-width="6" stroke-linecap="round" fill="none"/>'+
+             '<path d="M54.4 47 56.4 80" stroke-width="6" stroke-linecap="round" fill="none"/>';
+    var arms='';
+    if(type==='gaze'){
+      head='<circle cx="49" cy="13" r="7.4"/>';
+      arms='<path d="M41 30 35 49" stroke-width="5" stroke-linecap="round" fill="none"/>'+
+           '<path d="M59 30 66 47" stroke-width="5" stroke-linecap="round" fill="none"/>';
+    }else if(type==='radio'){
+      arms='<path d="M41 30 36 50" stroke-width="5" stroke-linecap="round" fill="none"/>'+
+           '<path d="M59 31 64 38 57 23" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>'+
+           '<rect x="53" y="15" width="6" height="9" rx="1.4"/>';
+    }else if(type==='blade'){
+      arms='<path d="M41 30 36 50" stroke-width="5" stroke-linecap="round" fill="none"/>'+
+           '<path d="M59 30 64 50" stroke-width="5" stroke-linecap="round" fill="none"/>'+
+           '<path d="M64 52 72 16" stroke-width="2.6" stroke-linecap="round" fill="none"/>';
+    }else if(type==='umbrella'){
+      arms='<path d="M41 30 36 50" stroke-width="5" stroke-linecap="round" fill="none"/>'+
+           '<path d="M59 30 63 19" stroke-width="5" stroke-linecap="round" fill="none"/>'+
+           '<path d="M63 19 63 8" stroke-width="2.2" stroke-linecap="round" fill="none"/>'+
+           '<path d="M47 12q16-13 32 0z"/>';
+    }else if(type==='reach'){
+      arms='<path d="M41 30 29 19" stroke-width="5" stroke-linecap="round" fill="none"/>'+
+           '<path d="M59 30 71 19" stroke-width="5" stroke-linecap="round" fill="none"/>';
+    }else{
+      legs='<path d="M45.6 47 40 79" stroke-width="6" stroke-linecap="round" fill="none"/>'+
+           '<path d="M54.4 47 61 78" stroke-width="6" stroke-linecap="round" fill="none"/>';
+      arms='<path d="M41 30 45 49" stroke-width="5" stroke-linecap="round" fill="none"/>'+
+           '<path d="M59 30 55 49" stroke-width="5" stroke-linecap="round" fill="none"/>';
+    }
+    return '<svg viewBox="0 0 100 92" aria-hidden="true"><g fill="currentColor" stroke="currentColor">'
+      + head + torso + legs + arms + '</g></svg>';
+  }
+
+  /* ---------------- 星点(复用星海页的确定性播撒) ---------------- */
+  (function seedStars(){
+    var scene = document.getElementById('scene'), html='', i, seed = WORK.h;
+    for(i=0;i<64;i++){
+      var x = ((seed*(i+3)*37) % 97) + 1;
+      var y = ((seed*(i+7)*19) % 56) + 1;
+      var o = 0.28 + (((seed*(i+5)) % 60)/100);
+      html += '<span class="dot" style="left:'+x+'%;top:'+y+'%;opacity:'+o.toFixed(2)+'"></span>';
+    }
+    scene.insertAdjacentHTML('afterbegin', html);
+  })();
+  document.getElementById('stagefig').innerHTML = figure(WORK.f);
+  document.getElementById('work-name').textContent = WORK.n;
+  document.getElementById('work-kick').textContent = WORK.k;
+
+  /* ---------------- 状态 ---------------- */
+  var SAVE_V = 2;     /* 存档结构版本。加入 path 后旧档无法回溯,读到旧版就重开。 */
+  var S = {
+    v:SAVE_V,
+    node:'n1',
+    attrs:JSON.parse(JSON.stringify(ATTR_DEF)),
+    hue:WORK.h,
+    veil:0.74, size:17, lead:2.05, motion:true,
+    log:[],           /* 已呈现的段落,刷新后原样恢复 */
+    /* 选择序列 [{from,to,i}]。星图回溯靠它重放,比从 log 里反推文本可靠得多。 */
+    path:[]
+  };
+
+  var stream = document.getElementById('stream');
+  var act    = document.getElementById('act');
+  var root   = document.documentElement;
+  var reader = document.getElementById('reader');
+  var scene = document.getElementById('scene');
+  var followLatest = true;
+
+  function renderProgress(node){
+    document.getElementById('chap-cnt').textContent = (node.step || 1) + ' / ' + TOTAL_STEPS;
+  }
+  /* ================= 星图 · 世界航迹 =================
+     航点与航线不再是手绘 SVG:mapGraph() 直接读 NODES 的 step 与 choices.to,
+     mapLayout() 按步数分列、支线居中铺开,mapMarkup() 再生成 SVG。
+     改剧本 → 星图自动跟上,不用改一行坐标。
+     ≤640px 时整张图换成纵向重排(航点在下,标签在右),而不是把横版压扁。 */
+  var MAP_META={
+    n1 :{t:'雨夜公寓',  d:'应急灯熄灭的楼道。信号第一次从这里抵达。'},
+    n2a:{t:'回应',      d:'你把自己的声音放上频段,也把位置交给了未知。'},
+    n2b:{t:'倾听',      d:'你没有立刻回答;模仿开始占据这条线路。'},
+    n2c:{t:'回避',      d:'你调开频道,十九秒的循环广播留下了另一条线索。'},
+    n3 :{t:'雨停之后',  d:'三条支线在此重新汇合,安静像被谁突然掐断。'},
+    end:{t:'未完的门',  d:'第一章止步于这里。下一次回应仍未写定。'}
+  };
+  var MAP_STATE_TXT={current:'当前位置',visited:'已抵达',future:'尚未抵达'};
+
+  var mapEl        = document.getElementById('starmap');
+  var mapScrim     = document.getElementById('map-scrim');
+  var mapViewport  = document.getElementById('map-viewport');
+  var mapField     = document.getElementById('map-field');
+  var mapNarrow    = window.matchMedia('(max-width:640px)');
+  var mapNodes=[], mapRoutes=[], mapPulses=[];
+  var mapReady=false, mapInspected=null, mapOpener=null;
+  var mapTiltFrame=0, mapTiltX=0, mapTiltY=0;
+  var mapBackground=['play-topbar','reader','attrs','sheet'].map(function(id){return document.getElementById(id);}).filter(Boolean);
+
+  /* —— 图结构:节点 = NODES 的键,航线 = 每个选择的 to —— */
+  function mapGraph(){
+    var nodes=[], edges=[], seen={};
+    Object.keys(NODES).forEach(function(id){
+      nodes.push({id:id, step:NODES[id].step||1, name:(MAP_META[id]||{}).t||id});
+      (NODES[id].choices||[]).forEach(function(c){
+        var key=id+'-'+c.to;
+        if(c.to && NODES[c.to] && !seen[key]){ seen[key]=1; edges.push({f:id,t:c.to,key:key}); }
+      });
+    });
+    return {nodes:nodes, edges:edges};
+  }
+
+  /* —— 布局:主轴按 step,副轴把同一步的支线居中铺开 —— */
+  function mapLayout(g, vertical){
+    var vb = vertical ? {w:360,h:540} : {w:680,h:380};
+    var byStep={}, steps=[];
+    g.nodes.forEach(function(n){
+      if(!byStep[n.step]){ byStep[n.step]=[]; steps.push(n.step); }
+      byStep[n.step].push(n);
+    });
+    steps.sort(function(a,b){ return a-b; });
+    var mainLen  = vertical ? vb.h : vb.w;
+    var crossLen = vertical ? vb.w : vb.h;
+    var pad      = vertical ? 72 : 84;
+    /* 纵向副轴收到 100:标签在右侧,最右一列的 4 字标签才不会顶出 viewBox */
+    var span     = vertical ? 100 : 104;
+    var gap      = steps.length>1 ? (mainLen-pad*2)/(steps.length-1) : 0;
+    var index={};
+    steps.forEach(function(s,ci){
+      var col=byStep[s], start=crossLen/2-(col.length-1)*span/2;
+      col.forEach(function(n,i){
+        var main=pad+ci*gap, cross=start+i*span;
+        if(vertical){ n.x=cross; n.y=main; } else { n.x=main; n.y=cross; }
+        index[n.id]=n;
+      });
+    });
+    g.index=index; g.vb=vb; g.vertical=vertical;
+    return g;
+  }
+
+  function mapEdgePath(a,b,vertical,off){
+    if(vertical){
+      var my=(a.y+b.y)/2;
+      return 'M'+a.x+' '+(a.y+off)+' C'+a.x+' '+my+' '+b.x+' '+my+' '+b.x+' '+(b.y-off);
+    }
+    var mx=(a.x+b.x)/2;
+    return 'M'+(a.x+off)+' '+a.y+' C'+mx+' '+a.y+' '+mx+' '+b.y+' '+(b.x-off)+' '+b.y;
+  }
+
+  function mapNodeMarkup(n, vertical){
+    var x=n.x, y=n.y;
+    /* 命中区不重叠:纵向 108×48,横向 92×70,都小于同轴间距 */
+    var hit = vertical
+      ? '<rect class="hit" x="'+(x-22)+'" y="'+(y-24)+'" width="108" height="48" rx="12"/>'
+      : '<rect class="hit" x="'+(x-46)+'" y="'+(y-26)+'" width="92" height="70" rx="12"/>';
+    /* 纵向把标签放右侧,避开垂直走向的航线;横向放正下方 */
+    var label = vertical
+      ? '<text x="'+(x+20)+'" y="'+(y+4)+'">'+esc(n.name)+'</text>'
+      : '<text x="'+x+'" y="'+(y+30)+'" text-anchor="middle">'+esc(n.name)+'</text>';
+    return '<g class="map-node" data-map-node="'+n.id+'" role="button" tabindex="-1">'
+      + hit
+      + '<circle class="halo" cx="'+x+'" cy="'+y+'" r="16"/>'
+      + '<g class="spike"><path d="M'+x+' '+(y-24)+'V'+(y+24)+'"/>'
+      +   '<path d="M'+(x-24)+' '+y+'H'+(x+24)+'"/></g>'
+      + '<circle class="ring-in" cx="'+x+'" cy="'+y+'" r="12.5"/>'
+      + '<circle class="ring" cx="'+x+'" cy="'+y+'" r="15.5"/>'
+      + '<circle class="core" cx="'+x+'" cy="'+y+'" r="8.5"/>'
+      + '<circle class="pip" cx="'+x+'" cy="'+y+'" r="2.6"/>'
+      + label
+      + '</g>';
+  }
+
+  function mapMarkup(g){
+    var vb=g.vb, vertical=g.vertical, out='';
+    out += '<svg class="map-chart" viewBox="0 0 '+vb.w+' '+vb.h+'" preserveAspectRatio="xMidYMid meet"'
+        +  ' role="group" aria-label="世界航迹图,共 '+g.nodes.length+' 个航点">';
+    out += '<g aria-hidden="true">';
+    out += vertical
+      ? '<ellipse class="map-orbit" cx="180" cy="270" rx="146" ry="244"/>'
+        + '<ellipse class="map-orbit is-warm" cx="180" cy="270" rx="98" ry="180" transform="rotate(8 180 270)"/>'
+      : '<ellipse class="map-orbit" cx="340" cy="190" rx="292" ry="146"/>'
+        + '<ellipse class="map-orbit is-warm" cx="340" cy="190" rx="214" ry="98" transform="rotate(-9 340 190)"/>'
+        + '<ellipse class="map-orbit" cx="340" cy="190" rx="128" ry="52" transform="rotate(20 340 190)"/>';
+    out += '</g>';
+    var routes='', pulses='';
+    g.edges.forEach(function(e){
+      var a=g.index[e.f], b=g.index[e.t];
+      if(!a||!b) return;
+      var d=mapEdgePath(a,b,vertical,24);
+      routes += '<path class="map-route" data-map-route="'+e.key+'" d="'+d+'"/>';
+      pulses += '<path class="map-pulse" data-map-pulse="'+e.key+'" d="'+d+'"/>';
+    });
+    out += '<g aria-hidden="true">'+routes+pulses+'</g>';
+    g.nodes.forEach(function(n){ out += mapNodeMarkup(n, vertical); });
+    return out + '</svg>';
+  }
+
+  /* —— 已走过的航迹:从存档里的「你的行动」倒推第一章走的哪条支线 —— */
+  /* 直接读选择序列,不再靠匹配正文文本反推分支——加了节点就自动正确。 */
+  function mapTrail(){
+    var trail = ['n1'];
+    S.path.forEach(function(st){ if(NODES[st.to]) trail.push(st.to); });
+    return trail;
+  }
+  function mapStateOf(id,node,trail){
+    return id===node ? 'current' : (trail.indexOf(id)>-1 ? 'visited' : 'future');
+  }
+
+  /* —— 构建:失败落错误态,航点不足落空态,都可重试 —— */
+  function mapBuild(){
+    mapViewport.setAttribute('aria-busy','true');
+    try{
+      var g = mapLayout(mapGraph(), mapNarrow.matches);
+      if(g.nodes.length < 2){
+        mapReady=false;
+        mapViewport.setAttribute('data-state','empty');
+        mapViewport.setAttribute('aria-busy','false');
+        return;
+      }
+      mapField.innerHTML = mapMarkup(g);
+      mapViewport.style.aspectRatio = g.vb.w+' / '+g.vb.h;
+      mapNodes  = [].slice.call(mapField.querySelectorAll('[data-map-node]'));
+      mapRoutes = [].slice.call(mapField.querySelectorAll('[data-map-route]'));
+      mapPulses = [].slice.call(mapField.querySelectorAll('[data-map-pulse]'));
+      mapNodes.forEach(function(el){
+        el.addEventListener('click', function(){ mapInspect(el.getAttribute('data-map-node')); });
+        el.addEventListener('focus', function(){ mapInspect(el.getAttribute('data-map-node')); });
+        el.addEventListener('keydown', mapKey);
+      });
+      document.getElementById('map-progress-t').textContent = mapNodes.length;
+      mapReady=true;
+      mapViewport.setAttribute('data-state','ready');
+      mapViewport.setAttribute('aria-busy','false');
+      mapInspected=null;
+      renderStarMap(S.node);
+    }catch(err){
+      mapReady=false;
+      mapViewport.setAttribute('data-state','error');
+      mapViewport.setAttribute('aria-busy','false');
+    }
+  }
+  
+  function renderStarMap(node){
+    if(!mapReady) return;
+    node = node || S.node;
+    var trail = mapTrail(node), done={}, i;
+    for(i=0;i<trail.length-1;i++) done[trail[i]+'-'+trail[i+1]] = 1;
+    mapNodes.forEach(function(el){
+      var id=el.getAttribute('data-map-node'), st=mapStateOf(id,node,trail);
+      el.classList.toggle('current', st==='current');
+      el.classList.toggle('visited', st==='visited');
+      el.classList.toggle('future',  st==='future');
+      el.setAttribute('aria-current', st==='current' ? 'step' : 'false');
+      el.setAttribute('aria-label',
+        (MAP_META[id]||{}).t + ',' + MAP_STATE_TXT[st] + '。查看这个航点的说明');
+    });
+    mapRoutes.forEach(function(el){
+      el.classList.toggle('complete', !!done[el.getAttribute('data-map-route')]); });
+    mapPulses.forEach(function(el){
+      el.classList.toggle('active', !!done[el.getAttribute('data-map-pulse')]); });
+    document.getElementById('map-progress-n').textContent = trail.length;
+    var keep = mapInspected && mapField.querySelector('[data-map-node="'+mapInspected+'"]');
+    mapInspect(keep ? mapInspected : node);
+  }
+
+  /* 查看某个航点:只读说明,不改变故事分支。焦点用 roving tabindex,一次只有一个入口。 */
+  function mapInspect(id){
+    if(!mapReady) return;
+    var node=S.node, trail=mapTrail(node), st=mapStateOf(id,node,trail);
+    var meta=MAP_META[id]||{t:id,d:''};
+    var chapter=(NODES[id]&&NODES[id].step)||1;
+    mapInspected=id;
+    mapNodes.forEach(function(el){
+      var nid=el.getAttribute('data-map-node');
+      el.classList.toggle('inspected', nid===id);
+      el.setAttribute('tabindex', nid===id ? '0' : '-1');
+    });
+    var chip=document.getElementById('map-read-state');
+    chip.className='state is-'+st;
+    chip.textContent=MAP_STATE_TXT[st];
+    document.getElementById('map-read-title').textContent=meta.t;
+    document.getElementById('map-read-desc').textContent=meta.d;
+    document.getElementById('map-current-position').textContent='第 '+chapter+' 章';
+    document.getElementById('map-visited-count').textContent=trail.length+' / '+mapNodes.length;
+
+    /* 回溯入口:只有走过的、且不是当前所在的航点才给。
+       按钮上直接写清要放弃几步,所以不再加一层确认对话。 */
+    var btn=document.getElementById('map-rewind'), at=trail.indexOf(id);
+    var drop=at<0 ? 0 : S.path.length-at;
+    if(st==='visited' && drop>0){
+      btn.hidden=false;
+      btn.innerHTML='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        + 'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+        + '<path d="M9 14 4 9l5-5"/><path d="M4 9h9a7 7 0 0 1 0 14h-3"/></svg>'
+        + '回到这里重新选择<b>放弃之后 '+drop+' 步</b>';
+      btn.setAttribute('aria-label','回到「'+meta.t+'」重新选择,将放弃之后的 '+drop+' 步');
+      /* 先关浮层再回溯:浮层打开时 #reader 是 inert 的,
+         否则 renderChoices 把焦点交给新选项会静默失败。 */
+      btn.onclick=function(){ toggleMap(false); rewindTo(id); };
+    }else{
+      btn.hidden=true;
+      btn.onclick=null;
+    }
+  }
+  
+  function mapKey(e){
+    if(e.key==='Enter'||e.key===' '||e.key==='Spacebar'){
+      e.preventDefault(); mapInspect(this.getAttribute('data-map-node')); return;
+    }
+    var i=mapNodes.indexOf(this), to=i;
+    if(e.key==='ArrowRight'||e.key==='ArrowDown') to=i+1;
+    else if(e.key==='ArrowLeft'||e.key==='ArrowUp') to=i-1;
+    else if(e.key==='Home') to=0;
+    else if(e.key==='End') to=mapNodes.length-1;
+    else return;
+    e.preventDefault();
+    var next=mapNodes[Math.max(0,Math.min(mapNodes.length-1,to))];
+    if(next && next!==this){ next.setAttribute('tabindex','0'); try{ next.focus(); }catch(err){} }
+  }
+
+  /* 倾斜变量写在 map-viewport 上,前景航迹与远景尘埃一起读,才有视差 */
+  function resetMapTilt(){
+    cancelAnimationFrame(mapTiltFrame); mapTiltFrame=0; mapTiltX=0; mapTiltY=0;
+    mapViewport.style.setProperty('--map-tilt-x','0deg');
+    mapViewport.style.setProperty('--map-tilt-y','0deg');
+    mapViewport.classList.remove('is-tilting');
+  }
+  function tiltMap(e){
+    if(RM||!S.motion||!mapReady||!mapEl.classList.contains('on')) return;
+    var r=mapViewport.getBoundingClientRect();
+    mapTiltX=((e.clientY-r.top)/r.height-.5)*-7;
+    mapTiltY=((e.clientX-r.left)/r.width-.5)*8;
+    if(mapTiltFrame) return;
+    mapTiltFrame=requestAnimationFrame(function(){
+      mapViewport.style.setProperty('--map-tilt-x',mapTiltX.toFixed(2)+'deg');
+      mapViewport.style.setProperty('--map-tilt-y',mapTiltY.toFixed(2)+'deg');
+      mapViewport.classList.add('is-tilting');
+      mapTiltFrame=0;
+    });
+  }
+  reader.addEventListener('scroll', function(){
+    followLatest = reader.scrollHeight - reader.scrollTop - reader.clientHeight < 80;
+  }, {passive:true});
+
+  function announceSave(ok){
+    var status = document.getElementById('saved');
+    status.textContent = ok ? '已存档' : '无法在此设备存档';
+    status.classList.toggle('fail', !ok);
+    status.classList.add('on');
+    clearTimeout(announceSave._t);
+    announceSave._t = setTimeout(function(){
+      status.classList.remove('on', 'fail');
+      status.textContent = '已存档';
+    }, ok ? 1400 : 3600);
+  }
+
+  function save(){
+    try{
+      localStorage.setItem(KEY, JSON.stringify(S));
+      announceSave(true);
+    }catch(e){
+      announceSave(false);
+    }
+  }
+
+  function load(){
+    try{
+      var raw = localStorage.getItem(KEY);
+      if(!raw) return false;
+      var d = JSON.parse(raw);
+      if(!d || !NODES[d.node]) return false;
+      /* 旧版存档没有 path,回溯就无从重放属性。与其显示一个点不动的按钮,不如重开。 */
+      if(d.v !== SAVE_V) return false;
+      S = Object.assign(S, d);
+      if(!Array.isArray(S.path)) S.path = [];
+      return true;
+    }catch(e){ return false; }
+  }
+
+  /* ---------------- 阅读偏好 ---------------- */
+  function applyPrefs(){
+    var veil = Math.max(VEIL_MIN, Math.min(0.95, Number(S.veil) || 0.74));  /* 护栏 */
+    S.veil = veil;
+    root.style.setProperty('--reader-veil', veil);
+    root.style.setProperty('--reader-size', S.size + 'px');
+    root.style.setProperty('--reader-lead', S.lead);
+    document.getElementById('v-veil').textContent = veil.toFixed(2);
+    document.getElementById('v-size').textContent = S.size + 'px';
+    document.getElementById('v-lead').textContent = Number(S.lead).toFixed(2);
+    document.getElementById('r-veil').value = veil;
+    document.getElementById('r-size').value = S.size;
+    document.getElementById('r-lead').value = S.lead;
+    document.getElementById('r-motion').checked = !!S.motion;
+    document.querySelectorAll('.scene .cloud, .scene .streak, .stagefig').forEach(function(el){
+      el.style.animationPlayState = (S.motion && !RM) ? 'running' : 'paused';
+    });
+    /* 用 mapEl 而非后面才赋值的 starmap:applyPrefs 在启动早期也会被调用 */
+    if(mapEl) mapEl.classList.toggle('motion-off', !(S.motion && !RM));
+  }
+
+  /* ---------------- 世界染色 ---------------- */
+  function paint(hue){
+    S.hue = hue;
+    root.style.setProperty('--hue', hue);
+    scene.classList.add('is-shifting');
+    clearTimeout(paint._t);
+    paint._t = setTimeout(function(){ scene.classList.remove('is-shifting'); }, 1120);
+  }
+
+  /* ---------------- 属性渲染 ---------------- */
+  var LOCK = '<svg class="lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
+
+  /* probe 传入一个「尚未发生的选择」,面板就渲染成幽灵态:
+     数值旁显示 → 目标值,进度条上叠出会长出/退回的那一截。
+     隐藏属性永不参与预览——它的数值对玩家永远不可见。 */
+  function renderAttrs(justKey, probe){
+    var box = document.getElementById('attr-list'), html='', hiddenCount=0;
+    var pv = probe ? probeMap(probe) : null;
+    S.attrs.forEach(function(a){
+      if(a.mode === 'reveal' && !a.shown) return;              /* 未揭示:不存在于 UI */
+      var cls = 'attr' + (a.mode==='hidden' ? ' is-hidden' : '') + (justKey===a.k ? ' just' : '');
+      if(a.mode === 'hidden'){
+        hiddenCount++;
+        html += '<div class="'+cls+'"><div class="row"><span class="k">'+a.k+'</span>'
+             +  '<span class="v" title="仅世界知道">'+LOCK+' —</span></div></div>';
+        return;
+      }
+      var p = pv ? pv[a.k] : undefined;
+      html += '<div class="'+cls+'"><div class="row"><span class="k">'+a.k+'</span>';
+      if(a.type === 'number'){
+        var cur = Math.max(0, Math.min(100, a.v/a.max*100)), ghost = '';
+        if(p !== undefined){
+          var nv = Math.max(0, Math.min(a.max, a.v + p));
+          var nx = Math.max(0, Math.min(100, nv/a.max*100));
+          ghost = nx > cur
+            ? '<u class="gain" style="left:'+cur+'%;width:'+(nx-cur)+'%"></u>'
+            : '<u class="loss" style="left:'+nx+'%;width:'+(cur-nx)+'%"></u>';
+          html += '<span class="v">'+a.v+' / '+a.max+'<em>→ '+nv+'</em></span></div>';
+        }else{
+          html += '<span class="v">'+a.v+' / '+a.max+'</span></div>';
+        }
+        html += '<div class="bar"><i style="width:'+cur+'%"></i>'+ghost+'</div></div>';
+      }else if(a.type === 'scalar'){
+        html += '<span class="v">'+a.v
+             +  (p !== undefined ? '<em>→ '+esc(p)+'</em>' : '') + '</span></div></div>';
+      }else{
+        html += '</div><div class="set">'
+             +  a.v.map(function(x){ return '<span>'+x+'</span>'; }).join('') + '</div></div>';
+      }
+    });
+    box.innerHTML = html;
+    document.getElementById('attr-note').textContent = hiddenCount
+      ? '另有 ' + hiddenCount + ' 项属性由世界暗中记录,它会影响剧情,但不会向你显示数值。'
+      : '所有属性均对你可见。';
+  }
+
+  function findAttr(k){
+    for(var i=0;i<S.attrs.length;i++){ if(S.attrs[i].k === k) return S.attrs[i]; }
+    return null;
+  }
+
+  /* ---------------- 试探:让选择在按下之前就有重量 ----------------
+     全部数据来自剧本自身的 fx / reveal / add,不新增内容。
+     代价 chip 常驻在选项卡上(触屏无悬停、窄屏面板收起时靠它);
+     面板幽灵态与天空偏色是宽屏上的额外通道。 */
+  var probing = null;
+
+  function probeMap(c){
+    var m = {};
+    (c.fx || []).forEach(function(p){
+      var a = findAttr(p[0]);
+      if(a && a.mode !== 'hidden') m[p[0]] = p[1];
+    });
+    return m;
+  }
+
+  /* 选项卡上的代价标签。隐藏属性不出现;未揭示的属性只说「揭示新属性」,不剧透是哪一项。 */
+  function costOf(c){
+    var out = [], veiled = false;
+    (c.fx || []).forEach(function(p){
+      var a = findAttr(p[0]);
+      if(!a || a.mode === 'hidden') return;
+      if(a.type === 'number')      out.push(a.k + ' ' + (p[1] > 0 ? '+' : '') + p[1]);
+      else if(a.type === 'scalar') out.push(a.k + ' → ' + p[1]);
+    });
+    if(c.add){
+      var t = findAttr(c.add[0]);
+      if(t && t.shown !== false) out.push(t.k + ' + ' + c.add[1]);
+      else if(t) veiled = true;
+    }
+    if(c.reveal){
+      var r = findAttr(c.reveal);
+      if(r && !r.shown) veiled = true;
+    }
+    if(veiled) out.push('揭示新属性');
+    return out;
+  }
+
+  /* 色相走短弧:252→300 直接过去,350→10 不绕一整圈 */
+  function lerpHue(a, b, t){
+    var d = ((b - a + 540) % 360) - 180;
+    return (a + d * t + 360) % 360;
+  }
+
+  /* --hue 只写在 .scene 上,不写 :root——外壳静止,动感长在作品上。
+     幅度只走 40%:试探不是抵达。 */
+  function probeSky(h){
+    if(h == null || RM){
+      scene.classList.remove('is-probing');
+      scene.style.removeProperty('--hue');
+      return;
+    }
+    scene.classList.add('is-probing');
+    scene.style.setProperty('--hue', lerpHue(S.hue, h, 0.4).toFixed(1));
+  }
+
+  function probeChoice(c){
+    if(!c || probing === c) return;
+    probing = c;
+    renderAttrs(null, c);
+    probeSky(c.hue);
+  }
+
+  function clearProbe(){
+    if(!probing) return;
+    probing = null;
+    renderAttrs();
+    probeSky(null);
+  }
+
+  /* 施加效果,返回可展示的变化描述(隐藏属性不进描述) */
+  function applyFx(c){
+    var notes = [], just = null;
+    (c.fx || []).forEach(function(pair){
+      var a = findAttr(pair[0]); if(!a) return;
+      if(a.type === 'number'){
+        var d = pair[1];
+        a.v = Math.max(0, Math.min(a.max, a.v + d));
+        if(a.mode !== 'hidden'){ notes.push(a.k + ' ' + (d>0?'+':'') + d); just = a.k; }
+      }else if(a.type === 'scalar'){
+        a.v = pair[1];
+        if(a.mode !== 'hidden'){ notes.push(a.k + ' → ' + a.v); just = a.k; }
+      }
+    });
+    if(c.reveal){
+      var r = findAttr(c.reveal);
+      if(r && !r.shown){ r.shown = true; notes.push('揭示了「' + r.k + '」'); just = r.k; }
+    }
+    if(c.add){
+      var t = findAttr(c.add[0]);
+      if(t && t.type === 'set' && t.v.indexOf(c.add[1]) < 0){
+        t.v.push(c.add[1]);
+        if(t.shown !== false){ notes.push(t.k + ' + ' + c.add[1]); just = t.k; }
+      }
+    }
+    renderAttrs(just);
+    return notes;
+  }
+
+  /* ---------------- 呈现 ---------------- */
+  function esc(s){ return String(s).replace(/[&<>]/g, function(m){
+    return ({'&':'&amp;','<':'&lt;','>':'&gt;'})[m]; }); }
+
+  function pushBeat(b, delay, record){
+    var el = document.createElement('p');
+    if(b.kind === 'sys'){
+      el.className = 'sys';
+      el.innerHTML = b.text ? esc(b.text) : (b.notes||[]).map(function(n){
+        return '<em>'+esc(n)+'</em>'; }).join('');
+    }else if(b.kind === 'mine'){
+      el.className = 'beat mine';
+      el.innerHTML = '<b>你的行动</b>' + esc(b.t);
+    }else if(b.v){
+      el.className = 'beat voice';
+      el.innerHTML = '<b>' + esc(b.v) + '</b>' + esc(b.t);
+    }else{
+      el.className = 'beat';
+      el.textContent = b.t;
+    }
+    el.style.animationDelay = (RM ? 0 : delay) + 'ms';
+    stream.appendChild(el);
+    scrollToEnd();
+    if(record !== false) S.log.push(b);
+  }
+
+  function scrollToEnd(force){
+    if(!force && !followLatest) return;
+    requestAnimationFrame(function(){
+      reader.scrollTo({top:reader.scrollHeight, behavior: RM ? 'auto' : 'smooth'});
+    });
+  }
+
+  function renderChoices(node, focusFirst){
+    act.innerHTML = '';
+    if(node.end){
+      var box = document.createElement('div');
+      box.className = 'chapend';
+      box.setAttribute('data-od-id','chapter-end');
+      box.innerHTML = '<p>第二章《学舌的邻居》尚未写完。<br>你可以回到星海,换一个世界待一会儿。</p>'
+        + '<div class="row">'
+        + '<button class="btn-ghost" type="button" id="again">重读这一章</button>'
+        + '<a class="btn-ghost" href="home-galaxy.html">回到星海</a>'
+        + '</div>';
+      act.appendChild(box);
+      document.getElementById('again').addEventListener('click', reset);
+      return;
+    }
+    var wrap = document.createElement('div');
+    wrap.className = 'choices';
+    wrap.setAttribute('data-od-id','choice-list');
+    node.choices.forEach(function(c, i){
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'choice';
+      b.setAttribute('data-od-id','choice-' + (i+1));
+      var cost = costOf(c);
+      b.innerHTML = '<span class="idx" aria-hidden="true">' + (i+1) + '</span>'
+        + '<span class="txt">' + esc(c.t) + (c.s ? '<small>' + esc(c.s) + '</small>' : '')
+        + (cost.length
+            ? '<span class="cost">' + cost.map(function(x){
+                return '<span>' + esc(x) + '</span>'; }).join('') + '</span>'
+            : '')
+        + '</span>';
+      /* 代价 chip 就在按钮内部,本身已进入可访问名,不再另加 aria-description 重复播报 */
+      b.addEventListener('click', function(){ clearProbe(); choose(c); });
+      /* 悬停/聚焦 = 试探:属性面板显示这一步会带来的增减,天空朝那条分支偏一点 */
+      b.addEventListener('pointerenter', function(){ probeChoice(c); });
+      b.addEventListener('pointerleave', clearProbe);
+      b.addEventListener('focus', function(){ probeChoice(c); });
+      b.addEventListener('blur', clearProbe);
+      wrap.appendChild(b);
+    });
+    act.appendChild(wrap);
+    /* 选完之后焦点不落空:交回新的第一个选项,不打断滚动 */
+    if(focusFirst){
+      var first = wrap.querySelector('.choice');
+      if(first) try{ first.focus({preventScroll:true}); }catch(e){}
+    }
+
+    var cp = document.createElement('form');
+    cp.className = 'compose';
+    cp.setAttribute('data-od-id','free-input');
+    cp.innerHTML = '<p class="compose-note" id="demo-note">演示模式:未接入模型,按关键词匹配属性'
+      + '(如「冷静」「躲」「裹紧」)。行动会真的改动属性,但不会改变当前分支。</p>'
+      + '<label for="free">你也可以自己写一个行动</label>'
+      + '<textarea id="free" rows="1" maxlength="' + MAX_INPUT + '" aria-describedby="demo-note meter"'
+      + ' placeholder="或者,写下你自己的做法……"></textarea>'
+      + '<button class="btn-send" type="submit" id="send" data-od-id="demo-action-submit" disabled>'
+      + '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg>'
+      + '<span class="txt">写入演示</span></button>'
+      + '<span class="meter" id="meter" aria-live="polite"></span>';
+    act.appendChild(cp);
+
+    var ta = cp.querySelector('#free'), send = cp.querySelector('#send');
+    var meter = cp.querySelector('#meter');
+    ta.addEventListener('input', function(){
+      var n = ta.value.trim().length;
+      send.disabled = !n;
+      meter.textContent = n > MAX_INPUT - 40 ? n + ' / ' + MAX_INPUT : '';
+      meter.classList.toggle('over', n >= MAX_INPUT);
+      ta.style.height = 'auto';
+      ta.style.height = Math.min(120, ta.scrollHeight) + 'px';
+    });
+    ta.addEventListener('keydown', function(e){
+      if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); if(!send.disabled) cp.requestSubmit(); }
+    });
+    cp.addEventListener('submit', function(e){
+      e.preventDefault();
+      var text = ta.value.trim();
+      if(!text) return;
+      /* 忙碌态留在原地:表单不消失,按钮说明正在做什么 */
+      cp.classList.add('busy');
+      cp.setAttribute('aria-busy', 'true');
+      ta.disabled = true;
+      send.disabled = true;
+      send.querySelector('.txt').textContent = '写入中…';
+      improv(text);
+    });
+  }
+
+  function choose(c){
+    act.innerHTML = '';
+    /* 先记路再走:星图的回溯完全靠这条序列重放 */
+    var from = S.node;
+    S.path.push({from:from, to:c.to, i:(NODES[from].choices || []).indexOf(c)});
+    var mine = {kind:'mine', t:c.t};
+    pushBeat(mine, 0);
+    var notes = applyFx(c);
+    if(notes.length) pushBeat({kind:'sys', notes:notes}, 60);
+    if(c.hue) paint(c.hue);
+    goto(c.to, 180, true);
+  }
+
+  /* ---------------- 回溯:星图从「可查看」变成「可导航」 ----------------
+     回到某个已抵达的航点 = 把选择序列截断到那一步,再从头静默重放。
+     属性因此精确回到当时的值,而不是靠反向减法凑出来。 */
+  function rewindTo(id){
+    var trail = mapTrail(), at = trail.indexOf(id);
+    if(at < 0) return false;
+    clearProbe();
+    S.path = S.path.slice(0, at);          /* 保留到达 id 为止的那些选择 */
+    S.attrs = JSON.parse(JSON.stringify(ATTR_DEF));
+    S.log = [];
+    stream.innerHTML = '';
+    act.innerHTML = '';
+
+    var cur = 'n1';
+    S.path.forEach(function(st){
+      var node = NODES[cur], c = (node.choices || [])[st.i];
+      if(!c) return;
+      node.beats.forEach(function(b){ pushBeat(b, 0); });
+      pushBeat({kind:'mine', t:c.t}, 0);
+      var notes = applyFx(c);
+      if(notes.length) pushBeat({kind:'sys', notes:notes}, 0);
+      cur = c.to;
+    });
+    var last = NODES[cur];
+    last.beats.forEach(function(b){ pushBeat(b, 0); });
+
+    S.node = cur;
+    renderAttrs();
+    paint(last.hue || WORK.h);
+    renderProgress(last);
+    mapInspected = null;
+    renderStarMap(cur);
+    renderChoices(last, true);
+    save();
+    scrollToEnd(true);
+    return true;
+  }
+
+  function improv(text){
+    if(!text) return;
+    pushBeat({kind:'mine', t:text}, 0);
+    /* 自由行动也要有后果:关键词命中就真的推动属性,命中不到就明说没命中 */
+    var fx = improvFx(text);
+    var notes = fx.length ? applyFx({fx:fx}) : [];
+    if(notes.length) pushBeat({kind:'sys', notes:notes}, 50);
+    pushBeat({kind:'sys', text: !fx.length
+      ? '演示剧本 · 未接入模型:没有匹配到属性关键词,世界只是记下了这个动作'
+      : (notes.length
+          ? '演示剧本 · 未接入模型:以上变化由关键词匹配得出'
+          : '演示剧本 · 未接入模型:这个动作被世界记下了,但没有对你可见的属性变化')}, 80);
+    IMPROV.forEach(function(t, i){ pushBeat({t:t}, 160 + i*140); });
+    var node = NODES[S.node];
+    setTimeout(function(){ renderChoices(node, true); scrollToEnd(); }, RM ? 0 : 420);
+    save();
+    scrollToEnd();
+  }
+
+  function goto(id, base, focusFirst){
+    var node = NODES[id];
+    if(!node) return;
+    S.node = id;
+    node.beats.forEach(function(b, i){ pushBeat(b, base + i * (RM ? 0 : 190)); });
+    if(node.hue) paint(node.hue);
+    renderProgress(node);
+    mapInspected = null;
+    renderStarMap(id);
+    setTimeout(function(){ renderChoices(node, focusFirst); scrollToEnd(); },
+      RM ? 0 : base + node.beats.length * 190 + 120);
+    save();
+    scrollToEnd();
+  }
+
+  function reset(){
+    clearProbe();
+    S.node = 'n1';
+    S.attrs = JSON.parse(JSON.stringify(ATTR_DEF));
+    S.log = [];
+    S.path = [];
+    stream.innerHTML = '';
+    act.innerHTML = '';
+    paint(WORK.h);
+    renderAttrs();
+    goto('n1', 0, true);
+  }
+
+  /* ---------------- 浮层 ---------------- */
+  var sheet = document.getElementById('sheet'), btnSet = document.getElementById('btn-set');
+  var sheetClose = document.getElementById('sheet-close');
+  var starmap = document.getElementById('starmap'), btnMap = document.getElementById('btn-map'), mapClose = document.getElementById('map-close');
+  var panel = document.getElementById('attrs'), btnAttr = document.getElementById('btn-attrs');
+  var narrow = window.matchMedia('(max-width:1000px)');
+
+  function toggleSheet(on){
+    sheet.classList.toggle('on', on);
+    sheet.setAttribute('aria-hidden', String(!on));
+    btnSet.setAttribute('aria-expanded', String(on));
+    if(on){ document.getElementById('r-veil').focus(); }
+    else if(sheet.contains(document.activeElement)){ btnSet.focus(); }
+  }
+  btnSet.addEventListener('click', function(){ toggleSheet(!sheet.classList.contains('on')); });
+  sheetClose.addEventListener('click', function(){ toggleSheet(false); });
+
+  function panelOpen(){
+    return narrow.matches ? panel.classList.contains('on') : !panel.classList.contains('collapsed');
+  }
+  function togglePanel(on){
+    if(narrow.matches) panel.classList.toggle('on', on);
+    else panel.classList.toggle('collapsed', !on);
+    btnAttr.setAttribute('aria-expanded', String(on));
+    if(!on && narrow.matches) btnAttr.focus();
+  }
+  btnAttr.addEventListener('click', function(){ togglePanel(!panelOpen()); });
+  document.getElementById('attrs-close').addEventListener('click', function(){ togglePanel(false); });
+  /* 星图是覆盖全屏的浮层,按真模态处理:遮罩 + 焦点收在层内 + 关闭后焦点归位 */
+  function setMapBackgroundInert(on){
+    mapBackground.forEach(function(el){
+      if(on){
+        el.setAttribute('data-map-prev-aria-hidden',el.getAttribute('aria-hidden')||'');
+        el.setAttribute('aria-hidden','true');
+        el.inert=true;
+      }else{
+        var previous=el.getAttribute('data-map-prev-aria-hidden');
+        if(previous) el.setAttribute('aria-hidden',previous); else el.removeAttribute('aria-hidden');
+        el.removeAttribute('data-map-prev-aria-hidden');
+        el.inert=false;
+      }
+    });
+  }
+  function toggleMap(on){
+    if(on){
+      toggleSheet(false);
+      mapOpener=document.activeElement;
+      setMapBackgroundInert(true);
+    }else{
+      setMapBackgroundInert(false);
+    }
+    starmap.classList.toggle('on',on);
+    mapScrim.classList.toggle('on',on);
+    starmap.setAttribute('aria-hidden',String(!on));
+    mapScrim.setAttribute('aria-hidden',String(!on));
+    btnMap.setAttribute('aria-expanded',String(on));
+    if(on){
+      if(!mapReady){
+        mapViewport.setAttribute('data-state','loading');
+        mapViewport.setAttribute('aria-busy','true');
+        requestAnimationFrame(function(){requestAnimationFrame(mapBuild);});
+      }else{
+        renderStarMap(S.node);
+      }
+      mapClose.focus();
+    }else{
+      resetMapTilt();
+      if(starmap.contains(document.activeElement)||document.activeElement===document.body){
+        try{(mapOpener&&mapOpener.focus?mapOpener:btnMap).focus();}catch(e){btnMap.focus();}
+      }
+      mapOpener=null;
+    }
+  }
+  
+  btnMap.addEventListener('click', function(){ toggleMap(!starmap.classList.contains('on')); });
+  mapClose.addEventListener('click', function(){ toggleMap(false); });
+  mapScrim.addEventListener('click', function(){ toggleMap(false); });
+  document.getElementById('map-retry').addEventListener('click', function(){
+    mapViewport.setAttribute('data-state','loading');
+    requestAnimationFrame(function(){ requestAnimationFrame(mapBuild); });
+  });
+  /* Tab 不跑出浮层:关闭键 → 当前航点 → 重试键(若在) → 回到关闭键 */
+  starmap.addEventListener('keydown', function(e){
+    if(e.key !== 'Tab' || !starmap.classList.contains('on')) return;
+    var f = [].slice.call(starmap.querySelectorAll(
+      'button:not([disabled]),[data-map-node][tabindex="0"]'))
+      .filter(function(el){ return el.getClientRects().length > 0; });
+    if(!f.length) return;
+    var first=f[0], last=f[f.length-1];
+    if(e.shiftKey && document.activeElement===first){ e.preventDefault(); last.focus(); }
+    else if(!e.shiftKey && document.activeElement===last){ e.preventDefault(); first.focus(); }
+  });
+  mapViewport.addEventListener('pointermove', tiltMap, {passive:true});
+  mapViewport.addEventListener('pointerleave', resetMapTilt, {passive:true});
+  mapViewport.addEventListener('pointercancel', resetMapTilt, {passive:true});
+  /* 断点跨越时整张图按新朝向重排,而不是把横版压扁 */
+  mapNarrow.addEventListener('change', function(){
+    if(!mapReady) return;
+    mapReady=false;
+    mapViewport.setAttribute('data-state','loading');
+    requestAnimationFrame(mapBuild);
+  });
+  narrow.addEventListener('change', function(){
+    panel.classList.remove('on','collapsed');
+    btnAttr.setAttribute('aria-expanded', String(!narrow.matches));
+  });
+
+  document.addEventListener('keydown', function(e){
+    if(e.key !== 'Escape') return;
+    if(starmap.classList.contains('on')) toggleMap(false);
+    else if(sheet.classList.contains('on')) toggleSheet(false);
+    else if(panel.classList.contains('on')) togglePanel(false);
+  });
+  document.addEventListener('click', function(e){
+    if(starmap.classList.contains('on') && !starmap.contains(e.target) && !btnMap.contains(e.target)) toggleMap(false);
+    if(sheet.classList.contains('on') && !sheet.contains(e.target) && !btnSet.contains(e.target)) toggleSheet(false);
+  });
+
+  /* ---------------- 设置绑定 ---------------- */
+  document.getElementById('r-veil').addEventListener('input', function(){
+    S.veil = Math.max(VEIL_MIN, Number(this.value)); applyPrefs(); save();
+  });
+  document.getElementById('r-size').addEventListener('input', function(){
+    S.size = Number(this.value); applyPrefs(); save();
+  });
+  document.getElementById('r-lead').addEventListener('input', function(){
+    S.lead = Number(this.value); applyPrefs(); save();
+  });
+  document.getElementById('r-motion').addEventListener('change', function(){
+    S.motion = this.checked; applyPrefs(); save();
+  });
+  document.getElementById('r-reset').addEventListener('click', function(){
+    toggleSheet(false); reset();
+  });
+
+  /* ---------------- 启动 ---------------- */
+  var restored = load();
+  applyPrefs();
+  /* 宽屏属性面板常驻,aria 状态要与之一致;窄屏隐去顶栏 chip 时把「演示」并入副标题 */
+  btnAttr.setAttribute('aria-expanded', String(!narrow.matches));
+  if(window.matchMedia('(max-width:640px)').matches){
+    document.getElementById('work-kick').textContent = WORK.k + ' · 演示剧本';
+  }
+  paint(S.hue || WORK.h);
+  renderAttrs();
+
+  if(restored && S.log && S.log.length){
+    S.log.forEach(function(b){ pushBeat(b, 0, false); });     /* 原样恢复,不重播动画节奏 */
+    var node = NODES[S.node];
+    renderProgress(node);
+    renderStarMap(S.node);
+    renderChoices(node);
+    document.getElementById('reader').scrollTop = 1e6;
+  }else{
+    goto('n1', 120);
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,948 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="description" content="我的空间 · 一个创作者的星域:原创作品、衍生贡献与收藏,由全部作品的色相共同混成一片天空。" />
+<title>我的空间 · 万象 Story Editor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;510;590&family=Noto+Serif+SC:wght@500;700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:        oklch(0.13 0.022 265);
+    --bg-deep:   oklch(0.09 0.018 265);
+    --surface:   oklch(0.19 0.030 265);
+    --fg:        oklch(0.96 0.010 90);
+    --muted:     oklch(0.72 0.020 265);
+    --border:    oklch(1 0 0 / 0.11);
+    --border-2:  oklch(1 0 0 / 0.20);
+    --accent:    oklch(0.82 0.125 85);
+    --accent-dim:oklch(0.66 0.100 85);
+    --bright:    oklch(0.88 0.008 265);   /* 中性亮态:选中/主动作,不占暖金配额 */
+
+    --font-display:"Noto Serif SC", Georgia, "Songti SC", serif;
+    --font-ui:"Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+    --r-sm:8px; --r-md:12px; --r-lg:18px; --r-pill:999px;
+    --ease:cubic-bezier(.2,0,0,1);
+    --ring:0 0 0 2px oklch(0.09 0.018 265), 0 0 0 4px oklch(0.82 0.125 85);
+
+    --ambient-hue:252;
+  }
+  /* 角色 token 声明在使用它的元素上——放 :root 会被锁死成同一个色相 */
+  .world-scope{
+    --w-line:   oklch(0.72 0.140 var(--hue) / .85);
+    --w-glow:   oklch(0.72 0.140 var(--hue) / .50);
+    --w-glow-lg:oklch(0.72 0.140 var(--hue) / .55);
+    --w-sky-hi: oklch(0.34 0.115 var(--hue));
+    --w-sky-md: oklch(0.22 0.085 var(--hue));
+    --w-sky-lo: oklch(0.11 0.040 var(--hue));
+    --w-halo:   oklch(0.48 0.130 var(--hue) / .75);
+    --w-cloud:  oklch(0.20 0.050 var(--hue) / .85);
+    --w-cloud2: oklch(0.44 0.090 var(--hue) / .50);
+    --w-star:   oklch(0.98 0.020 var(--hue) / .90);
+    --w-ink:    oklch(0.055 0.015 var(--hue));
+    --w-plate:  oklch(0.050 0.015 var(--hue) / .92);
+    --w-text:   oklch(0.97 0.010 var(--hue));
+    --w-kick:   oklch(0.86 0.090 var(--hue));
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg-deep);color:var(--fg);font-family:var(--font-ui);
+    -webkit-font-smoothing:antialiased;min-height:100%}
+  button{font-family:inherit;cursor:pointer;color:inherit}
+  a{color:inherit;text-decoration:none}
+  button:disabled{cursor:not-allowed}
+  :focus-visible{outline:none;box-shadow:var(--ring);border-radius:var(--r-sm)}
+  .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+  [hidden]{display:none!important}
+
+  /* ================= 深空背景 ================= */
+  .space{position:fixed;inset:0;z-index:0;
+    background:
+      radial-gradient(58% 46% at 74% 12%, oklch(0.30 0.075 var(--ambient-hue) / .44), transparent 62%),
+      radial-gradient(46% 34% at 14% 86%, oklch(0.28 0.070 calc(var(--ambient-hue) + 52) / .30), transparent 66%),
+      radial-gradient(70% 60% at 50% 46%, oklch(0.16 0.028 var(--ambient-hue)), oklch(0.08 0.016 var(--ambient-hue)) 78%);
+    transition:background 1.1s var(--ease)}
+  .stars{position:fixed;inset:0;z-index:1;pointer-events:none}
+  .stars i{position:absolute;border-radius:50%;background:oklch(1 0 0);display:block}
+  @keyframes twinkle{0%,100%{opacity:.25}50%{opacity:.95}}
+  .grain{position:fixed;inset:0;z-index:2;pointer-events:none;opacity:.05;mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='140' height='140' filter='url(%23n)'/></svg>");
+    background-size:140px 140px}
+  .vignette{position:fixed;inset:0;z-index:3;pointer-events:none;
+    background:radial-gradient(126% 100% at 50% 40%, transparent 54%, oklch(0.05 0.01 265 / .74) 100%)}
+
+  /* ================= 顶栏 ================= */
+  .topbar{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:14px;
+    padding:16px 26px;background:linear-gradient(180deg, oklch(0.09 0.018 265 / .94), oklch(0.09 0.018 265 / 0));
+    backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px)}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:590;font-size:15px;letter-spacing:.02em}
+  .brand .mark{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;flex:none;
+    background:oklch(1 0 0 / .05);border:1px solid var(--border)}
+  .brand .zh{font-family:var(--font-display);font-weight:700;font-size:16px;letter-spacing:.1em}
+  .brand .en{color:var(--muted);font-size:11.5px;letter-spacing:.16em;padding-left:10px;
+    border-left:1px solid var(--border)}
+  .topnav{margin-left:auto;display:flex;align-items:center;gap:6px}
+  .topnav a{min-height:44px;padding:0 13px;border-radius:var(--r-sm);color:var(--muted);font-size:13.5px;
+    font-weight:510;letter-spacing:.02em;display:inline-flex;align-items:center;
+    transition:color .15s var(--ease),background .15s var(--ease)}
+  .topnav a:hover{color:var(--fg);background:oklch(1 0 0 / .07)}
+  .topnav a[aria-current="page"]{color:var(--fg);background:oklch(1 0 0 / .07)}
+  .btn-create{margin-left:8px;height:44px;padding:0 17px;border-radius:var(--r-pill);
+    border:1px solid var(--border-2);background:transparent;color:var(--fg);
+    font-size:13.5px;font-weight:590;letter-spacing:.02em;
+    display:inline-flex;align-items:center;gap:7px;
+    transition:background .16s var(--ease),border-color .16s var(--ease)}
+  .btn-create:hover{background:oklch(1 0 0 / .10);border-color:oklch(1 0 0 / .32)}
+
+  /* ================= 页面容器 ================= */
+  .wrap{position:relative;z-index:10;max-width:1080px;margin:0 auto;padding:6px 26px 96px}
+
+  /* ================= 作者的天空 =================
+     不是头像圆框。这个人全部作品的色相各自铺一层,叠在一起就是他的天空。
+     多个 hue 无法混进单个 var(--hue),因此每层一个独立作用域 + screen 叠加。 */
+  /* isolation 挂在容器上:screen 必须能叠到 .sky-base 上才有加亮效果,
+     同时又不能穿透到页面背景去。挂在 .sky-layers 上两头都不对。 */
+  .authorsky{position:relative;height:340px;border-radius:var(--r-lg);overflow:hidden;
+    border:1px solid var(--border);background:var(--bg);isolation:isolate}
+  .sky-base{position:absolute;inset:0;
+    background:linear-gradient(178deg, var(--w-sky-md) 0%, var(--w-sky-lo) 68%, oklch(0.08 0.016 265) 100%)}
+  .sky-layers{position:absolute;inset:0}
+  .sky-layer{position:absolute;inset:0;mix-blend-mode:screen;
+    background:radial-gradient(var(--rx) var(--ry) at var(--px) var(--py), var(--w-halo), transparent 66%)}
+  .sky-cloud{position:absolute;border-radius:50%;filter:blur(16px)}
+  .sky-cloud.c1{width:130%;height:24%;left:-16%;bottom:16%;background:var(--w-cloud)}
+  .sky-cloud.c2{width:90%;height:17%;left:26%;bottom:27%;background:var(--w-cloud2)}
+  .sky-dot{position:absolute;width:1.7px;height:1.7px;border-radius:50%;background:oklch(0.98 0.006 265 / .9)}
+  .sky-streak{position:absolute;height:1px;background:linear-gradient(90deg,transparent,oklch(0.98 0.01 265));
+    transform:rotate(26deg);transform-origin:right center}
+  .sky-horizon{position:absolute;left:0;right:0;bottom:0;height:40%;
+    background:linear-gradient(180deg, transparent, var(--w-ink) 70%)}
+  .sky-fig{position:absolute;right:26%;bottom:15%;width:88px;height:88px;color:var(--w-ink)}
+  .sky-fig svg{width:100%;height:100%;display:block}
+
+  /* 铭牌锚在左下角,四边等距;剪影在右 26%,两者不重叠 */
+  .sky-plate{position:absolute;left:22px;bottom:22px;right:auto;max-width:min(58%,430px);
+    padding:15px 19px 16px;border-radius:var(--r-md);
+    background:oklch(0.085 0.016 265 / .84);border:1px solid var(--border-2);
+    box-shadow:0 20px 50px -30px oklch(0.02 0 0 / .9);
+    backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+  .sky-plate .eyebrow{font-size:10.5px;letter-spacing:.22em;color:var(--muted);font-weight:590;
+    margin-bottom:8px}
+  .sky-plate h1{font-family:var(--font-display);font-weight:900;font-size:clamp(26px,3.1vw,36px);
+    line-height:1.34;letter-spacing:0}
+  .sky-plate .handle{margin-top:7px;font-size:12.5px;letter-spacing:.06em;color:var(--muted)}
+
+  /* 视角开关:原型态切换,如实标注,不伪装成产品功能 */
+  .viewswitch{position:absolute;right:20px;top:20px;display:flex;align-items:center;gap:8px;
+    padding:5px;border-radius:var(--r-pill);
+    background:oklch(0.10 0.018 265 / .82);border:1px solid var(--border)}
+  .viewswitch .lb{font-size:10.5px;letter-spacing:.14em;color:oklch(0.66 0.018 265);padding-left:9px}
+  .viewswitch button{min-height:44px;padding:0 15px;border:0;border-radius:var(--r-pill);
+    background:transparent;color:var(--muted);font-size:12.5px;font-weight:510;letter-spacing:.03em;
+    transition:background .15s var(--ease),color .15s var(--ease)}
+  .viewswitch button:hover{color:var(--fg);background:oklch(1 0 0 / .09)}
+  .viewswitch button[aria-pressed="true"]{background:var(--bright);color:oklch(0.16 0.02 265);font-weight:590}
+
+  /* ================= 身份行 ================= */
+  .ident{display:flex;align-items:flex-start;gap:28px;margin-top:22px;flex-wrap:wrap}
+  .ident .bio{flex:1 1 380px;min-width:0}
+  .ident .bio p{font-family:var(--font-display);font-size:15.5px;line-height:1.95;color:var(--fg);
+    max-width:52ch}
+  /* 数字压到副信息层级:不做 KPI 卡片行 */
+  .facts{margin-top:13px;font-size:12.5px;letter-spacing:.03em;color:var(--muted);line-height:1.9}
+  .facts b{font-weight:590;color:oklch(0.86 0.012 265);font-variant-numeric:tabular-nums}
+  .facts .sep{padding:0 8px;color:oklch(0.44 0.014 265)}
+  .actions{flex:0 0 auto;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-top:2px}
+
+  /* 整页唯一的实心暖金主动作,两态互斥出现,永不同屏出现两个 */
+  .btn-primary{height:48px;padding:0 24px;border-radius:var(--r-pill);border:0;
+    background:var(--accent);color:oklch(0.16 0.03 85);font-size:14.5px;font-weight:590;letter-spacing:.03em;
+    display:inline-flex;align-items:center;gap:9px;
+    transition:background .16s var(--ease),transform .1s var(--ease)}
+  .btn-primary:hover{background:oklch(0.90 0.135 85)}
+  .btn-primary:active{transform:translateY(1px)}
+  .btn-ghost{min-height:44px;padding:0 17px;border-radius:var(--r-pill);border:1px solid var(--border-2);
+    background:transparent;color:var(--fg);font-size:13.5px;font-weight:590;letter-spacing:.02em;
+    display:inline-flex;align-items:center;gap:8px;
+    transition:background .16s var(--ease),border-color .16s var(--ease)}
+  .btn-ghost:hover{background:oklch(1 0 0 / .10);border-color:oklch(1 0 0 / .32)}
+  .btn-text{min-height:44px;padding:0 4px;border:0;background:none;color:var(--muted);
+    font-size:13.5px;letter-spacing:.02em;display:inline-flex;align-items:center;gap:6px;
+    transition:color .15s var(--ease)}
+  .btn-text:hover{color:var(--fg)}
+
+  /* ================= 创作者工作台(仅本人视角) ================= */
+  .dock{display:flex;align-items:stretch;gap:10px;margin-top:26px;flex-wrap:wrap}
+  .dock a{flex:1 1 210px;min-width:0;display:flex;align-items:center;gap:13px;
+    min-height:64px;padding:13px 17px;border-radius:var(--r-md);
+    border:1px solid var(--border);background:oklch(1 0 0 / .03);
+    transition:background .16s var(--ease),border-color .16s var(--ease)}
+  .dock a:hover{background:oklch(1 0 0 / .085);border-color:oklch(1 0 0 / .28)}
+  .dock .ic{flex:none;width:30px;height:30px;display:grid;place-items:center;color:var(--muted)}
+  .dock a:hover .ic{color:var(--fg)}
+  .dock .tx{min-width:0}
+  .dock .t1{font-size:13.5px;font-weight:590;letter-spacing:.02em}
+  .dock .t2{margin-top:3px;font-size:11.5px;letter-spacing:.03em;color:var(--muted)}
+  .dock .badge{margin-left:auto;flex:none;min-width:22px;height:22px;padding:0 7px;border-radius:var(--r-pill);
+    display:grid;place-items:center;background:var(--bright);color:oklch(0.16 0.02 265);
+    font-size:11.5px;font-weight:590;font-variant-numeric:tabular-nums}
+
+  /* ================= 三条脉络 ================= */
+  .tracks{margin-top:44px}
+  .tablist{display:flex;align-items:center;gap:5px;padding:5px;border-radius:var(--r-pill);
+    background:oklch(0.12 0.02 265 / .7);border:1px solid var(--border);width:max-content;max-width:100%;
+    overflow-x:auto;scrollbar-width:none}
+  .tablist::-webkit-scrollbar{display:none}
+  .tablist button{white-space:nowrap;min-height:44px;padding:0 18px;border:0;border-radius:var(--r-pill);
+    background:transparent;color:var(--muted);font-size:13.5px;font-weight:510;letter-spacing:.03em;
+    display:inline-flex;align-items:center;gap:8px;
+    transition:background .15s var(--ease),color .15s var(--ease)}
+  .tablist button:hover{color:var(--fg);background:oklch(1 0 0 / .08)}
+  .tablist button[aria-selected="true"]{background:var(--bright);color:oklch(0.16 0.02 265);font-weight:590}
+  .tablist .n{font-size:11.5px;font-variant-numeric:tabular-nums;opacity:.72}
+  .panel{margin-top:26px}
+  .panel-lead{font-family:var(--font-display);font-size:14px;line-height:1.95;color:var(--muted);
+    max-width:60ch;margin-bottom:22px}
+
+  /* ---- 作品网格 ---- */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(212px,1fr));gap:18px}
+  .work{position:relative;display:block;border-radius:var(--r-lg);overflow:hidden;border:1px solid oklch(1 0 0 / .14);
+    background:var(--bg);aspect-ratio:170/228;
+    transition:box-shadow .3s var(--ease),border-color .3s var(--ease),transform .3s var(--ease)}
+  .work:hover{border-color:var(--w-line);transform:translateY(-3px);
+    box-shadow:0 0 34px -6px var(--w-glow),0 26px 60px -32px oklch(0.02 0 0 / .9)}
+  .work:focus-visible{box-shadow:var(--ring)}
+  .work .sky{position:absolute;inset:0;
+    background:
+      radial-gradient(120% 62% at 68% 8%, var(--w-halo), transparent 62%),
+      linear-gradient(178deg, var(--w-sky-hi) 0%, var(--w-sky-md) 46%, var(--w-sky-lo) 100%)}
+  .work .cloud{position:absolute;border-radius:50%;filter:blur(7px);background:var(--w-cloud)}
+  .work .cloud.c1{width:150%;height:34%;left:-30%;bottom:8%}
+  .work .cloud.c2{width:110%;height:24%;left:22%;bottom:20%;background:var(--w-cloud2)}
+  .work .dot{position:absolute;width:1.6px;height:1.6px;border-radius:50%;background:var(--w-star)}
+  .work .horizon{position:absolute;left:0;right:0;bottom:0;height:34%;
+    background:linear-gradient(180deg, transparent, var(--w-ink) 62%)}
+  .work .figure{position:absolute;left:50%;bottom:17%;width:44px;height:44px;margin-left:-22px;color:var(--w-ink)}
+  .work .figure svg{width:100%;height:100%;display:block}
+  .work .plate{position:absolute;left:0;right:0;bottom:0;padding:12px 13px 13px;
+    background:linear-gradient(180deg,transparent,var(--w-plate) 42%)}
+  .work .kicker{display:block;font-size:10.5px;font-weight:590;letter-spacing:.12em;color:var(--w-kick);margin-bottom:5px}
+  .work .name{display:block;font-family:var(--font-display);font-weight:700;font-size:15px;line-height:1.4;color:var(--w-text)}
+  .work .stat{display:block;margin-top:7px;font-size:11px;letter-spacing:.04em;color:oklch(0.86 0.008 var(--hue) / .8);
+    font-variant-numeric:tabular-nums}
+  /* 状态角标:锚右上角,与铭牌同一内边距 */
+  .work .st{position:absolute;right:11px;top:11px;padding:4px 9px;border-radius:var(--r-pill);
+    font-size:10.5px;letter-spacing:.08em;font-weight:590;
+    background:oklch(0.085 0.016 265 / .82);border:1px solid oklch(1 0 0 / .22);color:oklch(0.94 0.008 265)}
+
+  /* ---- 衍生贡献:星图片段 ---- */
+  .deriv{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:26px;align-items:start}
+  .mapbox{position:relative;border-radius:var(--r-lg);overflow:hidden;min-height:330px}
+  .mapbox svg{display:block;width:100%;height:auto}
+  /* 命中纪律:装饰层一律不吃指针事件,只有 .node 子树可命中 */
+  .edges,.halos,.tag,.wlabel{pointer-events:none}
+  .edge{fill:none;stroke:var(--w-line);stroke-linecap:round}
+  .edge.mine{stroke:var(--w-kick);stroke-width:2.6}
+  .halo{fill:var(--w-glow)}
+  .node{cursor:pointer}
+  .node .hit{fill:transparent}
+  .node .core{fill:var(--w-star);transition:r .18s var(--ease),fill .18s var(--ease)}
+  .node.mine .core{fill:var(--w-kick)}
+  .node .ringmark{fill:none;stroke:var(--w-kick);stroke-width:1.4;opacity:.85}
+  .node:hover .core{fill:oklch(1 0 0)}
+  .node[aria-pressed="true"] .core{fill:oklch(1 0 0)}
+  .node .sel{fill:none;stroke:oklch(1 0 0 / .55);stroke-width:1.3}
+  .node:focus{outline:none}
+  .node:focus-visible .fring{stroke:var(--accent);stroke-width:2.4;opacity:1}
+  .fring{fill:none;stroke:transparent;stroke-width:0;opacity:0}
+  .tag text{font-family:var(--font-display);font-size:11.5px;fill:oklch(0.97 0.008 265)}
+  .tag rect{fill:oklch(0.085 0.016 265 / .84);stroke:oklch(1 0 0 / .16);stroke-width:1}
+  .wlabel text{font-family:var(--font-ui);font-size:11px;letter-spacing:.1em;fill:oklch(0.70 0.018 265)}
+
+  .readout{border:1px solid var(--border);border-radius:var(--r-md);padding:20px;background:oklch(1 0 0 / .03);
+    position:sticky;top:88px}
+  .readout .eyebrow{font-size:10.5px;letter-spacing:.2em;color:var(--muted);font-weight:590;margin-bottom:11px}
+  .readout h3{font-family:var(--font-display);font-weight:700;font-size:17px;line-height:1.5;letter-spacing:0}
+  .readout .from{margin-top:9px;font-size:12px;letter-spacing:.03em;color:var(--muted);line-height:1.8}
+  .readout .quote{margin-top:14px;padding-left:13px;border-left:1px solid var(--border-2);
+    font-family:var(--font-display);font-size:13.5px;line-height:1.95;color:oklch(0.84 0.012 265)}
+  .readout .chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:16px}
+  .readout .chips span{font-size:11.5px;letter-spacing:.03em;padding:5px 11px;border-radius:var(--r-pill);
+    border:1px solid var(--border);color:var(--muted);background:oklch(1 0 0 / .04);
+    font-variant-numeric:tabular-nums}
+  .readout .go{margin-top:18px}
+  .readout .go a{display:inline-flex;align-items:center;gap:7px;min-height:44px;padding:0 15px;
+    border:1px solid var(--border-2);border-radius:var(--r-pill);font-size:13px;font-weight:590;
+    transition:background .16s var(--ease),border-color .16s var(--ease)}
+  .readout .go a:hover{background:oklch(1 0 0 / .10);border-color:oklch(1 0 0 / .32)}
+  .maphint{margin-top:14px;font-size:11.5px;letter-spacing:.06em;color:oklch(0.60 0.016 265)}
+
+  /* ---- 收藏列表 ---- */
+  .list{display:flex;flex-direction:column;gap:12px}
+  .row{display:flex;align-items:center;gap:16px;padding:14px 17px;border-radius:var(--r-md);
+    border:1px solid var(--border);background:oklch(1 0 0 / .03);
+    transition:background .16s var(--ease),border-color .16s var(--ease)}
+  .row:hover{background:oklch(1 0 0 / .085);border-color:var(--w-line)}
+  .row:focus-visible{box-shadow:var(--ring)}
+  .thumb{flex:none;width:62px;height:62px;border-radius:var(--r-sm);overflow:hidden;position:relative;
+    border:1px solid oklch(1 0 0 / .14)}
+  .thumb .sky{position:absolute;inset:0;
+    background:radial-gradient(120% 70% at 66% 6%, var(--w-halo), transparent 64%),
+      linear-gradient(178deg, var(--w-sky-hi), var(--w-sky-lo))}
+  .thumb .horizon{position:absolute;left:0;right:0;bottom:0;height:38%;
+    background:linear-gradient(180deg,transparent,var(--w-ink) 68%)}
+  .thumb .figure{position:absolute;left:50%;bottom:12%;width:26px;height:26px;margin-left:-13px;color:var(--w-ink)}
+  .thumb .figure svg{width:100%;height:100%;display:block}
+  .row .meta{min-width:0;flex:1}
+  .row .nm{font-family:var(--font-display);font-weight:700;font-size:15.5px;line-height:1.5}
+  .row .sub{margin-top:5px;font-size:12px;letter-spacing:.03em;color:var(--muted);line-height:1.8}
+  .row .tail{flex:none;font-size:11.5px;letter-spacing:.04em;color:var(--muted);font-variant-numeric:tabular-nums}
+
+  /* ---- 空态 ---- */
+  .empty{border:1px dashed var(--border-2);border-radius:var(--r-md);padding:38px 26px;text-align:center}
+  .empty p{font-family:var(--font-display);font-size:16px;line-height:1.7}
+  .empty small{display:block;margin-top:9px;color:var(--muted);font-size:12.5px;line-height:1.8}
+  .empty .btn-ghost{margin-top:20px}
+
+  .toast{position:fixed;left:50%;bottom:34px;transform:translate(-50%,10px);z-index:80;
+    max-width:min(430px,calc(100vw - 32px));padding:12px 18px;border-radius:var(--r-pill);
+    font-size:13px;line-height:1.5;letter-spacing:.02em;text-align:center;
+    background:oklch(0.17 0.026 265 / .97);border:1px solid var(--border-2);color:var(--fg);
+    box-shadow:0 20px 50px -28px oklch(0.02 0 0 / .9);
+    opacity:0;visibility:hidden;transition:opacity .22s var(--ease),transform .22s var(--ease),visibility .22s}
+  .toast.on{opacity:1;visibility:visible;transform:translate(-50%,0)}
+
+  /* ================= 响应式 ================= */
+  @media(max-width:980px){
+    .deriv{grid-template-columns:minmax(0,1fr)}
+    .readout{position:static}
+  }
+  @media(max-width:820px){
+    .topbar{padding:12px 16px;gap:8px}
+    .brand .en{display:none}
+    .topnav{gap:2px}
+    .topnav a{padding:0 9px;font-size:12.5px}
+    .btn-create{margin-left:4px;height:44px;padding:0 14px;font-size:12.5px}
+    .wrap{padding:6px 16px 80px}
+    .authorsky{height:300px}
+    .sky-plate{left:16px;bottom:16px;max-width:calc(100% - 32px)}
+    .sky-fig{right:12%;bottom:34%;width:66px;height:66px}
+    .viewswitch{right:14px;top:14px}
+    .viewswitch .lb{display:none}
+    .ident{gap:20px}
+    .actions{width:100%}
+  }
+  @media(max-width:560px){
+    .topnav a[data-od-id="nav-history"],.topnav a[data-od-id="nav-works-library"]{display:none}
+    .btn-create{width:44px;padding:0;justify-content:center}
+    .btn-create .label{display:none}
+    .authorsky{height:268px}
+    .sky-plate h1{font-size:24px}
+    .sky-fig{width:56px;height:56px;bottom:36%}
+    .grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+    .row{gap:12px;padding:12px 13px}
+    .thumb{width:52px;height:52px}
+    .row .tail{display:none}
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    *{animation:none!important;transition:none!important}
+    .work:hover{transform:none}
+  }
+</style>
+</head>
+<body>
+<div class="space" data-od-id="space-backdrop"></div>
+<div class="stars" id="stars" aria-hidden="true"></div>
+<div class="grain" aria-hidden="true"></div>
+<div class="vignette" aria-hidden="true"></div>
+
+<!-- ============ 顶栏 ============ -->
+<header class="topbar" data-od-id="topbar">
+  <a class="brand" href="home-galaxy.html" aria-label="万象 · Story Editor · 回到星海">
+    <span class="mark" aria-hidden="true">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 19.5v-6M12 13.5 7.7 8.9M12 13.5l4.3-4.6"/>
+        <circle cx="12" cy="20" r="1.3" fill="currentColor" stroke="none"/>
+        <circle cx="7.4" cy="8.3" r="2.2" fill="var(--accent)" stroke="none"/>
+        <circle cx="16.6" cy="8.3" r="2.2" fill="currentColor" stroke="none"/>
+      </svg>
+    </span>
+    <span class="zh">万象</span>
+    <span class="en">STORY EDITOR</span>
+  </a>
+  <nav class="topnav" aria-label="主导航" data-od-id="primary-navigation">
+    <a href="home-galaxy.html" data-od-id="nav-galaxy">星海</a>
+    <a href="works-library.html" data-od-id="nav-works-library">作品馆</a>
+    <a href="reading-history.html" data-od-id="nav-history">历史记录</a>
+    <a href="profile-space.html" aria-current="page" data-od-id="nav-my-space">我的空间</a>
+    <a href="community.html" data-od-id="nav-community">社区</a>
+  </nav>
+  <a class="btn-create" href="create-editor.html" data-od-id="cta-create"
+     aria-label="写一个世界 · 打开创作编辑器">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+    <span class="label">写一个世界</span>
+  </a>
+</header>
+
+<main class="wrap">
+  <!-- ============ 作者的天空 ============ -->
+  <section class="authorsky world-scope" id="authorsky" style="--hue:196" data-od-id="author-sky">
+    <div class="sky-base" aria-hidden="true"></div>
+    <div class="sky-layers" id="sky-layers" aria-hidden="true"></div>
+    <div class="sky-horizon world-scope" style="--hue:196" aria-hidden="true"></div>
+    <span class="sky-fig world-scope" id="sky-fig" style="--hue:196" aria-hidden="true"></span>
+
+    <div class="sky-plate" data-od-id="author-plate">
+      <p class="eyebrow" id="sky-eyebrow">创作者 · 四片天空</p>
+      <h1 id="author-name">林岫</h1>
+      <p class="handle" id="author-handle">@linxiu · 从 2025 年冬天开始写</p>
+    </div>
+
+    <div class="viewswitch" role="group" aria-label="原型视角切换" data-od-id="view-switch">
+      <span class="lb" aria-hidden="true">原型视角</span>
+      <button type="button" id="v-self" aria-pressed="true" data-od-id="view-self">本人</button>
+      <button type="button" id="v-guest" aria-pressed="false" data-od-id="view-guest">访客</button>
+    </div>
+  </section>
+
+  <!-- ============ 身份行 ============ -->
+  <section class="ident" data-od-id="identity-row">
+    <div class="bio">
+      <p id="author-bio">写深海、写夏天结束的那一刻。相信一个世界写完之后才刚开始——被别人岔开的地方,才是它真正长出来的地方。</p>
+      <p class="facts" data-od-id="author-facts">
+        原创 <b id="f-works">4</b><span class="sep" aria-hidden="true">·</span>衍生贡献
+        <b id="f-contrib">3</b><span class="sep" aria-hidden="true">·</span>作品被分叉
+        <b>23</b><span class="sep" aria-hidden="true">·</span>关注者 <b>1,284</b>
+      </p>
+    </div>
+    <div class="actions" id="actions">
+      <!-- 本人视角 -->
+      <a class="btn-primary" href="profile-drafts.html" id="act-drafts" data-od-id="cta-resume-drafts">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v4.5M12 21v-2M4.2 7.6l3.2 1.9M19.8 7.6l-3.2 1.9M3 14h4M21 14h-4"/><circle cx="12" cy="13.5" r="3"/></svg>
+        继续那 3 片没写完的天空
+      </a>
+      <a class="btn-text" href="profile-settings.html" id="act-edit" data-od-id="cta-edit-profile">编辑资料 →</a>
+
+      <!-- 访客视角 -->
+      <button class="btn-primary" type="button" id="act-follow" hidden data-od-id="cta-follow">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        <span id="follow-label">关注</span>
+      </button>
+      <a class="btn-text" href="community.html" id="act-fork" hidden data-od-id="cta-fork-from-author">从 TA 的世界分叉 →</a>
+    </div>
+  </section>
+
+  <!-- ============ 创作者工作台(仅本人视角) ============ -->
+  <nav class="dock" id="dock" aria-label="创作者工作台" data-od-id="creator-dock">
+    <a href="profile-drafts.html" data-od-id="dock-drafts">
+      <span class="ic" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V7a2 2 0 0 1 2-2h7l3 3v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"/><path d="M13 5v3h3"/></svg></span>
+      <span class="tx"><span class="t1">草稿箱</span><span class="t2">还缺几层天空</span></span>
+      <span class="badge" aria-label="3 份草稿">3</span>
+    </a>
+    <a href="profile-inbox.html" data-od-id="dock-inbox">
+      <span class="ic" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8.5 12 14l8-5.5"/><rect x="3.2" y="5.2" width="17.6" height="13.6" rx="2.2"/></svg></span>
+      <span class="tx"><span class="t1">消息与互动</span><span class="t2">谁岔开了你的世界</span></span>
+      <span class="badge" id="dock-unread" aria-label="4 条未读">4</span>
+    </a>
+    <a href="profile-settings.html" data-od-id="dock-settings">
+      <span class="ic" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.1"/><path d="M12 3.4v2.3M12 18.3v2.3M4.9 4.9l1.7 1.7M17.4 17.4l1.7 1.7M3.4 12h2.3M18.3 12h2.3M4.9 19.1l1.7-1.7M17.4 6.6l1.7-1.7"/></svg></span>
+      <span class="tx"><span class="t1">资料与设置</span><span class="t2">名字 · 天空 · BYOK</span></span>
+    </a>
+  </nav>
+
+  <!-- ============ 三条脉络 ============ -->
+  <section class="tracks" data-od-id="tracks">
+    <h2 class="sr-only">这个人的三条脉络</h2>
+    <div class="tablist" role="tablist" aria-label="内容脉络" data-od-id="track-tablist">
+      <button role="tab" type="button" id="tab-origin" aria-selected="true" aria-controls="p-origin"
+              data-od-id="tab-origin">原创作品 <span class="n">4</span></button>
+      <button role="tab" type="button" id="tab-deriv" aria-selected="false" aria-controls="p-deriv" tabindex="-1"
+              data-od-id="tab-deriv">衍生贡献 <span class="n">3</span></button>
+      <button role="tab" type="button" id="tab-saved" aria-selected="false" aria-controls="p-saved" tabindex="-1"
+              data-od-id="tab-saved">收藏 <span class="n">5</span></button>
+    </div>
+
+    <!-- 原创 -->
+    <div class="panel" role="tabpanel" id="p-origin" aria-labelledby="tab-origin" tabindex="-1" data-od-id="panel-origin">
+      <p class="panel-lead" id="lead-origin">从零开始点亮的天空。每一片的颜色都由这部作品自己的色相决定。</p>
+      <div class="grid" id="grid-origin"></div>
+    </div>
+
+    <!-- 衍生贡献 -->
+    <div class="panel" role="tabpanel" id="p-deriv" aria-labelledby="tab-deriv" tabindex="-1" hidden data-od-id="panel-deriv">
+      <p class="panel-lead">这些枝不长在自己的树上。它们挂在别人的世界里,从某个岔路口长出去——点亮的星是 TA 写的节点。</p>
+      <div class="deriv">
+        <div class="mapbox" id="mapbox" data-od-id="deriv-map">
+          <svg id="map" viewBox="0 0 840 330" role="group"
+               aria-labelledby="map-h" aria-describedby="map-desc"></svg>
+          <p class="sr-only" id="map-h">衍生贡献星图片段</p>
+          <p class="sr-only" id="map-desc">三个母世界的局部星图。点亮的星是这位创作者写的节点,按 Tab 逐个走过,回车打开该节点的详情。</p>
+          <p class="maphint" aria-hidden="true">点一颗星看它的来处 · Tab 逐个走过</p>
+        </div>
+        <aside class="readout" id="readout" role="status" aria-live="polite" data-od-id="deriv-readout"></aside>
+      </div>
+    </div>
+
+    <!-- 收藏 -->
+    <div class="panel" role="tabpanel" id="p-saved" aria-labelledby="tab-saved" tabindex="-1" hidden data-od-id="panel-saved">
+      <p class="panel-lead">收下的天空。收藏不发通知,也不计入任何人的排名。</p>
+      <div class="list" id="list-saved"></div>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="assets/works-data.js"></script>
+<script>
+(function(){
+  'use strict';
+  var RM = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var VIEW_KEY = 'wanxiang-profile-space-v1';
+  var PROFILE_KEY = 'wanxiang-profile-v1';     /* 由 profile-settings.html 写入 */
+
+  /* ---------------- 资料(可被设置页覆盖) ---------------- */
+  var PROFILE = {
+    name:'林岫', handle:'@linxiu', since:'从 2025 年冬天开始写',
+    bio:'写深海、写夏天结束的那一刻。相信一个世界写完之后才刚开始——被别人岔开的地方,才是它真正长出来的地方。',
+    hue:196, figure:'gaze'
+  };
+  try{
+    var saved = JSON.parse(window.localStorage.getItem(PROFILE_KEY) || 'null');
+    if(saved && typeof saved === 'object'){
+      if(saved.name) PROFILE.name = saved.name;
+      if(saved.handle) PROFILE.handle = saved.handle;
+      if(saved.bio) PROFILE.bio = saved.bio;
+      if(typeof saved.hue === 'number') PROFILE.hue = saved.hue;
+      if(saved.figure) PROFILE.figure = saved.figure;
+    }
+  }catch(error){}
+
+  /* ---------------- 原创作品:hue 取自 §8 已落地的 12 部 ---------------- */
+  var MY_WORKS = [
+    {key:'diver', st:'连载中', p:'8,420', l:'612'},
+    {key:'cicada', st:'已完结', p:'2.4万', l:'1,180'},
+    {key:'rust', st:'连载中', p:'5,106', l:'344'},
+    {key:'bakery', st:'已完结', p:'1.7万', l:'2,038'}
+  ].map(function(meta){ return Object.assign({}, window.WANXIANG_WORK(meta.key), meta); });
+
+  /* ---------------- 衍生贡献:三个母世界里的局部星图 ----------------
+     坐标手写、确定性,不用 Math.random();mine=1 的节点是这位创作者写的。 */
+  var CONTRIB = [
+    {w:'最后的深夜电台', h:252, ox:0,
+     nodes:[
+       {id:'a0',p:null,x:132,y:276,t:'第一夜 · 电流里的呼救',plays:'2.4万',mine:0,
+        q:'电流杂音里,有人在呼救。你是否回应?',a:'原作者 · 沈砚'},
+       {id:'a1',p:'a0',x:78, y:212,t:'回应了',plays:'1.6万',mine:0,a:'原作者 · 沈砚'},
+       {id:'a2',p:'a0',x:192,y:210,t:'关掉对讲机',plays:'8,900',mine:0,a:'原作者 · 沈砚'},
+       {id:'a3',p:'a1',x:36, y:148,t:'第三夜 · 无人应答的频率',plays:'6,240',mine:1,
+        q:'你回应了三次。第三夜,那个频率里传来的,是你自己的声音——只是比现在老了很多。',a:'我写的分支'},
+       {id:'a4',p:'a1',x:112,y:146,t:'循着信号出门',plays:'7,010',mine:0,a:'原作者 · 沈砚'},
+       {id:'a5',p:'a2',x:206,y:144,t:'低语进屋了',plays:'4,180',mine:0,a:'原作者 · 沈砚'},
+       {id:'a6',p:'a3',x:22, y:84, t:'把频率留给下一个人',plays:'3,320',mine:1,
+        q:'你决定不再回应,而是把这段频率写进纸条,压在窗台下。总会有人比你更需要被听见。',a:'我写的分支'}
+     ]},
+    {w:'戏楼夜半开锣', h:16, ox:288,
+     nodes:[
+       {id:'b0',p:null,x:126,y:276,t:'推开戏楼的门',plays:'1.1万',mine:0,
+        q:'戏还没散,台下的人却一个都没走。',a:'原作者 · 白桁'},
+       {id:'b1',p:'b0',x:74, y:206,t:'坐进空位',plays:'6,700',mine:0,a:'原作者 · 白桁'},
+       {id:'b2',p:'b0',x:186,y:204,t:'退回门外',plays:'3,900',mine:0,a:'原作者 · 白桁'},
+       {id:'b3',p:'b1',x:44, y:132,t:'替角登台',plays:'2,880',mine:1,
+        q:'台上少一个人。你被推上去的那一刻才发现,你会唱这出戏——尽管你从没学过。',a:'我写的分支'},
+       {id:'b4',p:'b1',x:126,y:134,t:'数台下的人',plays:'4,120',mine:0,a:'原作者 · 白桁'}
+     ]},
+    {w:'樱花落下的速度', h:340, ox:566,
+     nodes:[
+       {id:'c0',p:null,x:130,y:276,t:'天桥上的第一次',plays:'3.1万',mine:0,
+        q:'每秒五厘米,而你走得比这更慢。',a:'原作者 · 雨宫'},
+       {id:'c1',p:'c0',x:76, y:210,t:'早出门七分钟',plays:'2.2万',mine:0,a:'原作者 · 雨宫'},
+       {id:'c2',p:'c0',x:190,y:208,t:'什么也没做',plays:'9,600',mine:0,a:'原作者 · 雨宫'},
+       {id:'c3',p:'c1',x:40, y:142,t:'第三年的天桥',plays:'5,470',mine:1,
+        q:'第三年春天,天桥要拆了。你在最后一天去了,画板还在,人不在。',a:'我写的分支'},
+       {id:'c4',p:'c1',x:114,y:144,t:'把信寄出去',plays:'8,240',mine:0,a:'原作者 · 雨宫'},
+       {id:'c5',p:'c2',x:198,y:142,t:'各自毕业',plays:'6,010',mine:0,a:'原作者 · 雨宫'}
+     ]}
+  ];
+
+  /* ---------------- 收藏 ---------------- */
+  var SAVED = [
+    {key:'blade', by:'风陵渡', at:'收于 2 天前'},
+    {key:'neon', by:'零号档案', at:'收于 1 周前'},
+    {key:'sun', by:'南舟', at:'收于 2 周前'},
+    {key:'guest', by:'言澈', at:'收于 3 周前'},
+    {key:'immortal', by:'青冥', at:'收于 1 个月前'}
+  ].map(function(meta){
+    var work = window.WANXIANG_WORK(meta.key);
+    return Object.assign({}, work, {sub:work.t}, meta);
+  });
+
+  /* ---------------- 剪影(取自 home-galaxy.html,未改动) ---------------- */
+  function figure(type){
+    var head='<circle cx="50" cy="14" r="7.4"/>';
+    var torso='<path d="M50 22c-5.4 0-9.4 3.6-10.1 8.7l-1.7 12.9c-.3 2.3 1.5 4.2 3.8 4.2h16c2.3 0 4.1-1.9 3.8-4.2l-1.7-12.9C59.4 25.6 55.4 22 50 22z"/>';
+    var legs='<path d="M45.6 47 43.6 80" stroke-width="6" stroke-linecap="round" fill="none"/>'+
+             '<path d="M54.4 47 56.4 80" stroke-width="6" stroke-linecap="round" fill="none"/>';
+    var arms='';
+    if(type==='gaze'){
+      head='<circle cx="49" cy="13" r="7.4"/>';
+      arms='<path d="M41 30 35 49" stroke-width="5" stroke-linecap="round" fill="none"/>'+
+           '<path d="M59 30 66 47" stroke-width="5" stroke-linecap="round" fill="none"/>';
+    }else if(type==='radio'){
+      arms='<path d="M41 30 36 50" stroke-width="5" stroke-linecap="round" fill="none"/>'+
+           '<path d="M59 31 64 38 57 23" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>'+
+           '<rect x="53" y="15" width="6" height="9" rx="1.4"/>';
+    }else if(type==='blade'){
+      arms='<path d="M41 30 36 50" stroke-width="5" stroke-linecap="round" fill="none"/>'+
+           '<path d="M59 30 64 50" stroke-width="5" stroke-linecap="round" fill="none"/>'+
+           '<path d="M64 52 72 16" stroke-width="2.6" stroke-linecap="round" fill="none"/>';
+    }else if(type==='umbrella'){
+      arms='<path d="M41 30 36 50" stroke-width="5" stroke-linecap="round" fill="none"/>'+
+           '<path d="M59 30 63 19" stroke-width="5" stroke-linecap="round" fill="none"/>'+
+           '<path d="M63 19 63 8" stroke-width="2.2" stroke-linecap="round" fill="none"/>'+
+           '<path d="M47 12q16-13 32 0z"/>';
+    }else if(type==='reach'){
+      arms='<path d="M41 30 29 19" stroke-width="5" stroke-linecap="round" fill="none"/>'+
+           '<path d="M59 30 71 19" stroke-width="5" stroke-linecap="round" fill="none"/>';
+    }else{
+      legs='<path d="M45.6 47 40 79" stroke-width="6" stroke-linecap="round" fill="none"/>'+
+           '<path d="M54.4 47 61 78" stroke-width="6" stroke-linecap="round" fill="none"/>';
+      arms='<path d="M41 30 45 49" stroke-width="5" stroke-linecap="round" fill="none"/>'+
+           '<path d="M59 30 55 49" stroke-width="5" stroke-linecap="round" fill="none"/>';
+    }
+    return '<svg viewBox="0 0 100 92" aria-hidden="true"><g fill="currentColor" stroke="currentColor">'
+      + head + torso + legs + arms + '</g></svg>';
+  }
+
+  function esc(s){
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function $(id){ return document.getElementById(id); }
+
+  /* ================= 作者的天空 =================
+     一个人的主页天然就是一片有色彩分布的小星群。
+     多个 hue 混不进单个 var(--hue),所以每部作品自己一层,screen 叠加。 */
+  function paintAuthorSky(){
+    var host = $('authorsky');
+    host.style.setProperty('--hue', PROFILE.hue);
+    document.querySelectorAll('.sky-horizon, .sky-fig').forEach(function(el){
+      el.style.setProperty('--hue', PROFILE.hue);
+    });
+    $('sky-fig').innerHTML = figure(PROFILE.figure);
+
+    /* 每部原创作品一层柔光,位置由 hue 决定 —— 确定性,刷新一致 */
+    var box = $('sky-layers'), html = '', i;
+    for(i=0;i<MY_WORKS.length;i++){
+      var w = MY_WORKS[i];
+      var px = 14 + ((w.h * 7) % 72);
+      var py = 8 + ((w.h * 3) % 34);
+      var rx = 34 + ((w.h * 5) % 26);
+      var ry = 30 + ((w.h * 11) % 24);
+      html += '<span class="sky-layer world-scope" style="--hue:'+w.h+';--px:'+px+'%;--py:'+py+'%;'
+            + '--rx:'+rx+'%;--ry:'+ry+'%"></span>';
+    }
+    /* 云与星点压在柔光之上 */
+    html += '<span class="sky-cloud c1 world-scope" style="--hue:'+PROFILE.hue+'"></span>'
+          + '<span class="sky-cloud c2 world-scope" style="--hue:'+PROFILE.hue+'"></span>';
+    for(i=0;i<34;i++){
+      var x = ((PROFILE.hue*(i+3)*37) % 97) + 1;
+      var y = ((PROFILE.hue*(i+7)*19) % 56) + 2;
+      var o = 0.32 + (((PROFILE.hue*(i+5)) % 58)/100);
+      html += '<span class="sky-dot" style="left:'+x+'%;top:'+y+'%;opacity:'+o.toFixed(2)+'"></span>';
+    }
+    html += '<span class="sky-streak" style="left:16%;top:14%;width:96px"></span>';
+    box.innerHTML = html;
+
+    $('author-name').textContent = PROFILE.name;
+    $('author-handle').textContent = PROFILE.handle + ' · ' + PROFILE.since;
+    $('author-bio').textContent = PROFILE.bio;
+    $('sky-eyebrow').textContent = '创作者 · ' + MY_WORKS.length + ' 片天空';
+    document.documentElement.style.setProperty('--ambient-hue', PROFILE.hue);
+  }
+
+  /* ================= 原创作品 ================= */
+  function paintWorks(){
+    var box = $('grid-origin'), html = '', i;
+    if(!MY_WORKS.length){
+      box.className = '';
+      box.innerHTML = '<div class="empty"><p>还没有点亮过一片天空</p>'
+        + '<small>第一个世界从一句话开始。写完之后,它会出现在这里。</small>'
+        + '<a class="btn-ghost" href="create-editor.html" data-od-id="cta-empty-create">写第一个世界</a></div>';
+      return;
+    }
+    for(i=0;i<MY_WORKS.length;i++){
+      var w = MY_WORKS[i], dots = '', j;
+      for(j=0;j<14;j++){
+        var x = ((w.h*(j+3)*37) % 97) + 1;
+        var y = ((w.h*(j+7)*19) % 52) + 2;
+        dots += '<span class="dot" style="left:'+x+'%;top:'+y+'%"></span>';
+      }
+      html += '<a class="work world-scope" style="--hue:'+w.h+'" href="'+window.WANXIANG_WORK_LINK(w)+'"'
+        + ' data-od-id="my-work-'+(i+1)+'" aria-label="打开我的作品:'+esc(w.n)+',' + esc(w.k) + ',' + w.st + '">'
+        + '<span class="sky" aria-hidden="true">'+dots
+        + '<span class="cloud c1"></span><span class="cloud c2"></span></span>'
+        + '<span class="horizon" aria-hidden="true"></span>'
+        + '<span class="figure" aria-hidden="true">'+figure(w.f)+'</span>'
+        + '<span class="st">'+w.st+'</span>'
+        + '<span class="plate"><span class="kicker">'+esc(w.k)+'</span>'
+        + '<span class="name">'+esc(w.n)+'</span>'
+        + '<span class="stat">游玩 '+w.p+' · 收藏 '+w.l+'</span></span></a>';
+    }
+    box.innerHTML = html;
+  }
+
+  /* ================= 收藏 ================= */
+  function paintSaved(){
+    var box = $('list-saved'), html = '', i;
+    if(!SAVED.length){
+      box.className = '';
+      box.innerHTML = '<div class="empty"><p>还没有收下任何天空</p>'
+        + '<small>在作品馆或社区里遇到喜欢的世界,收藏后会落在这里。收藏不发通知。</small>'
+        + '<a class="btn-ghost" href="works-library.html" data-od-id="cta-empty-library">去作品馆看看</a></div>';
+      return;
+    }
+    for(i=0;i<SAVED.length;i++){
+      var s = SAVED[i];
+      html += '<a class="row world-scope" style="--hue:'+s.h+'" href="'+window.WANXIANG_WORK_LINK(s)+'"'
+        + ' data-od-id="saved-'+(i+1)+'" aria-label="打开收藏的作品:'+esc(s.n)+'">'
+        + '<span class="thumb" aria-hidden="true"><span class="sky"></span><span class="horizon"></span>'
+        + '<span class="figure">'+figure(s.f)+'</span></span>'
+        + '<span class="meta"><span class="nm">'+esc(s.n)+'</span>'
+        + '<span class="sub">'+esc(s.k)+' · '+esc(s.by)+'<br>'+esc(s.sub)+'</span></span>'
+        + '<span class="tail">'+esc(s.at)+'</span></a>';
+    }
+    box.innerHTML = html;
+  }
+
+  /* ================= 衍生贡献:星图片段 =================
+     命中纪律照搬 derivation-graph.html:装饰层一律 pointer-events:none,
+     只有 .node 子树可命中,靠 fill:transparent 的 .hit 圆拿到 ≥44px 触摸目标。 */
+  var NODE_INDEX = {};
+  var selected = null;
+
+  function paintMap(){
+    var svg = $('map'), out = '', gi, i;
+    for(gi=0; gi<CONTRIB.length; gi++){
+      var g = CONTRIB[gi], byId = {};
+      for(i=0;i<g.nodes.length;i++) byId[g.nodes[i].id] = g.nodes[i];
+
+      out += '<g class="world-scope" style="--hue:'+g.h+'" transform="translate('+g.ox+',0)">';
+
+      /* 光晕(装饰) */
+      out += '<g class="halos" aria-hidden="true">';
+      for(i=0;i<g.nodes.length;i++){
+        var n = g.nodes[i];
+        var r = n.mine ? 26 : (n.p === null ? 30 : 20);
+        out += '<circle class="halo" cx="'+n.x+'" cy="'+n.y+'" r="'+r+'" opacity="'+(n.mine?0.5:0.3)+'"/>';
+      }
+      out += '</g>';
+
+      /* 连线(装饰) */
+      out += '<g class="edges" aria-hidden="true">';
+      for(i=0;i<g.nodes.length;i++){
+        var c = g.nodes[i];
+        if(c.p === null) continue;
+        var pn = byId[c.p];
+        var mx = (pn.x + c.x)/2;
+        var d = 'M'+pn.x+' '+pn.y+' C'+mx+' '+pn.y+' '+mx+' '+c.y+' '+c.x+' '+c.y;
+        var w = c.mine ? 2.6 : 1.5;
+        out += '<path class="edge'+(c.mine?' mine':'')+'" d="'+d+'" stroke-width="'+w+'" opacity="'
+             + (c.mine ? 0.95 : 0.5) + '"/>';
+      }
+      out += '</g>';
+
+      /* 母世界名(装饰) */
+      out += '<g class="wlabel" aria-hidden="true"><text x="'+(g.nodes[0].x)+'" y="314" text-anchor="middle">'
+           + esc(g.w) + '</text></g>';
+
+      /* 节点(唯一可命中层) */
+      for(i=0;i<g.nodes.length;i++){
+        var nd = g.nodes[i];
+        var key = nd.id;
+        var graphWork = (window.WANXIANG_WORKS || []).filter(function(work){ return work.n === g.w; })[0];
+         NODE_INDEX[key] = {n:nd, w:g.w, h:graphWork ? graphWork.h : g.h, k:graphWork ? graphWork.key : 'radio'};
+        var cr = nd.p === null ? 5.4 : (nd.mine ? 5.0 : 3.6);
+        out += '<g class="node'+(nd.mine?' mine':'')+'" role="button" tabindex="0" aria-pressed="false"'
+             + ' data-id="'+key+'" data-od-id="deriv-node-'+key+'"'
+             + ' aria-label="'+esc(nd.t)+'，出自《'+esc(g.w)+'》，'+esc(nd.a)+'">'
+             + '<circle class="hit" cx="'+nd.x+'" cy="'+nd.y+'" r="24"/>'
+             + '<circle class="sel" cx="'+nd.x+'" cy="'+nd.y+'" r="12" opacity="0"/>'
+             + '<circle class="fring" cx="'+nd.x+'" cy="'+nd.y+'" r="15"/>'
+             + (nd.mine ? '<circle class="ringmark" cx="'+nd.x+'" cy="'+nd.y+'" r="9"/>' : '')
+             + '<circle class="core" cx="'+nd.x+'" cy="'+nd.y+'" r="'+cr+'"/>'
+             + '</g>';
+      }
+
+      /* 我写的节点带常显标签(装饰,不吃点击) */
+      out += '<g class="tag" aria-hidden="true">';
+      for(i=0;i<g.nodes.length;i++){
+        var t = g.nodes[i];
+        if(!t.mine) continue;
+        var label = t.t;
+        var wpx = label.length * 11.6 + 18;
+        var tx = Math.max(2, t.x - wpx/2);
+        out += '<rect x="'+tx.toFixed(1)+'" y="'+(t.y-34)+'" width="'+wpx.toFixed(1)+'" height="22" rx="6"/>'
+             + '<text x="'+(tx + wpx/2).toFixed(1)+'" y="'+(t.y-19)+'" text-anchor="middle">'+esc(label)+'</text>';
+      }
+      out += '</g>';
+
+      out += '</g>';
+    }
+    svg.innerHTML = out;
+
+    svg.querySelectorAll('.node').forEach(function(el){
+      el.addEventListener('click', function(){ selectNode(el.dataset.id); });
+      el.addEventListener('keydown', function(e){
+        if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); selectNode(el.dataset.id); }
+      });
+    });
+  }
+
+  function selectNode(id){
+    var rec = NODE_INDEX[id];
+    if(!rec) return;
+    selected = id;
+    document.querySelectorAll('#map .node').forEach(function(el){
+      var on = el.dataset.id === id;
+      el.setAttribute('aria-pressed', String(on));
+      el.querySelector('.sel').setAttribute('opacity', on ? '1' : '0');
+    });
+    var n = rec.n;
+    var box = $('readout');
+    box.className = 'readout world-scope';
+    box.style.setProperty('--hue', rec.h);
+    var chips = '<span>走过 '+esc(n.plays)+' 次</span>'
+              + '<span>'+(n.mine ? '我写的' : '原作节点')+'</span>'
+              + (n.p === null ? '<span>开场</span>' : '');
+    box.innerHTML =
+      '<p class="eyebrow">'+(n.mine ? '我挂上去的枝' : '这条枝的来处')+'</p>'
+      + '<h3>'+esc(n.t)+'</h3>'
+      + '<p class="from">出自《'+esc(rec.w)+'》 · '+esc(n.a)+'</p>'
+      + (n.q ? '<p class="quote">'+esc(n.q)+'</p>' : '')
+      + '<div class="chips">'+chips+'</div>'
+      + '<p class="go"><a href="derivation-graph.html?world=' + encodeURIComponent(rec.k || 'radio') + '" data-od-id="cta-open-full-graph">'
+      + '看这个世界的完整星图'
+      + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg>'
+      + '</a></p>';
+  }
+
+  function resetReadout(){
+    var box = $('readout');
+    box.className = 'readout';
+    box.removeAttribute('style');
+    box.innerHTML =
+      '<p class="eyebrow">选一颗星</p>'
+      + '<h3>三条枝,挂在三个人的树上</h3>'
+      + '<p class="from">这里只显示 TA 参与的那一小片,不是整张图谱。点亮并带环的星是 TA 写的节点。</p>'
+      + '<div class="chips"><span>3 个母世界</span><span>5 个我写的节点</span><span>被走过 2.1 万次</span></div>';
+  }
+
+  /* ================= 视角切换 ================= */
+  var view = 'self';
+  try{ view = window.localStorage.getItem(VIEW_KEY) || 'self'; }catch(error){}
+  var following = false;
+
+  function applyView(next){
+    view = next === 'guest' ? 'guest' : 'self';
+    try{ window.localStorage.setItem(VIEW_KEY, view); }catch(error){}
+    var self = view === 'self';
+
+    $('v-self').setAttribute('aria-pressed', String(self));
+    $('v-guest').setAttribute('aria-pressed', String(!self));
+
+    $('act-drafts').hidden = !self;
+    $('act-edit').hidden = !self;
+    $('dock').hidden = !self;
+    $('act-follow').hidden = self;
+    $('act-fork').hidden = self;
+
+    $('lead-origin').textContent = self
+      ? '从零开始点亮的天空。每一片的颜色都由这部作品自己的色相决定。'
+      : 'TA 从零开始点亮的天空。点开任意一片,就走进那个世界。';
+  }
+
+  $('v-self').addEventListener('click', function(){ applyView('self'); });
+  $('v-guest').addEventListener('click', function(){ applyView('guest'); });
+
+  /* 关注:同名状态全站联动的接缝已留好,此处先持久化到本机 */
+  $('act-follow').addEventListener('click', function(){
+    following = !following;
+    var btn = $('act-follow');
+    $('follow-label').textContent = following ? '已关注' : '关注';
+    /* 已关注后主动作退成描边中性态,暖金配额随之释放 */
+    btn.className = following ? 'btn-ghost' : 'btn-primary';
+    say(following
+      ? '已关注 ' + PROFILE.name + '。TA 发布新世界时会出现在你的消息里。'
+      : '已取消关注 ' + PROFILE.name + '。');
+  });
+
+  /* ================= 三条脉络的 tab ================= */
+  var TABS = [
+    {b:'tab-origin', p:'p-origin'},
+    {b:'tab-deriv',  p:'p-deriv'},
+    {b:'tab-saved',  p:'p-saved'}
+  ];
+  function selectTab(i, focus){
+    TABS.forEach(function(t, j){
+      var b = $(t.b), p = $(t.p), on = i === j;
+      b.setAttribute('aria-selected', String(on));
+      b.tabIndex = on ? 0 : -1;
+      p.hidden = !on;
+    });
+    if(focus) $(TABS[i].b).focus();
+    if(i === 1 && !selected) resetReadout();
+  }
+  TABS.forEach(function(t, i){
+    var b = $(t.b);
+    b.addEventListener('click', function(){ selectTab(i, false); });
+    b.addEventListener('keydown', function(e){
+      var k = e.key, n = null;
+      if(k === 'ArrowRight') n = (i + 1) % TABS.length;
+      else if(k === 'ArrowLeft') n = (i - 1 + TABS.length) % TABS.length;
+      else if(k === 'Home') n = 0;
+      else if(k === 'End') n = TABS.length - 1;
+      if(n === null) return;
+      e.preventDefault();
+      selectTab(n, true);
+    });
+  });
+
+  /* ================= toast ================= */
+  var toast = $('toast'), toastT;
+  function say(msg){
+    toast.textContent = msg;
+    toast.classList.add('on');
+    clearTimeout(toastT);
+    toastT = setTimeout(function(){ toast.classList.remove('on'); }, 3200);
+  }
+
+  /* ================= 星点 ================= */
+  (function(){
+    var box = $('stars'), html = '', i;
+    for(i=0;i<130;i++){
+      var s = Math.random() < 0.86 ? 1 : 2;
+      var o = (0.14 + Math.random()*0.56).toFixed(2);
+      var tw = (!RM && Math.random() < 0.2)
+        ? 'animation:twinkle '+(3+Math.random()*4).toFixed(1)+'s ease-in-out infinite;animation-delay:'+(Math.random()*5).toFixed(1)+'s;'
+        : '';
+      html += '<i style="left:'+(Math.random()*100).toFixed(2)+'%;top:'+(Math.random()*100).toFixed(2)
+           + '%;width:'+s+'px;height:'+s+'px;opacity:'+o+';'+tw+'"></i>';
+    }
+    box.innerHTML = html;
+  })();
+
+  /* ================= 启动 ================= */
+  paintAuthorSky();
+  paintWorks();
+  paintSaved();
+  paintMap();
+  resetReadout();
+  applyView(view);
+  selectTab(0, false);
+})();
+</script>
+</body>
+</html>
