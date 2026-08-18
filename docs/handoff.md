@@ -254,7 +254,7 @@ cd ..\agent
 
 ESLint 用 `next/core-web-vitals`，只关了 `@next/next/no-img-element` 一条（项目刻意用原生 `<img>`，理由见 `frontend/.eslintrc.json` 与 `components/ImageUpload.tsx`）。
 
-当前 Python 测试覆盖“流式哨兵解析/结构化兜底/拒绝→有记忆修订/超限降级交付”（`test_stream.py`）、“parse 重试恢复/耗尽”（`test_llm_parse_retry.py`）、“揭示门控白名单/prepare 注入抑制”（`test_reveal.py`）以及“精品润色的 profile、一次润色上限、复审净提升、锚点/异常/预算回退、usage 与玩家链路隔离”（`test_assist_polish.py`）。Go 有 `play_merge_test.go`（节点语义合并契约）、`access_test.go` / `ownership_test.go`（可见性与归属）、`player_view_test.go`（玩家可见投影）、`llm_resolver_test.go`（BYOK 解析优先级）、`worldvalidate_test.go`（含 style_profile 发布校验）与 `crypto_test.go` / `upload_test.go`。
+当前 Python 测试精简为十个关键回归：`test_stream.py` 覆盖正常流式回合、审校重写、耗尽降级和关闭审校，且在正常路径一并校验 reveal 门控与 usage 归属；`test_llm_parse_retry.py` 覆盖 JSON 重试和无默认凭据；`test_assist_polish.py` 覆盖润色闭环的未触发、采用、复审回退与预调用预算保护。Go 有 `play_merge_test.go`（节点语义合并契约）、`access_test.go` / `ownership_test.go`（可见性与归属）、`player_view_test.go`（玩家可见投影）、`llm_resolver_test.go`（BYOK 解析优先级）、`worldvalidate_test.go`（含 style_profile 发布校验）与 `crypto_test.go` / `upload_test.go`。
 
 ### 8.3 必做的人工验收
 

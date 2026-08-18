@@ -3,12 +3,19 @@ import unittest
 from unittest.mock import patch
 
 from app.graph import story_graph as sg
-from app.graph.story_graph import run_continue_stream
+from app.graph.story_graph import normalize, prepare, run_continue_stream
 from app.llm import Usage
 from app.prompts import REVIEW_SYSTEM, STORY_WRITER_SYSTEM, STRUCTURE_SYSTEM
 
 WORLD = {"background": "测试世界"}
 STATE = {"hp": 10}
+REVEAL_WORLD = {
+    "attributes": {
+        "物资": {"type": "number", "reveal": True},
+        "hp": {"type": "number"},
+    },
+    "initial_state": {"物资": 5, "hp": 100},
+}
 # review 是作品级开关（默认关）。写手与结构化助手共用 WRITE_CFG；审校才使用 REVIEW_CFG。
 WRITE_CFG = {"api_key": "write-k", "base_url": "https://write.invalid", "model": "writer"}
 REVIEW_CFG = {"api_key": "review-k", "base_url": "https://review.invalid", "model": "reviewer"}
@@ -43,48 +50,67 @@ async def collect(agen):
 
 
 class StreamPipelineTest(unittest.IsolatedAsyncioTestCase):
-    async def test_writer_context_omits_structured_output_instructions(self) -> None:
-        """开局与续写给 Writer 的用户上下文不再要求选项、状态或 JSON。"""
-        opening = sg.prepare({"mode": "start", "world": WORLD, "initial_state": STATE})["user_prompt"]
-        continuing = sg.prepare({
-            "mode": "continue", "world": WORLD, "history": [],
-            "current_state": STATE, "choice": "go",
-        })["user_prompt"]
-        for prompt in (opening, continuing):
-            self.assertNotIn("推荐选项", prompt)
-            self.assertNotIn("属性变化", prompt)
-            self.assertNotIn("state_delta", prompt)
-    async def test_writer_streams_pure_prose_then_structures(self) -> None:
-        """Writer 只流正文；Structurer 始终在正文结束后生成元数据。"""
-        seen_writer_messages = []
 
-        async def fake_stream(messages, **_kwargs):
+    async def test_prepare_and_writer_stream_to_structured_result(self) -> None:
+        """正常回合守住提示词边界、reveal 门控、写作/结构化与 usage 归属。"""
+        normalized = normalize({
+            "raw": {"content": "x", "options": [], "state_delta": {},
+                    "summary": "s", "revealed": ["物资", "hp", "幽灵键"]},
+            "known_keys": ["物资", "hp"], "attr_types": {}, "reveal_gated": ["物资"],
+        })
+        self.assertEqual(normalized["result"]["revealed"], ["物资"])
+        pending = prepare({"mode": "start", "world": REVEAL_WORLD,
+                           "initial_state": REVEAL_WORLD["initial_state"], "revealed_attrs": []})
+        self.assertIn("未揭示属性", pending["user_prompt"])
+        revealed = prepare({"mode": "continue", "world": REVEAL_WORLD,
+                            "current_state": REVEAL_WORLD["initial_state"], "choice": "x",
+                            "revealed_attrs": ["物资"]})
+        self.assertNotIn("未揭示属性", revealed["user_prompt"])
+
+        seen_writer_messages = []
+        seen_structurer = []
+        seen_reviewer = []
+
+        async def fake_stream(messages, **kwargs):
             seen_writer_messages.append(messages)
+            self.assertEqual(kwargs["llm_cfg"], WRITE_CFG)
+            kwargs["usage_out"].add(Usage(11, 7))
             yield "你在城中"
             yield "行走。"
 
-        def fake_json(system, user, **_kwargs):
-            self.assertEqual(system, STRUCTURE_SYSTEM)
-            self.assertIn("你在城中行走。", user)
-            return {**STRUCTURE, "content": "Structurer 不得覆盖的文本。"}
+        def fake_json(system, user, **kwargs):
+            if system == STRUCTURE_SYSTEM:
+                seen_structurer.append(kwargs["llm_cfg"])
+                kwargs["usage_out"].add(Usage(13, 17))
+                self.assertIn("你在城中行走。", user)
+                return {**STRUCTURE, "content": "Structurer 不得覆盖的文本。"}
+            self.assertEqual(system, REVIEW_SYSTEM)
+            seen_reviewer.append(kwargs["llm_cfg"])
+            kwargs["usage_out"].add(Usage(5, 3))
+            return {"passed": True, "issues": []}
 
         with patch.object(sg, "chat_stream", fake_stream), \
              patch.object(sg, "chat_json", fake_json):
-            events = await collect(run_continue_stream(WORLD, [], STATE, "go"))
+            events = await collect(run_continue_stream(
+                WORLD, [], STATE, "go", None, WRITE_CFG, REVIEW_CFG,
+            ))
 
         deltas = "".join(event["text"] for event in events if event["type"] == "delta")
         self.assertEqual(deltas, "你在城中行走。")
-        self.assertEqual(len(seen_writer_messages), 1)
         self.assertEqual(seen_writer_messages[0][0].content, STORY_WRITER_SYSTEM)
         self.assertNotIn("<<<META>>>", seen_writer_messages[0][0].content)
-        writer_context = seen_writer_messages[0][-1].content
-        self.assertNotIn("新的推荐选项", writer_context)
-        self.assertNotIn("属性变化", writer_context)
+        self.assertNotIn("新的推荐选项", seen_writer_messages[0][-1].content)
+        self.assertNotIn("属性变化", seen_writer_messages[0][-1].content)
+        self.assertEqual(seen_structurer, [WRITE_CFG])
+        self.assertEqual(seen_reviewer, [REVIEW_CFG])
         done = [event for event in events if event["type"] == "done"]
         self.assertEqual(len(done), 1)
         self.assertEqual(done[0]["result"]["content"], "你在城中行走。")
         self.assertEqual(done[0]["result"]["state_delta"], {"hp": -1})
-
+        self.assertEqual(done[0]["usage"], {
+            "write": {"prompt_tokens": 24, "completion_tokens": 24, "estimated": False},
+            "review": {"prompt_tokens": 5, "completion_tokens": 3, "estimated": False},
+        })
     async def test_review_reject_then_rewrites_and_restructures(self) -> None:
         """审校拒绝后，Writer 与 Structurer 必须都重新执行，不能复用旧结构。"""
         calls = []
@@ -135,42 +161,6 @@ class StreamPipelineTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(done), 1)
         self.assertEqual(done[0]["result"]["content"], "稿。")
         self.assertIn("revise", [event["type"] for event in events])
-
-    async def test_writer_and_structurer_share_write_config_and_usage(self) -> None:
-        """Structurer 是第二次 llm_write 调用；其 usage 聚合进 write，审校独立。"""
-        seen_writer = []
-        seen_structurer = []
-        seen_reviewer = []
-
-        async def fake_stream(_messages, **kwargs):
-            seen_writer.append(kwargs["llm_cfg"])
-            kwargs["usage_out"].add(Usage(11, 7))
-            yield "正文。"
-
-        def fake_json(system, _user, **kwargs):
-            if system == STRUCTURE_SYSTEM:
-                seen_structurer.append(kwargs["llm_cfg"])
-                kwargs["usage_out"].add(Usage(13, 17))
-                return STRUCTURE
-            self.assertEqual(system, REVIEW_SYSTEM)
-            seen_reviewer.append(kwargs["llm_cfg"])
-            kwargs["usage_out"].add(Usage(5, 3))
-            return {"passed": True, "issues": []}
-
-        with patch.object(sg, "chat_stream", fake_stream), \
-             patch.object(sg, "chat_json", fake_json):
-            events = await collect(
-                run_continue_stream(WORLD, [], STATE, "go", None, WRITE_CFG, REVIEW_CFG)
-            )
-
-        self.assertEqual(seen_writer, [WRITE_CFG])
-        self.assertEqual(seen_structurer, [WRITE_CFG])
-        self.assertEqual(seen_reviewer, [REVIEW_CFG])
-        done = [event for event in events if event["type"] == "done"][0]
-        self.assertEqual(done["usage"], {
-            "write": {"prompt_tokens": 24, "completion_tokens": 24, "estimated": False},
-            "review": {"prompt_tokens": 5, "completion_tokens": 3, "estimated": False},
-        })
 
     async def test_review_off_still_structures_but_skips_audit(self) -> None:
         """关闭审校时仍执行 Structurer；只跳过 REVIEW_SYSTEM。"""

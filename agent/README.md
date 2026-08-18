@@ -35,9 +35,9 @@ agent/
 │       ├── generate.py          # /generate/stream、/continue/stream、/opening/complete、/merge-check
 │       └── assist.py            # /assist/*
 ├── tests/
-│   ├── test_stream.py          # 流式管线：正文写作/结构化/拒绝重跑/超限降级
-│   └── test_llm_parse_retry.py # parse 重试恢复/耗尽
-│   └── test_assist_polish.py   # 精品润色：审校/一次润色/复审/回退
+│   ├── test_stream.py          # 流式管线与 reveal 门控：正文写作/结构化/审校/降级
+│   ├── test_llm_parse_retry.py # parse 重试恢复/耗尽
+│   └── test_assist_polish.py   # 精品润色：审校/一次润色/复审/关键回退
 ├── .env.example
 └── requirements.txt
 ```
@@ -244,11 +244,9 @@ cd agent
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-当前 `tests/test_stream.py`、`tests/test_llm_parse_retry.py`、`tests/test_reveal.py` 与 `tests/test_assist_polish.py` 至少覆盖：
+当前 `tests/test_stream.py`、`tests/test_llm_parse_retry.py` 与 `tests/test_assist_polish.py` 保留十个关键回归测试：
 
-- 流式哨兵解析 / 结构化兜底 / 拒绝 revise 重来 / 超限降级交付；
-- 非法 JSON 的重试恢复与耗尽；
-- 揭示门控白名单及 prepare 注入抑制；
-- 旧文风档案兼容、初审无 major 不改写、严格一次润色加复审、分数/锚点/空输出/异常/预算回退、累计 usage 与不调用玩家流式链路。
-
+- 正常流式回合、审校重写、耗尽降级与关闭审校；
+- JSON 重试和无默认凭据；
+- 润色闭环的未触发、采用、复审回退与预调用预算保护。
 修改 Agent 时还必须在真实环境连续试玩：检查上下文是否正确、摘要是否漂移、选项后果是否兑现、审校重写率与延迟是否可接受。
