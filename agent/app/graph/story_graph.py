@@ -1,7 +1,8 @@
-"""剧情生成工作流：prepare（构建上下文）→ 流式写作 → normalize → review。
+"""剧情生成工作流：prepare（构建上下文）→ 流式写作 → 结构化 → normalize → review。
 
-唯一编排在 `_stream_pipeline`（真流式·单次哨兵分隔）；prepare/normalize/review 为共享
-纯函数，`complete_opening` 走非流式补全。历史上的 langgraph 非流式图已退休。
+唯一编排在 `_stream_pipeline`：写手只流式输出正文，随后复用 llm_write 配置生成结构化结果；
+prepare/normalize/review 为共享纯函数，`complete_opening` 走非流式补全。历史上的 langgraph
+非流式图已退休。
 """
 from __future__ import annotations
 
@@ -17,10 +18,9 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from ..config import get_settings
 from ..llm import LLMParseError, Usage, chat_json, chat_stream
 from ..prompts import (
-    _SENTINEL,
     OPENING_COMPLETE_SYSTEM,
     REVIEW_SYSTEM,
-    STORY_STREAM_SYSTEM,
+    STORY_WRITER_SYSTEM,
     STRUCTURE_SYSTEM,
 )
 from .state import StoryState
@@ -236,9 +236,7 @@ def prepare(state: StoryState) -> dict[str, Any]:
         _write_attr_types(lines, attr_types)
         _write_hidden(lines, world)
         _write_reveal_gated(lines, world, revealed)
-        lines.append(
-            "\n请生成这部作品的开场剧情与初始推荐选项。开场通常不产生属性变化，state_delta 可为空对象 {}。"
-        )
+        lines.append("\n【本回合目标】生成开场，建立可供玩家行动的场景。")
     else:
         current = state.get("current_state") or {}
         known = list(current.keys())
@@ -250,7 +248,7 @@ def prepare(state: StoryState) -> dict[str, Any]:
         _write_hidden(lines, world)
         _write_reveal_gated(lines, world, revealed)
         lines.append(f"\n玩家现在的选择/行动：{state.get('choice', '')}")
-        lines.append("\n请承接以上剧情，生成下一段剧情、新的推荐选项，以及本次选择引起的属性变化。")
+        lines.append("\n【本回合目标】承接玩家现在的选择/行动，推进下一段已经发生的剧情。")
 
     return {
         "user_prompt": "\n".join(lines),
@@ -342,92 +340,67 @@ def normalize(state: StoryState) -> dict[str, Any]:
     return {"result": result}
 
 
-# ===== 流式流水线（唯一的生成编排：真流式·单次哨兵分隔） =====
-# 正文 chat_stream 逐字产出，结束后按 _SENTINEL 切出 JSON 尾；尾缺失/非法则用
-# STRUCTURE_SYSTEM 兜底；再 normalize + review，拒绝则有记忆修订、超限则降级交付。
-# prepare/normalize/review 为共享纯函数；complete_opening 走非流式。
+# ===== 流式流水线（唯一的生成编排：写作与结构化职责拆分） =====
+# Writer 只逐字输出玩家可见正文；其结束后复用同一个 llm_write 配置调用
+# STRUCTURE_SYSTEM 生成选项/状态/摘要。再 normalize + review，拒绝则有记忆修订、
+# 超限则降级交付。prepare/normalize/review 为共享纯函数；complete_opening 走非流式。
 
-def _structure_fallback(state: dict[str, Any], prose: str, llm_cfg: dict[str, Any] | None = None,
-                        usage_out: Usage | None = None) -> dict[str, Any]:
-    """哨兵后的 JSON 尾缺失/非法时，据已写好的正文补出结构化元数据（保住正文不重来）。"""
+def _structure(state: dict[str, Any], prose: str, llm_cfg: dict[str, Any] | None = None,
+               usage_out: Usage | None = None) -> dict[str, Any]:
+    """基于已写定的正文生成结构化元数据，复用写手配置并累计 write usage。"""
     prompt = (
         state["user_prompt"]
         + "\n【已写好的剧情正文】\n"
         + prose
-        + "\n请只为上面这段正文输出结构化元数据 JSON（不要重写正文）。"
+        + "\n请只为上面这段正文输出结构化元数据 JSON（不要改写正文）。"
     )
     return chat_json(STRUCTURE_SYSTEM, prompt, llm_cfg=llm_cfg, usage_out=usage_out)
-
-
-def _split_sentinel(buf: str) -> tuple[str, str]:
-    """按哨兵切分累积缓冲：返回 (正文, JSON尾字符串)。无哨兵时尾为空。"""
-    idx = buf.find(_SENTINEL)
-    if idx == -1:
-        return buf.strip(), ""
-    return buf[:idx].strip(), buf[idx + len(_SENTINEL):].strip()
 
 
 async def _stream_pipeline(mode: str, base_state: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
     """公共流式流水线，产出事件：
     {"type":"delta","text":..} 正文增量 / {"type":"revise"} 审校拒绝需重来 / {"type":"done","result":..}。
-    异常（LLMParseError/ReviewExhaustedError/其它）打点后原样抛出，由路由转 SSE error 帧。"""
+    异常（LLMParseError/其它）打点后原样抛出，由路由转 SSE error 帧。"""
     prep = prepare(base_state)
     state = {**base_state, **prep}
-    # 凭据：写手（正文/结构化兜底）用 llm_write，审校用 llm_review。两者都由 Go 下发，
-    # agent 没有任何默认可退——llm_write 缺失会在 chat_stream 里抛 LLMConfigMissing。
+    # Writer 与 Structurer 共享 llm_write；Review 独占 llm_review。两者均由 Go 下发，
+    # agent 没有默认可退——llm_write 缺失会在 chat_stream/chat_json 中抛 LLMConfigMissing。
     llm_write = base_state.get("llm_write")
     llm_review = base_state.get("llm_review")
-    # llm_review 为 None = 玩家关掉了质量审校（作品级开关，默认关）。此时整段跳过审校，
-    # 首稿直接交付；埋点打 review=off，别让"没审校"伪装成 first_draft_pass=true。
+    # llm_review 为 None = 玩家关掉了质量审校（作品级开关，默认关）。此时跳过审校，
+    # 但仍必须生成结构化结果；埋点打 review=off，别让"没审校"伪装成 first_draft_pass=true。
     review_on = bool(llm_review)
-    # 按环节分开累计 token 用量：两个环节可能是不同模型、不同单价，Go 要分别折算扣费。
+    # write 累计 Writer + Structurer 的 token：两者复用同一模型配置、同一计费单价。
+    # review 单独累计，因为它可使用另一条模型连接。
     usage_write, usage_review = Usage(), Usage()
     max_retries = max(0, get_settings().ai_review_max_retries)
     start = time.perf_counter()
     ttfb_ms: int | None = None
     failures = 0
 
-    # 有记忆的写手：一条持续的对话。首轮 system+user；被拒时追加"上一稿 + 审校反馈"，
-    # 让写手在自己上一稿上修订而非从头重写——减少来回震荡、更快收敛。审校仍是独立无记忆调用。
+    # 有记忆的 Writer：首轮 system+user；被拒时追加上一稿正文与审校反馈，令其在
+    # 自己上一稿基础上修订而非从头重写。Structurer 和 Reviewer 都是按当前版本单独调用。
     writer_msgs = [
-        SystemMessage(content=STORY_STREAM_SYSTEM),
+        SystemMessage(content=STORY_WRITER_SYSTEM),
         HumanMessage(content=state["user_prompt"]),
     ]
 
     try:
         while True:
-            # —— 流式写作：只把哨兵之前的正文作为 delta 外发，尾部留给 JSON ——
-            buf = ""
-            emitted = 0
-            hold = len(_SENTINEL) - 1  # 末尾暂留，避免把半个哨兵当正文发出
+            # —— 流式写作：每个正文 chunk 都可直接外发；结构化阶段不会阻塞首字。——
+            prose_chunks: list[str] = []
             async for chunk in chat_stream(writer_msgs, llm_cfg=llm_write, usage_out=usage_write):
                 if ttfb_ms is None:
                     ttfb_ms = round((time.perf_counter() - start) * 1000)
-                buf += chunk
-                idx = buf.find(_SENTINEL)
-                if idx == -1:
-                    safe = max(emitted, len(buf) - hold)
-                    if safe > emitted:
-                        yield {"type": "delta", "text": buf[emitted:safe]}
-                        emitted = safe
-                elif idx > emitted:
-                    yield {"type": "delta", "text": buf[emitted:idx]}
-                    emitted = idx  # 哨兵已现，之后不再外发正文
+                prose_chunks.append(chunk)
+                yield {"type": "delta", "text": chunk}
 
-            prose, tail_str = _split_sentinel(buf)
-            tail: Any = None
-            if tail_str:
-                try:
-                    tail = json.loads(tail_str)
-                except json.JSONDecodeError:
-                    tail = None
-            if not isinstance(tail, dict):
-                # 兜底：保住正文，补结构化尾。它也是写手环节的花费，计进 usage_write。
-                tail = _structure_fallback(state, prose, llm_write, usage_write)
-
-            raw = {"content": prose, **tail}
+            prose = "".join(prose_chunks).strip()
+            tail = _structure(state, prose, llm_write, usage_write)
+            raw = {**tail, "content": prose}  # Writer 正文是唯一权威，不能被 Structurer 的意外字段覆盖
             result = normalize(
-                {"raw": raw, "known_keys": state["known_keys"], "attr_types": state["attr_types"]}
+                {"raw": raw, "known_keys": state["known_keys"], "attr_types": state["attr_types"],
+                 "reveal_gated": state["reveal_gated"]}
             )["result"]
 
             if review_on:
@@ -460,13 +433,13 @@ async def _stream_pipeline(mode: str, base_state: dict[str, Any]) -> AsyncIterat
                        "usage": {"write": dict(usage_write), "review": dict(usage_review)}}
                 return
 
-            # 拒绝且未超限：把上一稿(原样)与审校反馈追加进写手对话，令其"修订"而非重写。
-            writer_msgs.append(AIMessage(content=buf))
+            # 拒绝且未超限：Writer 只重写正文；本轮正文对应的结构化数据会在下一轮重新生成。
+            writer_msgs.append(AIMessage(content=prose))
             writer_msgs.append(HumanMessage(content=(
                 f"上一稿未通过质量审校。需修正的问题：{feedback}\n"
-                "请在上一稿基础上**修订**：保留已经写好、没问题的部分，只针对上述问题改动；"
+                "请在上一稿基础上修订：保留已经写好、没问题的部分，只针对上述问题改动；"
                 "若问题是结构性的（如整段方向或节奏不对），可以较大改动。"
-                "仍按原格式输出**完整的修订稿**（正文 <<<META>>> JSON尾），不要解释修改过程。"
+                "只输出完整的修订正文，不要 JSON、选项、状态、摘要或解释。"
             )))
             yield {"type": "revise"}  # 通知前端清空已流出的正文，准备重来
     except Exception as e:  # noqa: BLE001 —— 打点后原样抛给路由转 SSE error

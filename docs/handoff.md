@@ -7,7 +7,7 @@
 
 Story Editor 的长期愿景是“AI 驱动的互动剧情共创社区”：用户既可以游玩，也可以创作、分享和再创作。
 
-**已打通游玩 + 创作两条闭环**。游玩：登录 → 作品 → 会话 → AI 生成 → 状态变化/剧情树 → 回溯与读档。创作(MVP)：一句话灵感 →(Go 转发)agent `/assist/world` → 结构化表单微调 → `/assist/opening` → 存草稿/发布 → 首页作为可玩作品出现。社区未实现、路由未注册。
+**已打通游玩 + 创作两条闭环**。游玩：登录 → 作品 → 会话 → AI 生成 → 状态变化/剧情树 → 回溯与读档。创作(MVP)：一句话灵感 →(Go 转发)agent `/assist/world` → 结构化表单微调 → `/assist/opening` → 完整开场的精品润色预览 → 存草稿/发布 → 首页作为可玩作品出现。社区未实现、路由未注册。
 
 不要把 [prd.md](prd.md) 的愿景功能当作已实现功能。当前实现状态应以本手册、`CLAUDE.md` 和代码为准。
 
@@ -16,7 +16,7 @@ Story Editor 的长期愿景是“AI 驱动的互动剧情共创社区”：用�
 | 域 | 已完成 | 未完成或限制 |
 |---|---|---|
 | 用户 | 后端注册/登录/JWT/资料、凭证分表；**前端登录接入完成**（游玩需登录，匿名与会话迁移已移除，见 §9.2）；**个人主页 `/me`（资料 + 编辑昵称/简介/头像 + BYOK 连接管理）**；**BYOK 已接入生成**（连接=账号级、模型=作品级，见 §12）；**注册赠 1 元平台额度 + 按 token 计费扣减**；头像上传 | OAuth/密码找回未做；**充值服务未做**（额度用尽只能自带 key）；单价需 admin 手填；旧 `User.LLMKeyCipher`（单 key）已废弃、列留孤儿 |
-| 作品 | Story CRUD（列表/详情 LEFT JOIN users 带出 `creator_name` 作者昵称，只读投影）、作品列表、世界观/初始状态 JSON；**创作编辑器(MVP)**：`world_config`/`opening_content` 可写入、运行时校验(`pkg.ValidateWorldConfig`，草稿宽松/发布严格)、发布态切换、我的作品列表、assist Go 转发；**封面上传（`/uploads/image` + `cover_url`，见 §14）** | `/assist/polish`·`/assist/branches` 编辑内接入未做 |
+| 作品 | Story CRUD（列表/详情 LEFT JOIN users 带出 `creator_name` 作者昵称，只读投影）、作品列表、世界观/初始状态 JSON；**创作编辑器(MVP)**：`world_config`/`opening_content` 可写入、运行时校验(`pkg.ValidateWorldConfig`，草稿宽松/发布严格)、发布态切换、我的作品列表、assist Go 转发；**文风档案与完整开场精品润色预览**；**封面上传（`/uploads/image` + `cover_url`，见 §14）** | `/assist/branches` 编辑内接入未做 |
 | 游玩 | 开局、续写、自由输入、回溯、读档、删档、剧情树、状态合并；质量审校可开关（默认关）；**全组需登录，草稿仅作者可玩**；**hidden/未揭示 reveal 的数值不外发**（§9.2） | **匿名不能玩**（额度挂账号，详情页拦截并引导登录）；真实环境下的多回合质量/延迟指标尚未沉淀 |
 | Agent | **流式生成(SSE)**、属性类型规整（含 hidden）、故事大纲导演、滚动摘要、审校分级 + 有记忆修订 + 超限降级交付 | RAG、多 Agent fan-out、独立 director/recall/write 子图未做 |
 | 前端 | **双态设计体系（`docs/design` 落地，见 §13）**：管理态（白底 Inter + 全局 `AppHeader`）发现书库(错落瀑布 + 题材/搜索前端过滤 + 三态)、我的创作、社区占位、登录页(`/login` 双栏)、个人主页、admin、创作编辑器；阅读态（暖深色 Noto Serif + `useReadingTheme` 整页换肤 + 遮罩浓度/昼夜可调）作品详情、游玩(三栏舞台 + 状态轨 + 选项坞 1/2/3 快捷键 + 星图抽屉)。正文逐字流式(无首字下沉)、属性揭示门控可见性(hidden 全程不露面)、进度条按 `max` 声明画、登录/会话迁移、按作品配模型、作品级 8 主题换肤 | 社区功能、移动端细节/自动化测试未做 |
@@ -161,7 +161,7 @@ handler → service → repository
   → done 帧携带持久化后的 SessionResult
 ```
 
-流式与审校共存（真流式·单次哨兵分隔）：Agent `generate` 单次输出「正文 `<<<META>>>` JSON尾」，正文逐字流出，结束后解析尾部；尾缺失/非法用 structurer 兜底；再跑 review，拒绝则发 revise 并带反馈重来（上限同 `AI_REVIEW_MAX_RETRIES`）。落库/去重/合并只能在流结束后做（依赖完整 delta/options）。前端游玩页 `load()` 见 `current_node=null` 即触发 `startOpening()`，有按 sessionId 的去重守卫防严格模式双触发。
+流式与审校共存（Writer / Structurer 分责）：Agent 先由 Writer 流式输出纯正文，结束后由复用同一 `llm_write` 配置的 Structurer 生成 options、state_delta、summary 等元数据；再规整并执行可选 review。拒绝则发 revise，并完整重跑 Writer → Structurer → Reviewer（上限同 `AI_REVIEW_MAX_RETRIES`）。Writer + Structurer 的累计用量回传为 `usage.write`，不新增模型配置或计费阶段。落库/去重/合并只能在流结束后做（依赖完整 delta/options）。前端游玩页 `load()` 见 `current_node=null` 即触发 `startOpening()`，有按 sessionId 的去重守卫防严格模式双触发。
 
 ### 6.2 Agent 质量闭环
 
@@ -198,7 +198,7 @@ prepare
 | 作品 | `POST/GET /stories`、`GET/PUT/DELETE /stories/:id`（`GET` 挂 `AuthOptional`：作者可读自己的草稿，其他人只读 published、越权返 **404 不返 403**；非作者拿到脱敏 `world_config`）。**节点 CRUD 已整组下线**，见 §9.2 |
 | 游玩（全组 AuthRequired） | `POST /play/sessions`（建空会话）、`POST /play/sessions/:id/opening/stream`（SSE 流式开局，幂等）、`GET /play/sessions`、`GET/DELETE /play/sessions/:id`、`POST /play/sessions/:id/choice/stream`（SSE 流式续写）、`POST /play/sessions/:id/backtrack`（**所有按 sessionID 访问的接口均校验 `session.PlayerID` 归属**） |
 | 图片上传（AuthRequired） | `POST /uploads/image`（multipart：`file` + `kind`∈{avatar,cover}，返回 `{url}`）；静态直出 `GET /uploads/*`（见 §14） |
-| 创作辅助 | `POST /assist/world`、`/opening`、`/polish`、`/branches`（AuthRequired；Go 转发 agent；请求可带 `connection_id` 覆盖 world 环节连接） |
+| `POST /assist/world`、`/opening`、`/polish`、`/branches` | 创作辅助；**经 Go `/api/v1/assist/*` 转发**给创作编辑器消费（agent 无鉴权/CORS，前端不直连；Go 侧用 180s `assistClient`）。四个成功响应均回传已知 `usage` 供 Go 统一计费 |
 | BYOK（AuthRequired） | `GET/POST /llm/connections`、`PUT/DELETE /llm/connections/:id`、`POST /llm/connections/test`、`GET /llm/connections/:id/models`（拉端点模型列表）、`GET/PUT /llm/story-config/:storyId`（玩家在某作品的模型配置） |
 | 平台设置（AuthRequired + `RequirePermission(authz.PermPlatformLLMManage)`，`RequireAdmin` 为其别名） | `GET/PUT /admin/llm/platform`、`POST /admin/llm/platform/test` |
 | 社区（未实现） | 路由**未注册**，一律 404。空壳曾返 `success:true`，调用方会误判点赞/评论成功 |
@@ -216,7 +216,9 @@ prepare
 | `POST /assist/validate-key` | 校验某 LLM key 是否可用（一次性 ping，**独立于 `_build_llm` 缓存与生成管线**，不落库）；经 Go 的 `/llm/connections/test`、`/admin/llm/platform/test` 复用 |
 | `GET /health` | 检查模型配置状态 |
 
-**BYOK（LLMConfig 下发）**：`/generate/stream`、`/continue/stream`、`/opening/complete` 及 `/assist/*` 请求体可携带 `llm_write`/`llm_review`（play）或 `llm`（assist 单次），字段 `{provider,base_url,api_key,model}`。Go 侧按环节解密解析后下发；agent 用它构造**临时** `ChatOpenAI`（`_build_ephemeral`，不进全局缓存），缺字段/未下发时回退 `.env` 默认。写手用 `llm_write`、审校用 `llm_review`。**agent 不碰数据库**，所有 key/策略在 Go。
+**BYOK（LLMConfig 下发）**：`/generate/stream`、`/continue/stream`、`/opening/complete` 及 `/assist/*` 请求体可携带 `llm_write`/`llm_review`（play）或 `llm`（assist 单次），字段 `{provider,base_url,api_key,model}`。Go 侧按环节解密解析后下发；agent 用它构造**临时** `ChatOpenAI`（`_build_ephemeral`，不进全局缓存），缺字段/未下发即报错，绝不回退 agent `.env`。写手用 `llm_write`、审校用 `llm_review`。**agent 不碰数据库**，所有 key/策略在 Go。
+
+**精品润色契约**：`POST /assist/polish` 请求固定为 `{text, instruction?, world:{style, style_profile?}, connection_id?}`，不接受顶层 `style_profile`。`style_profile` 缺省兼容旧作品，字段为 `narrative_distance`（`close|medium|distant`）、`rhythm`（`mixed|tight|relaxed`）、最多 3 条 `sensory_focus`、可选 `dialogue_rule`、最多 5 条 `avoid`；Go 发布/草稿校验与 Agent schema 均严格校验其存在时的形状。响应为 `{text, applied, feedback, usage}`，`feedback` 最多两条 `{category,span_hint,goal}`。它是非流式独立闭环：初审 → 至多一次润色 → 复审；仅复审至少提升 5 分、无 major、无锚点丢失且候选格式/长度有效时 `applied=true`，否则 `text` 逐字为原文、`applied=false`。该链路不调用 `story_graph`，不影响玩家 SSE、首字体验或 Hard Review；编辑器仅预览，作者显式采纳才替换。
 
 Agent 的开场和续写响应统一包含：`content`、`options`、`state_delta`、`summary`、`is_ending`、`ending_type`。详见 [`../agent/README.md`](../agent/README.md)。
 
@@ -252,7 +254,7 @@ cd ..\agent
 
 ESLint 用 `next/core-web-vitals`，只关了 `@next/next/no-img-element` 一条（项目刻意用原生 `<img>`，理由见 `frontend/.eslintrc.json` 与 `components/ImageUpload.tsx`）。
 
-当前 Python 测试覆盖“流式哨兵解析/结构化兜底/拒绝→有记忆修订/超限降级交付”（`test_stream.py`）、“parse 重试恢复/耗尽”（`test_llm_parse_retry.py`）与“揭示门控白名单/prepare 注入抑制”（`test_reveal.py`）。Go 有 `play_merge_test.go`（节点语义合并契约）、`access_test.go` / `ownership_test.go`（可见性与归属）、`player_view_test.go`（玩家可见投影）、`llm_resolver_test.go`（BYOK 解析优先级）、`worldvalidate_test.go`（发布校验）与 `crypto_test.go` / `upload_test.go`。
+当前 Python 测试覆盖“流式哨兵解析/结构化兜底/拒绝→有记忆修订/超限降级交付”（`test_stream.py`）、“parse 重试恢复/耗尽”（`test_llm_parse_retry.py`）、“揭示门控白名单/prepare 注入抑制”（`test_reveal.py`）以及“精品润色的 profile、一次润色上限、复审净提升、锚点/异常/预算回退、usage 与玩家链路隔离”（`test_assist_polish.py`）。Go 有 `play_merge_test.go`（节点语义合并契约）、`access_test.go` / `ownership_test.go`（可见性与归属）、`player_view_test.go`（玩家可见投影）、`llm_resolver_test.go`（BYOK 解析优先级）、`worldvalidate_test.go`（含 style_profile 发布校验）与 `crypto_test.go` / `upload_test.go`。
 
 ### 8.3 必做的人工验收
 
@@ -307,7 +309,7 @@ cd agent
 
 刻意不建管理端大屏/指标表——验证期用日志聚合即可。两个工具分工：
 
-- `agent/tools/sample_metrics.py`：**自动线性采样**，进程内直驱 `run_start/run_continue` 现造数据（会调 DeepSeek）。只能刷漂亮数字、**触发不了三大拒因**（见 §9.2），对提示词质量改动无区分力，仅用于跑通/延迟基线。
+- `agent/tools/sample_metrics.py`：**自动线性采样**，进程内直驱 `run_start/run_continue` 现造数据（会调 DeepSeek）。只能刷漂亮数字、**触发不了三大拒因**（见 §9.2），对提示词质量改动无区分力，仅用于跑通/延迟基线。要逐回合人工检查一部已发布 AI 开局作品的正文、摘要、选项、状态、SSE `revise`、首字时间与 usage，则用 `agent/tools/playtest.py --write-config-file C:/secure/write.json [--review-config-file C:/secure/review.json]`；`--write-config-file` 同时供 Writer 和 Structurer 使用，输出 `write` usage 是两阶段累计，`review` usage 仅来自 Reviewer。它不读取默认凭据、不替 Go 解析连接或记账；省略 review 配置只关闭审校，结构化生成仍会执行。
 - `agent/tools/aggregate_log.py`：**零依赖离线聚合器**，只读**真人真实游玩**产生的 agent 日志，不碰 app/DB/LLM。这才是给提示词质量“结账”的正道——真人的矛盾选择/回溯/深剧情才会让三大拒因真正发作。用法：真人游玩时把 agent 进程输出重定向到文件（`uvicorn app.main:app --port 8001 > agent.log 2>&1`），玩够量后 `./.venv/Scripts/python.exe tools/aggregate_log.py agent.log`，直接出报表（首稿通过率/降级率/审校拒绝率/**拒因按频次分布**/延迟与 ttfb p95/按 mode 分解）。
 
 等社区上线、指标从"验证一次"变成"每天要看"且鉴权就绪后再考虑大屏。
@@ -328,7 +330,7 @@ cd agent
 **质量审校（review）**
 - review 是同一模型的二次调用：能抬下限，不保证事实正确，且加延迟与费用。真实样本拒绝率约 18%，**不是橡皮图章**。两类主要拒因：`state_delta` 与正文不一致、`summary` 漏记新增实体。（第三类「选项 hint 无后果」已随 hint 移除而作废。）
 - 已针对拒因把 `prompts.py` 的散文规则换成**可自检的动作锚点**（写 JSON 尾前回看正文倒推 delta/summary；落笔前自检本段新登场人物/物品/线索），而不是堆更多规则。
-- ⚠️ **这类提示词改动离线测不出来，别再试。** 线性采样（`agent/tools/sample_metrics.py`）、逆境 A/B（`agent/tools/adversarial_ab.py`，新旧提示词喂完全相同的玩家输入）、直接审计转录，三种手段都跑出「新旧完全一致」——因为逆境压的是剧情黑暗度，而拒因是**输出纪律**问题（长上下文摘要漂移、真正模棱两可的状态变化、模型方差），选择文本逼不出来。**唯一能结账的是真人多回合埋点**（`gen`/`review` logfmt 已就位，见 §9.1），攒到几百回合再统计 `first_draft_pass`/`reject_rate`/拒因分布。两个工具留库供换模型时复用。
+- ⚠️ **玩家多回合的提示词质量不能靠离线 A/B 结账。** 线性采样（`agent/tools/sample_metrics.py`）、逆境 A/B（`agent/tools/adversarial_ab.py`，新旧提示词喂完全相同的玩家输入）、直接审计转录，三种手段都跑出「新旧完全一致」——因为逆境压的是剧情黑暗度，而拒因是**输出纪律**问题（长上下文摘要漂移、真正模棱两可的状态变化、模型方差），选择文本逼不出来。**唯一能结账的是真人多回合埋点**（`gen`/`review` logfmt 已就位，见 §9.1），攒到几百回合再统计 `first_draft_pass`/`reject_rate`/拒因分布。这个结论不适用于作者侧独立单段润色：`agent/tools/style_polish_ab.py` 对 8 个原创夹具每个运行 3 次，生成 24 个随机 A/B 盲选对；人工按自然度、人物声音、具体性、节奏强制二选一，并核验 anchors。验收门槛为 Candidate 至少胜 15/24 且零锚点丢失；输出与 mapping 写入已忽略的 `agent/tools/out/`。
 - 想要更灵敏的离线仪表，得换成对 delta 完整性/实体召回打分的**分级 LLM 裁判**，而非 review 的二元闸门——pre-launch 不值当。
 - **选项 hint 已整体移除**：真机试玩发现「收益+转折+风险」两面结构太标准化，且每次提前剧透后果、破坏悬念。属性变化预估也被否（反事实预测常与真实 delta 不符、更游戏化、隐藏属性还不能显示）。选项回归**纯行动文字**，代价交给玩家在剧情里承受；`normalize` 主动剥离 hint 兜底。
 - 待查：采样时 openai SDK 层几乎每次调用都有一次 `Retrying request`，疑似 DeepSeek 限流，可能抬高了 `elapsed_ms`。
@@ -353,7 +355,7 @@ cd agent
 ### 9.3 建议的后续顺序
 
 1. **试玩与观测**：补 Agent/PlayService 回归测试、埋点或日志，跑真实多回合样本。
-2. ~~**创作前端**：消费 `/assist/*`，打通"创作 → 游玩"~~ ✅ 已完成(MVP)：`/create`·`/edit/:id`·`/mine`，AI 优先 + 结构化属性表；后端补 `world_config` 输入/校验/发布态/assist 转发。剩余打磨：`/assist/polish`·`/assist/branches` 编辑内接入。
+2. ~~**创作前端**：消费 `/assist/*`，打通"创作 → 游玩"~~ ✅ 已完成(MVP)：`/create`·`/edit/:id`·`/mine`，AI 优先 + 结构化属性表；后端补 `world_config` 输入/校验/发布态/assist 转发。文风档案与 `/assist/polish` 的候选预览/显式采纳已接入；剩余打磨是 `/assist/branches` 编辑内接入。
 3. **Agent 阶段二**（**因备案冻结真机验证而暂缓**，待线上恢复后带真实数据做）：依据数据选择先拆 director、先补 recall/RAG；不要一次完成完整多 Agent。
 4. **社区 MVP**：发布、浏览、详情、点赞/评论；随后才考虑付费与成就。
 
@@ -405,7 +407,7 @@ cd agent
 
 **额度与扣费**（`service/credit.go`）
 - 只对 `AgentLLMConfig.Source == platform` 的环节扣（该字段 `json:"-"`，不下发给 agent——agent 不该知道钱的事）。
-- agent 在 `done` 帧回传按环节分开的 token 用量；Go 按该环节单价折算成微元、**向上取整**（几百 token 的调用四舍五入会常年归零，1 元就成了无限），写一行流水并 `UPDATE ... GREATEST(0, credit - ?)`。扣减在 SQL 里做，避免并发回合先读后写吞掉一次消费。
+- agent 在 `done` 帧回传按环节分开的 token 用量；Go 按该环节单价折算成微元、**向上取整**（几百 token 的调用四舍五入会常年归零，1 元就成了无限），写一行流水并 `UPDATE ... GREATEST(0, credit - ?)`。扣减在 SQL 里做，避免并发回合先读后写吞掉一次消费。四个成功的创作辅助响应也按已知实际 usage 事后记账：`assist_world`、`assist_opening`、`assist_polish`、`assist_branches`，流水 `StoryID` 为空；BYOK 跳过平台扣费和平台 usage。精品润色回退仍会对已经完成的模型调用照实扣费，网络/模型失败拿不到 usage 时不虚构扣费。
 - **事后扣费**：花多少 token 只有调用完才知道，事前无法预扣准确金额，因此**最后一回合可能略微透支**（扣到 0 为止）。用一套精确预扣换这点误差，0 用户阶段不值当。
 - 扣费失败只记日志、不向上报错：token 已经烧掉了，此时让玩家的回合失败于事无补。
 - `estimated=true` 表示端点没在响应里回 usage、token 数是**按字符估算**的（OpenAI 兼容端点对 `stream_options.include_usage` 支持不一）。这批为真时说明扣费全靠估算——是需要知道的事实，别被精确数字掩盖。

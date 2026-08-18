@@ -14,10 +14,16 @@
 
 | Where | Holds |
 |---|---|
+| `README.md` | session entry point: "先读什么" reading order, product snapshot, run and verification commands |
 | `docs/handoff.md` | current facts: status §2, endpoints §7.1, known gaps §9.2, next §9.3, BYOK §12, theming §13, upload §14 |
-| this file | invariants, boundaries, conventions — **never status** |
 | `docs/design.md` | technical design & rationale: attribute system, data flow, node merge, scaling |
-| `README.md` | entry point + "先读什么" reading order |
+| `docs/context-strategy.md` | why and how generation context uses summaries, recent raw turns, and future recall/RAG evolution |
+| `docs/prd.md` | product scope, MVP priorities, roles, and open product/architecture decisions |
+| `frontend/README.md` | frontend module entry: pages, state, components, API contracts, and frontend verification |
+| this file §Frontend design system | UI design-system source of truth: modes, themes, tokens, component, and accessibility constraints |
+| this file | invariants, boundaries, conventions — **never status** |
+
+Before proposing or changing architecture, Agent workflows, data models, context/memory, cost/latency tradeoffs, or product scope: read `README.md` first, then the relevant sections of `docs/handoff.md`, `docs/design.md`, `docs/context-strategy.md`, and `docs/prd.md`. A code-only conclusion is insufficient for these decisions.
 
 Docs are read every session; length is a real cost.
 

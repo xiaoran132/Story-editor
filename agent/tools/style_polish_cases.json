@@ -1,0 +1,130 @@
+﻿[
+  {
+    "id": "emotion_tell",
+    "title": "情绪说破",
+    "text": "雨落在站台上。林舟非常难过，他知道自己失去了最后一次机会。他感到绝望，连呼吸都觉得没有意义。",
+    "instruction": "保持克制，不改事实。",
+    "world": {
+      "style": "近距离、克制，以动作和感官承载情绪。",
+      "style_profile": {
+        "narrative_distance": "close",
+        "rhythm": "mixed",
+        "sensory_focus": ["雨声", "金属触感"],
+        "avoid": ["直接解释情绪"]
+      }
+    },
+    "anchors": ["雨中的站台", "林舟失去最后一次机会"]
+  },
+  {
+    "id": "probing_dialogue",
+    "title": "试探对白",
+    "text": "周岚问：\"你昨晚去过档案室吗？\" 贺青说：\"没有。\" 周岚说：\"好吧。\" 贺青说：\"真的没有。\" 两个人都很紧张。",
+    "instruction": "让对白更有试探和潜台词，不增加新事实。",
+    "world": {
+      "style": "冷静的悬疑对话，人物不直接说破怀疑。",
+      "style_profile": {
+        "narrative_distance": "medium",
+        "rhythm": "tight",
+        "dialogue_rule": "对白每句都应有回避、试探或施压的目的。",
+        "avoid": ["解释人物心理"]
+      }
+    },
+    "anchors": ["周岚询问档案室", "贺青否认去过", "双方紧张"]
+  },
+  {
+    "id": "tense_sequence",
+    "title": "紧张段落",
+    "text": "门外有脚步声。脚步声越来越近。许宁很害怕。她很快地跑到桌子后面躲起来。脚步声停在门口。她觉得时间过得很慢。",
+    "instruction": "加强紧张节奏，保持事件顺序。",
+    "world": {
+      "style": "短促、清晰的惊险叙述。",
+      "style_profile": {
+        "narrative_distance": "close",
+        "rhythm": "tight",
+        "sensory_focus": ["脚步声", "呼吸声"],
+        "avoid": ["反复使用很害怕", "长句拖慢追逐"]
+      }
+    },
+    "anchors": ["门外脚步靠近", "许宁躲到桌后", "脚步停在门口"]
+  },
+  {
+    "id": "scene_transition",
+    "title": "场景过渡",
+    "text": "他们离开了旧诊所，后来到了河边。河边有很多雾。两个人还在想诊所里的事，所以气氛很沉重。然后他们看见了那艘船。",
+    "instruction": "让场景过渡自然，保留叙事信息。",
+    "world": {
+      "style": "画面衔接清楚，少解释，多用环境承接余波。",
+      "style_profile": {
+        "narrative_distance": "medium",
+        "rhythm": "relaxed",
+        "sensory_focus": ["雾", "河水"],
+        "avoid": ["使用后来然后串联", "概括气氛"]
+      }
+    },
+    "anchors": ["离开旧诊所", "抵达有雾的河边", "看见一艘船"]
+  },
+  {
+    "id": "information_reveal",
+    "title": "信息揭示",
+    "text": "沈禾打开信，发现信上写着父亲还活着。她非常震惊，因为父亲已经失踪十年了。这是一个很大的秘密，让她不知道该怎么办。",
+    "instruction": "让揭示更具体、更有落点，不改变信息。",
+    "world": {
+      "style": "信息揭示克制，给读者留反应空间。",
+      "style_profile": {
+        "narrative_distance": "close",
+        "rhythm": "mixed",
+        "sensory_focus": ["纸张", "墨迹"],
+        "avoid": ["使用很大的秘密", "直接命名震惊"]
+      }
+    },
+    "anchors": ["沈禾打开信", "父亲仍活着", "父亲失踪十年"]
+  },
+  {
+    "id": "character_voice",
+    "title": "人物声音",
+    "text": "铁算盘说：\"我们应该马上离开这里。\" 小满说：\"我同意，我们最好快点走。\" 两个人说话都很普通，没有显示出铁算盘谨慎爱算账、小满嘴硬但胆小。",
+    "instruction": "突出人物声音，不改变两人要离开的决定。",
+    "world": {
+      "style": "人物声音由措辞、停顿和回避体现。",
+      "style_profile": {
+        "narrative_distance": "medium",
+        "rhythm": "mixed",
+        "dialogue_rule": "铁算盘谨慎爱算账；小满嘴硬但胆小。",
+        "avoid": ["旁白解释人物性格"]
+      }
+    },
+    "anchors": ["铁算盘建议离开", "小满同意离开", "铁算盘谨慎爱算账", "小满嘴硬胆小"]
+  },
+  {
+    "id": "repetitive_rhythm",
+    "title": "重复句式",
+    "text": "灯灭了。风停了。街静了。陈默走了。陈默看了。陈默想了。陈默知道事情不对。",
+    "instruction": "改善重复句式和节奏，保留发生的动作。",
+    "world": {
+      "style": "句式有变化，但保持夜间悬疑的凝滞感。",
+      "style_profile": {
+        "narrative_distance": "medium",
+        "rhythm": "mixed",
+        "sensory_focus": ["灯光", "风"],
+        "avoid": ["连续相同主谓短句"]
+      }
+    },
+    "anchors": ["灯灭", "风停", "街静", "陈默走、看、思考", "陈默察觉不对"]
+  },
+  {
+    "id": "style_avoidance",
+    "title": "文风禁忌",
+    "text": "月光像银色瀑布一样倾泻，像钻石一样闪耀，像梦一样轻柔。阿梨优雅地、缓慢地、安静地推开门，仿佛整个世界都在等待。",
+    "instruction": "遵守禁忌表达，保留阿梨在月下推门的画面。",
+    "world": {
+      "style": "简净的夜景，意象节制。",
+      "style_profile": {
+        "narrative_distance": "distant",
+        "rhythm": "relaxed",
+        "sensory_focus": ["月光", "门轴"],
+        "avoid": ["比喻堆叠", "副词排比", "夸张的全知总结"]
+      }
+    },
+    "anchors": ["夜晚月光", "阿梨推开门"]
+  }
+]

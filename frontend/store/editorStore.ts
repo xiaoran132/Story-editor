@@ -6,6 +6,9 @@ import type {
   Character,
   OpeningDraft,
   Option,
+  PolishDraft,
+  StyleIssue,
+  StyleProfile,
   Story,
   WorldDraft,
 } from "@/lib/types";
@@ -17,6 +20,7 @@ interface EditorForm {
   coverUrl: string;
   background: string;
   style: string;
+  styleProfile: StyleProfile;
   rules: string;
   outline: string;
   characters: Character[];
@@ -36,10 +40,15 @@ interface EditorState extends EditorForm {
   status: string; // draft | published
   loading: boolean;
   saving: boolean;
-  aiBusy: "world" | "opening" | null; // 分区 loading，避免整页禁用
+  aiBusy: "world" | "opening" | "polish" | null; // 分区 loading，避免整页禁用
   error: string | null;
   toast: string | null;
   connectionId: string; // BYOK：编辑器选用的连接 id（覆盖 world 环节绑定）；空=按绑定/平台
+  polishInstruction: string;
+  polishSourceText: string | null;
+  polishDraft: string | null;
+  polishFeedback: StyleIssue[];
+  polishApplied: boolean;
 
   reset: () => void;
   setConnectionId: (id: string) => void;
@@ -56,6 +65,10 @@ interface EditorState extends EditorForm {
   // AI 辅助
   genWorld: (idea: string, style: string) => Promise<void>;
   genOpening: () => Promise<void>;
+  setPolishInstruction: (value: string) => void;
+  polishOpening: () => Promise<void>;
+  acceptPolish: () => void;
+  dismissPolish: () => void;
   // 持久化
   save: () => Promise<string | null>; // 返回 storyId
   publish: () => Promise<void>;
@@ -70,6 +83,7 @@ const EMPTY_FORM: EditorForm = {
   coverUrl: "",
   background: "",
   style: "",
+  styleProfile: { sensory_focus: [], dialogue_rule: "", avoid: [] },
   rules: "",
   outline: "",
   characters: [],
@@ -127,6 +141,7 @@ function worldObject(f: EditorForm) {
   const rec: Record<string, { model: string }> = {};
   if (f.recWriteModel.trim()) rec.write = { model: f.recWriteModel.trim() };
   if (f.recReviewModel.trim()) rec.review = { model: f.recReviewModel.trim() };
+  const styleProfile = serializeStyleProfile(f.styleProfile);
   return {
     background: f.background,
     style: f.style,
@@ -136,9 +151,40 @@ function worldObject(f: EditorForm) {
     initial_state,
     attributes,
     theme: f.theme || "star",
+    ...(styleProfile ? { style_profile: styleProfile } : {}),
     ...(f.tags.length ? { tags: f.tags } : {}),
     ...(Object.keys(rec).length ? { recommended_models: rec } : {}),
   };
+}
+
+function loadStyleProfile(raw: unknown): StyleProfile {
+  const value = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const distance = value.narrative_distance;
+  const rhythm = value.rhythm;
+  const tags = (items: unknown, max: number) =>
+    Array.isArray(items)
+      ? items.map((item) => String(item).trim().slice(0, 48)).filter(Boolean).slice(0, max)
+      : [];
+  return {
+    narrative_distance:
+      distance === "close" || distance === "medium" || distance === "distant" ? distance : undefined,
+    rhythm: rhythm === "mixed" || rhythm === "tight" || rhythm === "relaxed" ? rhythm : undefined,
+    sensory_focus: tags(value.sensory_focus, 3),
+    dialogue_rule: String(value.dialogue_rule ?? "").trim().slice(0, 160),
+    avoid: tags(value.avoid, 5),
+  };
+}
+
+function serializeStyleProfile(profile: StyleProfile): StyleProfile | null {
+  const loaded = loadStyleProfile(profile);
+  const result: StyleProfile = {
+    ...(loaded.narrative_distance ? { narrative_distance: loaded.narrative_distance } : {}),
+    ...(loaded.rhythm ? { rhythm: loaded.rhythm } : {}),
+    ...(loaded.sensory_focus?.length ? { sensory_focus: loaded.sensory_focus } : {}),
+    ...(loaded.dialogue_rule ? { dialogue_rule: loaded.dialogue_rule } : {}),
+    ...(loaded.avoid?.length ? { avoid: loaded.avoid } : {}),
+  };
+  return Object.keys(result).length ? result : null;
 }
 
 // 把 AI/存量的 attributes 对象 + initial_state 摊平成编辑用的有序行。
@@ -190,6 +236,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   error: null,
   toast: null,
   connectionId: "",
+  polishInstruction: "",
+  polishSourceText: null,
+  polishDraft: null,
+  polishFeedback: [],
+  polishApplied: false,
 
   reset: () =>
     set({
@@ -202,6 +253,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       error: null,
       toast: null,
       connectionId: "",
+      polishInstruction: "",
+      polishSourceText: null,
+      polishDraft: null,
+      polishFeedback: [],
+      polishApplied: false,
     }),
 
   setConnectionId: (id) => set({ connectionId: id }),
@@ -224,6 +280,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         coverUrl: s.cover_url,
         background: String(w.background ?? ""),
         style: String(w.style ?? ""),
+        styleProfile: loadStyleProfile(w.style_profile),
         rules: String(w.rules ?? ""),
         outline: String(w.outline ?? ""),
         characters: coerceCharacters((w.characters as unknown[]) ?? []),
@@ -241,6 +298,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         ),
         theme: String(w.theme ?? "star") || "star",
         tags: Array.isArray(w.tags) ? (w.tags as unknown[]).map(String).filter(Boolean) : [],
+        polishInstruction: "",
+        polishSourceText: null,
+        polishDraft: null,
+        polishFeedback: [],
+        polishApplied: false,
         loading: false,
       });
     } catch (e) {
@@ -249,6 +311,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   setField: (key, value) => set({ [key]: value } as Partial<EditorState>),
+
+  setPolishInstruction: (value) => set({ polishInstruction: value }),
 
   addCharacter: () =>
     set((s) => ({ characters: [...s.characters, { name: "", role: "", desc: "" }] })),
@@ -322,6 +386,55 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       set({ aiBusy: null, error: (e as Error).message });
     }
   },
+
+  polishOpening: async () => {
+    const source = get().openingContent;
+    if (!source.trim()) {
+      set({ error: "请先填写开场正文" });
+      return;
+    }
+    set({
+      aiBusy: "polish",
+      error: null,
+      polishSourceText: source,
+      polishDraft: null,
+      polishFeedback: [],
+      polishApplied: false,
+    });
+    try {
+      const d = await api.post<PolishDraft>("/assist/polish", {
+        text: source,
+        instruction: get().polishInstruction.trim(),
+        world: worldObject(get()),
+        connection_id: get().connectionId || undefined,
+      });
+      set({
+        aiBusy: null,
+        polishSourceText: source,
+        polishDraft: d.text,
+        polishFeedback: d.feedback || [],
+        polishApplied: d.applied === true,
+      });
+    } catch (e) {
+      set({ aiBusy: null, error: (e as Error).message });
+    }
+  },
+
+  acceptPolish: () => {
+    const state = get();
+    if (!state.polishApplied || !state.polishDraft || state.openingContent !== state.polishSourceText) return;
+    set({
+      openingContent: state.polishDraft,
+      polishSourceText: null,
+      polishDraft: null,
+      polishFeedback: [],
+      polishApplied: false,
+      toast: "已替换开场正文，请继续审阅",
+    });
+  },
+
+  dismissPolish: () =>
+    set({ polishSourceText: null, polishDraft: null, polishFeedback: [], polishApplied: false }),
 
   save: async () => {
     const f = get();

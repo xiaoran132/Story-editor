@@ -1,9 +1,9 @@
 """对外请求/响应模型。字段命名与 Go 后端 JSON 契约对齐（snake_case）。"""
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class NoneTolerantModel(BaseModel):
@@ -24,7 +24,7 @@ class NoneTolerantModel(BaseModel):
 # ----- BYOK：随请求下发的 LLM 配置 -----
 
 class LLMConfig(NoneTolerantModel):
-    """Go 侧按环节解析出的有效 LLM 配置，随请求体下发。字段全可空——缺字段时 agent 回退 .env 默认。
+    """Go 侧按环节解析出的有效 LLM 配置，随请求体下发。字段全可空；缺字段时 agent 明确报配置缺失。
 
     provider 仅作标签（OpenAI 兼容端点只需 base_url+api_key+model）。与 Go 的 AgentLLMConfig 对齐。
     """
@@ -42,6 +42,33 @@ class Option(BaseModel):
     hint: str = ""
 
 
+class StyleProfile(NoneTolerantModel):
+    """可选的结构化文风约束；缺省时完全兼容旧作品。"""
+    narrative_distance: Literal["close", "medium", "distant"] | None = None
+    rhythm: Literal["mixed", "tight", "relaxed"] | None = None
+    sensory_focus: list[str] = Field(default_factory=list, max_length=3)
+    dialogue_rule: str = Field(default="", max_length=160)
+    avoid: list[str] = Field(default_factory=list, max_length=5)
+
+    @field_validator("sensory_focus", "avoid")
+    @classmethod
+    def _short_nonempty_items(cls, items: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        for item in items:
+            value = item.strip()
+            if not value:
+                raise ValueError("条目不能为空")
+            if len(value) > 48:
+                raise ValueError("条目不能超过 48 个字符")
+            cleaned.append(value)
+        return cleaned
+
+    @field_validator("dialogue_rule")
+    @classmethod
+    def _short_dialogue_rule(cls, value: str) -> str:
+        return value.strip()
+
+
 class WorldConfig(NoneTolerantModel):
     """作品世界观配置（对应 stories.world_config）。"""
     background: str = ""
@@ -53,6 +80,7 @@ class WorldConfig(NoneTolerantModel):
     # 属性键类型声明：{"hp": {"type": "number", ...}, "items": {"type": "set"}, ...}
     # type ∈ number(数值累加) / scalar(覆盖式) / set(集合增删)。未声明时按值类型推断。
     attributes: dict[str, Any] = Field(default_factory=dict)
+    style_profile: StyleProfile | None = None
 
 
 class PathStep(BaseModel):
@@ -132,6 +160,7 @@ class WorldDraft(BaseModel):
     characters: list[dict[str, Any]] = Field(default_factory=list)
     initial_state: dict[str, Any] = Field(default_factory=dict)
     attributes: dict[str, Any] = Field(default_factory=dict)
+    usage: StageUsage = Field(default_factory=StageUsage)
 
 
 class GenerateWorldRequest(NoneTolerantModel):
@@ -143,6 +172,7 @@ class GenerateWorldRequest(NoneTolerantModel):
 class OpeningDraft(BaseModel):
     content: str = ""
     options: list[Option] = Field(default_factory=list)
+    usage: StageUsage = Field(default_factory=StageUsage)
 
 
 class GenerateOpeningRequest(NoneTolerantModel):
@@ -154,11 +184,34 @@ class GenerateOpeningRequest(NoneTolerantModel):
 class PolishRequest(NoneTolerantModel):
     text: str
     instruction: str = ""
+    world: WorldConfig = Field(default_factory=WorldConfig)
     llm: LLMConfig | None = None  # BYOK：world 环节配置
+
+
+class StyleIssue(BaseModel):
+    category: Literal["ai_tell", "rhythm", "dialogue_voice", "style_drift", "redundancy"]
+    span_hint: str = Field(min_length=1, max_length=120)
+    goal: str = Field(min_length=1, max_length=180)
+
+
+class StyleAnchor(BaseModel):
+    id: str = Field(min_length=1, max_length=48)
+    description: str = Field(min_length=1, max_length=160)
+
+
+class StyleReview(BaseModel):
+    score: int = Field(..., ge=0, le=100)
+    has_major: bool
+    issues: list[StyleIssue] = Field(..., max_length=2)
+    anchors: list[StyleAnchor] = Field(..., max_length=12)
+    missing_anchor_ids: list[str] = Field(..., max_length=12)
 
 
 class PolishDraft(BaseModel):
     text: str = ""
+    applied: bool = False
+    feedback: list[StyleIssue] = Field(default_factory=list, max_length=2)
+    usage: StageUsage = Field(default_factory=StageUsage)
 
 
 class BranchSuggestion(BaseModel):
@@ -175,6 +228,7 @@ class SuggestBranchesRequest(NoneTolerantModel):
 
 class BranchesResponse(BaseModel):
     branches: list[BranchSuggestion] = Field(default_factory=list)
+    usage: StageUsage = Field(default_factory=StageUsage)
 
 
 # ----- 节点语义合并去重 -----

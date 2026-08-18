@@ -1,11 +1,15 @@
-"""创作辅助链路：世界观 / 开场 / 润色 / 分支建议（见 docs/prd.md 1.3.1）。"""
+"""Authoring assist routes: world, opening, polish, and branch suggestions."""
 from __future__ import annotations
+
+import json
+import time
 
 from fastapi import APIRouter, HTTPException
 
+from ..config import get_settings
 from ..graph.story_graph import run_start
-from ..llm import chat_json, validate_key
-from ..prompts import BRANCH_SYSTEM, POLISH_SYSTEM, WORLD_SYSTEM
+from ..llm import LLMConfigMissing, Usage, chat_json, validate_key
+from ..prompts import BRANCH_SYSTEM, STYLE_POLISH_SYSTEM, STYLE_REVIEW_SYSTEM, WORLD_SYSTEM
 from ..schemas import (
     BranchesResponse,
     BranchSuggestion,
@@ -15,6 +19,8 @@ from ..schemas import (
     Option,
     PolishDraft,
     PolishRequest,
+    StageUsage,
+    StyleReview,
     SuggestBranchesRequest,
     ValidateKeyRequest,
     ValidateKeyResponse,
@@ -24,93 +30,216 @@ from ..schemas import (
 router = APIRouter(prefix="/assist", tags=["assist"])
 
 
-def _cfg(x) -> dict | None:
-    """把请求里的 LLMConfig 转成下发字典；无 api_key 时返回 None（agent 回退 .env 默认）。"""
-    if x is not None and getattr(x, "api_key", ""):
-        return x.model_dump()
+def _cfg(value) -> dict | None:
+    """Return only the Go-resolved per-request model configuration."""
+    if value is not None and getattr(value, "api_key", ""):
+        return value.model_dump()
     return None
 
 
-def _fail(what: str, e: Exception) -> HTTPException:
-    return HTTPException(status_code=502, detail=f"ai {what} failed: {e}")
+def _fail(what: str, error: Exception) -> HTTPException:
+    return HTTPException(status_code=502, detail=f"ai {what} failed: {error}")
+
+
+def _stage_usage(usage: Usage) -> StageUsage:
+    return StageUsage(**usage)
+
+
+def _opening_usage(result: dict) -> StageUsage:
+    raw = result.get("usage") or {}
+    if "prompt_tokens" in raw:
+        return StageUsage(**raw)
+    write = raw.get("write") or {}
+    review = raw.get("review") or {}
+    return StageUsage(
+        prompt_tokens=int(write.get("prompt_tokens", 0)) + int(review.get("prompt_tokens", 0)),
+        completion_tokens=int(write.get("completion_tokens", 0)) + int(review.get("completion_tokens", 0)),
+        estimated=bool(write.get("estimated", False) or review.get("estimated", False)),
+    )
+
+
+def _profile_context(req: PolishRequest) -> str:
+    lines = [f"Freeform style: {req.world.style or 'not provided'}"]
+    profile = req.world.style_profile
+    if profile is None:
+        lines.append("Structured style profile: not provided")
+    else:
+        lines.append(
+            "Structured style profile: " + json.dumps(profile.model_dump(exclude_none=True), ensure_ascii=False)
+        )
+    return "\n".join(lines)
+
+
+def _length_allowed(source: str, candidate: str, instruction: str) -> bool:
+    # Only explicit, non-negated expansion/compression instructions bypass the normal length guard.
+    text = instruction.casefold()
+    english_terms = ("expand", "compress", "shorten", "lengthen", "condense")
+    chinese_terms = ("扩写", "压缩", "缩写", "加长", "精简")
+    negated = (
+        any(f"{prefix}{term}" in text for prefix in ("不要", "不", "别", "无需", "不用") for term in chinese_terms)
+        or any(f"{prefix} {term}" in text for prefix in ("do not", "don't", "not", "no") for term in english_terms)
+    )
+    if not negated and any(term in text for term in english_terms + chinese_terms):
+        return True
+    return len(source) * 0.75 <= len(candidate) <= len(source) * 1.25
+
+
+def _has_next_stage_budget(started: float, budget_seconds: int) -> bool:
+    """Do not start a new model stage unless its configured timeout fits in the loop budget."""
+    return time.monotonic() - started + get_settings().ai_timeout < budget_seconds
+
+
+def _fallback(req: PolishRequest, usage: Usage, feedback=None) -> PolishDraft:
+    return PolishDraft(
+        text=req.text,
+        applied=False,
+        feedback=(feedback or [])[:2],
+        usage=_stage_usage(usage),
+    )
+
+
+def polish_with_style_review(req: PolishRequest) -> PolishDraft:
+    """Non-streaming author-side loop; it never invokes player graph or SSE functions."""
+    usage = Usage()
+    started = time.monotonic()
+    budget_seconds = 165
+    context = _profile_context(req)
+    instruction = req.instruction or "not provided"
+
+    if not _has_next_stage_budget(started, budget_seconds):
+        return _fallback(req, usage)
+
+    try:
+        first = StyleReview(**chat_json(
+            STYLE_REVIEW_SYSTEM,
+            f"{context}\n\nInstruction: {instruction}\n\n[Initial review text]\n{req.text}",
+            temperature=0.2,
+            llm_cfg=_cfg(req.llm),
+            usage_out=usage,
+        ))
+    except Exception:
+        # Once inside the loop, model/JSON failures have a stable, billable fallback.
+        return _fallback(req, usage)
+
+    if not first.has_major or not _has_next_stage_budget(started, budget_seconds):
+        return _fallback(req, usage, first.issues)
+
+    try:
+        polished = chat_json(
+            STYLE_POLISH_SYSTEM,
+            f"{context}\n\nInstruction: {instruction}\n"
+            f"Issues: {json.dumps([issue.model_dump() for issue in first.issues], ensure_ascii=False)}\n"
+            f"Required anchors: {json.dumps([anchor.model_dump() for anchor in first.anchors], ensure_ascii=False)}\n"
+            f"[Text to polish]\n{req.text}",
+            temperature=0.45,
+            llm_cfg=_cfg(req.llm),
+            usage_out=usage,
+        )
+        candidate_value = polished.get("text")
+        if not isinstance(candidate_value, str):
+            return _fallback(req, usage, first.issues)
+        candidate = candidate_value.strip()
+    except Exception:
+        return _fallback(req, usage, first.issues)
+
+    if not candidate or not _length_allowed(req.text, candidate, req.instruction):
+        return _fallback(req, usage, first.issues)
+    if not _has_next_stage_budget(started, budget_seconds):
+        return _fallback(req, usage, first.issues)
+
+    try:
+        second = StyleReview(**chat_json(
+            STYLE_REVIEW_SYSTEM,
+            f"{context}\n\nInstruction: {instruction}\n"
+            f"Initial anchors: {json.dumps([anchor.model_dump() for anchor in first.anchors], ensure_ascii=False)}\n"
+            f"[Candidate review text]\n{candidate}",
+            temperature=0.2,
+            llm_cfg=_cfg(req.llm),
+            usage_out=usage,
+        ))
+    except Exception:
+        return _fallback(req, usage, first.issues)
+
+    if second.score < first.score + 5 or second.has_major or second.missing_anchor_ids:
+        return _fallback(req, usage, second.issues or first.issues)
+    return PolishDraft(
+        text=candidate,
+        applied=True,
+        feedback=second.issues,
+        usage=_stage_usage(usage),
+    )
 
 
 @router.post("/world", response_model=WorldDraft)
 def generate_world(req: GenerateWorldRequest) -> WorldDraft:
-    """从一句话灵感生成世界观草稿。"""
     if not req.idea.strip():
         raise HTTPException(status_code=400, detail="idea is required")
-    user = f"灵感：{req.idea}\n"
+    user = f"Idea: {req.idea}\n"
     if req.style:
-        user += f"期望风格：{req.style}\n"
-    user += "\n请据此生成完整世界观设定。"
+        user += f"Desired style: {req.style}\n"
+    user += "\nGenerate a complete story world."
+    usage = Usage()
     try:
-        data = chat_json(WORLD_SYSTEM, user, temperature=0.9, llm_cfg=_cfg(req.llm))
-    except Exception as e:  # noqa: BLE001
-        raise _fail("generate world", e) from e
-    return WorldDraft(**data)
+        data = chat_json(WORLD_SYSTEM, user, temperature=0.9, llm_cfg=_cfg(req.llm), usage_out=usage)
+    except Exception as error:  # noqa: BLE001
+        raise _fail("generate world", error) from error
+    return WorldDraft(**data, usage=_stage_usage(usage))
 
 
 @router.post("/opening", response_model=OpeningDraft)
 def generate_opening(req: GenerateOpeningRequest) -> OpeningDraft:
-    """基于世界观生成开场剧情草稿（复用游玩侧生成图）。"""
+    """Opening remains the existing synchronous adapter to the player stream pipeline."""
     try:
         result = run_start(
             req.world.model_dump(), req.world.initial_state or {},
             _cfg(req.llm_write), _cfg(req.llm_review),
         )
-    except Exception as e:  # noqa: BLE001
-        raise _fail("generate opening", e) from e
+    except Exception as error:  # noqa: BLE001
+        raise _fail("generate opening", error) from error
     return OpeningDraft(
         content=result["content"],
-        options=[Option(**o) for o in result["options"]],
+        options=[Option(**option) for option in result["options"]],
+        usage=_opening_usage(result),
     )
 
 
 @router.post("/polish", response_model=PolishDraft)
 def polish(req: PolishRequest) -> PolishDraft:
-    """对话/正文润色。"""
     if not req.text.strip():
         raise HTTPException(status_code=400, detail="text is required")
-    user = ""
-    if req.instruction:
-        user += f"润色要求：{req.instruction}\n\n"
-    user += f"原文：\n{req.text}"
-    try:
-        data = chat_json(POLISH_SYSTEM, user, temperature=0.7, llm_cfg=_cfg(req.llm))
-    except Exception as e:  # noqa: BLE001
-        raise _fail("polish", e) from e
-    return PolishDraft(text=str(data.get("text", "")))
+    cfg = _cfg(req.llm)
+    if not cfg or any(not str(cfg.get(key, "")).strip() for key in ("api_key", "base_url", "model")):
+        raise _fail("polish", LLMConfigMissing("missing complete LLM configuration"))
+    return polish_with_style_review(req)
 
 
 @router.post("/branches", response_model=BranchesResponse)
 def suggest_branches(req: SuggestBranchesRequest) -> BranchesResponse:
-    """为当前节点建议若干后续分支走向。"""
     if not req.content.strip():
         raise HTTPException(status_code=400, detail="content is required")
     count = req.count if req.count > 0 else 3
-
-    lines = ["【世界观设定】"]
-    w = req.world
-    if w.background:
-        lines.append(f"背景：{w.background}")
-    if w.style:
-        lines.append(f"风格：{w.style}")
-    if w.rules:
-        lines.append(f"规则：{w.rules}")
-    lines.append(f"\n当前剧情正文：\n{req.content}")
-    lines.append(f"\n请给出 {count} 条后续分支走向。")
-
+    world = req.world
+    lines = ["[World]"]
+    if world.background:
+        lines.append(f"Background: {world.background}")
+    if world.style:
+        lines.append(f"Style: {world.style}")
+    if world.rules:
+        lines.append(f"Rules: {world.rules}")
+    lines.extend((f"\nCurrent text:\n{req.content}", f"\nSuggest {count} branches."))
+    usage = Usage()
     try:
-        data = chat_json(BRANCH_SYSTEM, "\n".join(lines), temperature=0.9, llm_cfg=_cfg(req.llm))
-    except Exception as e:  # noqa: BLE001
-        raise _fail("suggest branches", e) from e
-    branches = [BranchSuggestion(**b) for b in (data.get("branches") or []) if isinstance(b, dict)]
-    return BranchesResponse(branches=branches)
+        data = chat_json(
+            BRANCH_SYSTEM, "\n".join(lines), temperature=0.9,
+            llm_cfg=_cfg(req.llm), usage_out=usage,
+        )
+    except Exception as error:  # noqa: BLE001
+        raise _fail("suggest branches", error) from error
+    branches = [BranchSuggestion(**item) for item in (data.get("branches") or []) if isinstance(item, dict)]
+    return BranchesResponse(branches=branches, usage=_stage_usage(usage))
 
 
 @router.post("/validate-key", response_model=ValidateKeyResponse)
 def validate_llm_key(req: ValidateKeyRequest) -> ValidateKeyResponse:
-    """校验用户自带的 LLM key 是否可用（一次性 ping，不落库、不进生成管线）。"""
     ok, detail = validate_key(req.api_key, req.base_url, req.model)
     return ValidateKeyResponse(ok=ok, detail=detail)

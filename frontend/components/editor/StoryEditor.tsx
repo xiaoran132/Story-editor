@@ -140,6 +140,8 @@ export default function StoryEditor() {
 
   const aiWorld = s.aiBusy === "world";
   const aiOpening = s.aiBusy === "opening";
+  const aiPolish = s.aiBusy === "polish";
+  const polishStale = s.polishSourceText !== null && s.openingContent !== s.polishSourceText;
   const anyBusy = s.aiBusy !== null || s.saving;
 
   const onDelete = async () => {
@@ -300,6 +302,31 @@ export default function StoryEditor() {
               />
               <Textarea label="背景" value={s.background} onChange={(v) => s.setField("background", v)} />
               <Textarea label="风格" value={s.style} onChange={(v) => s.setField("style", v)} rows={1} />
+              <div className="ed-field">
+                <span className="ed-label">文风档案</span>
+                <span className="ed-hint">可选；用于作者侧精品润色，不改变玩家游玩链路。</span>
+                <div className="ed-field" style={{ marginTop: 10, maxWidth: 560 }}>
+                  <span className="ed-label">叙述距离</span>
+                  <select className="ed-input ed-select" value={s.styleProfile.narrative_distance ?? ""} onChange={(e) => s.setField("styleProfile", { ...s.styleProfile, narrative_distance: (e.target.value || undefined) as "close" | "medium" | "distant" | undefined })}>
+                    <option value="">（不指定）</option>
+                    <option value="close">贴近人物</option>
+                    <option value="medium">中等距离</option>
+                    <option value="distant">疏离旁观</option>
+                  </select>
+                </div>
+                <div className="ed-field" style={{ maxWidth: 560 }}>
+                  <span className="ed-label">节奏</span>
+                  <select className="ed-input ed-select" value={s.styleProfile.rhythm ?? ""} onChange={(e) => s.setField("styleProfile", { ...s.styleProfile, rhythm: (e.target.value || undefined) as "mixed" | "tight" | "relaxed" | undefined })}>
+                    <option value="">（不指定）</option>
+                    <option value="mixed">张弛混合</option>
+                    <option value="tight">紧凑</option>
+                    <option value="relaxed">舒缓</option>
+                  </select>
+                </div>
+                <Input label="感官焦点" value={(s.styleProfile.sensory_focus ?? []).join("、")} onChange={(value) => s.setField("styleProfile", { ...s.styleProfile, sensory_focus: value.split(/[、,，]/).map((item) => item.trim().slice(0, 48)).filter(Boolean).slice(0, 3) })} hint="可选，最多 3 条，用顿号或逗号分隔" />
+                <Textarea label="对白规则" value={s.styleProfile.dialogue_rule ?? ""} onChange={(value) => s.setField("styleProfile", { ...s.styleProfile, dialogue_rule: value.slice(0, 160) })} rows={2} hint="可选，例如：对白只保留必要的试探" />
+                <Textarea label="禁忌表达 / 结构" value={(s.styleProfile.avoid ?? []).join("\n")} onChange={(value) => s.setField("styleProfile", { ...s.styleProfile, avoid: value.split("\n").map((item) => item.trim().slice(0, 48)).filter(Boolean).slice(0, 5) })} rows={3} hint="可选，最多 5 条；每行一条" />
+              </div>
 
               <div className="ed-field">
                 <span className="ed-label">
@@ -385,6 +412,26 @@ export default function StoryEditor() {
                 rows={8}
                 hint="留空则由 AI 在开局时即时生成"
               />
+              <div className="ed-field">
+                <Input label="润色目标（可选）" value={s.polishInstruction} onChange={(value) => s.setPolishInstruction(value)} hint="针对完整开场正文，例如：让对白更有试探感" />
+                <button className="btn accent sm" disabled={anyBusy || !s.openingContent.trim()} onClick={() => s.polishOpening()}>
+                  {aiPolish ? "精品润色中…" : "精品润色"}
+                </button>
+              </div>
+              {s.polishDraft !== null && (
+                <div className="ed-field">
+                  <span className="ed-label">精品润色预览</span>
+                  {s.polishFeedback.length > 0 && <div className="ed-opts-preview">{s.polishFeedback.slice(0, 2).map((issue, index) => <div className="opt" key={issue.category + "-" + index}><strong>{issue.category}</strong> · {issue.span_hint}：{issue.goal}</div>)}</div>}
+                  {!s.polishApplied ? <p className="ed-hint">未发现高置信改进，已保留原文。</p> : <>
+                    <textarea className="ed-textarea" value={s.polishDraft} readOnly rows={8} />
+                    {polishStale && <p className="ed-hint">正文已变更，请重新润色后再采纳。</p>}
+                    <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                      <button className="btn primary sm" disabled={polishStale} onClick={() => s.acceptPolish()}>替换开场正文</button>
+                      <button className="btn secondary sm" onClick={() => s.dismissPolish()}>保留原稿</button>
+                    </div>
+                  </>}
+                </div>
+              )}
               {s.openingOptions.length > 0 && (
                 <div className="ed-opts-preview">
                   <span className="ed-hint">起始选项预览（不入库，游玩时由 AI 生成）</span>

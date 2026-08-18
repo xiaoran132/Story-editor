@@ -10,11 +10,16 @@ import (
 	"github.com/google/uuid"
 )
 
-// 环节常量：续写/开场用 write，质量审校用 review，创作侧世界观/润色/分支用 world。
+// 模型配置环节：创作辅助继续共用 world，不新增平台模型设置。
 const (
 	StageWrite  = "write"
 	StageReview = "review"
 	StageWorld  = "world"
+
+	StageAssistWorld    = "assist_world"
+	StageAssistOpening  = "assist_opening"
+	StageAssistPolish   = "assist_polish"
+	StageAssistBranches = "assist_branches"
 )
 
 // ValidStages 是全部合法环节（平台设置用，含创作侧 world）。

@@ -46,8 +46,8 @@ def _build_ephemeral(cfg: dict[str, Any], json_mode: bool) -> ChatOpenAI:
     cfg 为 Go 侧解析出的 {provider,base_url,api_key,model}，三个关键字段缺一即报错。
     provider 仅作标签（OpenAI 兼容端点只需 base_url+api_key+model）。
 
-    json_mode=True 强制返回 JSON 对象（chat_json 用）；False 不强制——流式下正文以
-    哨兵分隔（正文 <<<META>>> JSON 尾），JSON 模式会破坏正文的自然流式。
+    json_mode=True 强制返回 JSON 对象（chat_json 用）；False 不强制——Writer 的
+    chat_stream 只输出自然正文，随后 Structurer 另用 chat_json 生成元数据。
     """
     missing = [k for k in ("api_key", "base_url", "model") if not (cfg.get(k) or "").strip()]
     if missing:

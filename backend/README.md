@@ -16,7 +16,7 @@
 | 鉴权（JWT）、会话归属、草稿访问边界 | 生成剧情正文、选项、`state_delta`、`summary`（Agent 做） |
 | 作品、节点树、游玩会话的持久化与查询 | 决定文本质量、审校重写（Agent 做） |
 | `state_delta` 合并、节点语义合并去重的落库 | 前端展示、状态字段的中文映射（前端做） |
-| 把生成请求编排给 Agent、SSE 转发给前端 | 直连大模型（凭证下沉在 `agent/.env`） |
+| 把生成请求编排给 Agent、SSE 转发给前端 | 直连大模型（Go 解析凭据后随请求下发） |
 
 Agent 契约实现在 `internal/service/agent_client.go`；游玩编排在 `internal/service/play.go`。
 

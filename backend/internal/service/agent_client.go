@@ -66,6 +66,14 @@ type AgentLLMConfig struct {
 
 // ----- 对外的输入/输出类型 -----
 
+type StyleProfile struct {
+	NarrativeDistance string   `json:"narrative_distance,omitempty"`
+	Rhythm            string   `json:"rhythm,omitempty"`
+	SensoryFocus      []string `json:"sensory_focus,omitempty"`
+	DialogueRule      string   `json:"dialogue_rule,omitempty"`
+	Avoid             []string `json:"avoid,omitempty"`
+}
+
 // WorldConfig 是作品世界观配置的解析结果（对应 stories.world_config JSONB）。
 type WorldConfig struct {
 	Background   string         `json:"background"`
@@ -77,7 +85,8 @@ type WorldConfig struct {
 	// Attributes 声明每个属性键的类型：{"hp": {"type": "number"}, "items": {"type": "set"}, ...}
 	// 透传给 Python AI 服务指导 state_delta 生成，并驱动 mergeState 的按类型合并。
 	// omitempty：nil 时不序列化为 null（pydantic 对非 Optional 字段的 null 会返回 422）。
-	Attributes map[string]any `json:"attributes,omitempty"`
+	Attributes   map[string]any `json:"attributes,omitempty"`
+	StyleProfile *StyleProfile  `json:"style_profile,omitempty"`
 }
 
 // AttrTypes 从 Attributes 提取「键 -> 合并类型（number|scalar|set）」，只收录显式声明的合法类型。
@@ -143,7 +152,7 @@ type generateRequest struct {
 	World         WorldConfig     `json:"world"`
 	InitialState  map[string]any  `json:"initial_state,omitempty"`
 	RevealedAttrs []string        `json:"revealed_attrs,omitempty"` // 已揭示的门控属性（开局通常为空）
-	LLMWrite      *AgentLLMConfig `json:"llm_write,omitempty"`      // BYOK：写手配置（nil→agent 回退 .env）
+	LLMWrite      *AgentLLMConfig `json:"llm_write,omitempty"`      // BYOK：写手配置（服务端填充；缺失则 agent 报错）
 	LLMReview     *AgentLLMConfig `json:"llm_review,omitempty"`     // BYOK：审校配置
 }
 
@@ -415,6 +424,7 @@ type WorldDraft struct {
 	Characters   []any          `json:"characters"`
 	InitialState map[string]any `json:"initial_state"`
 	Attributes   map[string]any `json:"attributes"`
+	Usage        TokenUsage     `json:"usage"`
 }
 
 type AssistOpeningRequest struct {
@@ -426,19 +436,30 @@ type AssistOpeningRequest struct {
 
 // OpeningDraft 是 /assist/opening 产出的开场草稿（options 仅供预览，不入库）。
 type OpeningDraft struct {
-	Content string   `json:"content"`
-	Options []Option `json:"options"`
+	Content string     `json:"content"`
+	Options []Option   `json:"options"`
+	Usage   TokenUsage `json:"usage"`
 }
 
 type AssistPolishRequest struct {
 	Text         string          `json:"text"`
 	Instruction  string          `json:"instruction,omitempty"`
+	World        WorldConfig     `json:"world"`
 	ConnectionID *uuid.UUID      `json:"connection_id,omitempty"`
 	LLM          *AgentLLMConfig `json:"llm,omitempty"`
 }
 
+type StyleIssue struct {
+	Category string `json:"category"`
+	SpanHint string `json:"span_hint"`
+	Goal     string `json:"goal"`
+}
+
 type PolishDraft struct {
-	Text string `json:"text"`
+	Text     string       `json:"text"`
+	Applied  bool         `json:"applied"`
+	Feedback []StyleIssue `json:"feedback"`
+	Usage    TokenUsage   `json:"usage"`
 }
 
 type AssistBranchesRequest struct {
@@ -456,6 +477,7 @@ type BranchSuggestion struct {
 
 type BranchesResponse struct {
 	Branches []BranchSuggestion `json:"branches"`
+	Usage    TokenUsage         `json:"usage"`
 }
 
 // AssistWorld 从一句话灵感生成完整世界观草稿。

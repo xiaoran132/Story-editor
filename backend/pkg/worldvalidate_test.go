@@ -1,6 +1,9 @@
 package pkg
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // 一份完整合法的 world_config：覆盖 number/scalar/set 三型 + hidden + reveal + max。
 const validWorld = `{
@@ -68,6 +71,46 @@ func TestValidateWorldConfig_Rejects(t *testing.T) {
 				t.Errorf("应被拦下但通过了：%s", tc.name)
 			} else if err.BizCode != BizCodeInvalidWorldConfig {
 				t.Errorf("BizCode 应为 %d，实际 %d", BizCodeInvalidWorldConfig, err.BizCode)
+			}
+		})
+	}
+}
+
+func TestValidateWorldConfig_StyleProfile(t *testing.T) {
+	withProfile := strings.Replace(validWorld, `"style": "本格推理，冷峻克制",`,
+		`"style": "本格推理，冷峻克制",
+  "style_profile": {
+    "narrative_distance": "close",
+    "rhythm": "tight",
+    "sensory_focus": ["雨声", "旧木"],
+    "dialogue_rule": "对白只保留必要的试探。",
+    "avoid": ["不要解释情绪", "避免排比堆叠"]
+  },`,
+		1,
+	)
+	if err := ValidateWorldConfig([]byte(withProfile), true); err != nil {
+		t.Fatalf("合法 style_profile 不应报错，实际：%v", err)
+	}
+
+	cases := []struct {
+		name    string
+		profile string
+	}{
+		{"叙述距离枚举非法", `{"narrative_distance":"near"}`},
+		{"节奏枚举非法", `{"rhythm":"fast"}`},
+		{"感官标签超过上限", `{"sensory_focus":["a","b","c","d"]}`},
+		{"禁忌规则超过上限", `{"avoid":["a","b","c","d","e","f"]}`},
+		{"禁忌规则为空", `{"avoid":["  "]}`},
+		{"禁忌规则带首尾空白", `{"avoid":[" a"]}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := strings.Replace(validWorld, `"style": "本格推理，冷峻克制",`,
+				`"style": "本格推理，冷峻克制", "style_profile": `+tc.profile+`,`,
+				1,
+			)
+			if err := ValidateWorldConfig([]byte(raw), false); err == nil {
+				t.Fatal("非法 style_profile 应被拦下")
 			}
 		})
 	}

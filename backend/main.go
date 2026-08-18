@@ -59,7 +59,7 @@ func main() {
 	userH := handler.NewUserHandler(userSvc)
 	storyH := handler.NewStoryHandler(storySvc)
 	playH := handler.NewPlayHandler(playSvc)
-	assistH := handler.NewAssistHandler(agentClient, llmResolver)
+	assistH := handler.NewAssistHandler(agentClient, llmResolver, creditSvc)
 	llmH := handler.NewLLMHandler(llmSvc)
 	uploadH := handler.NewUploadHandler(uploadSvc)
 
@@ -133,8 +133,8 @@ func main() {
 		llm.PUT("/connections/:id", llmH.UpdateConnection)
 		llm.DELETE("/connections/:id", llmH.DeleteConnection)
 		llm.POST("/connections/test", llmH.TestConnection)
-		llm.GET("/connections/:id/models", llmH.ListModels)        // 拉取该连接可用模型
-		llm.GET("/story-config/:storyId", llmH.GetStoryConfig)     // 玩家在某作品的模型配置
+		llm.GET("/connections/:id/models", llmH.ListModels)    // 拉取该连接可用模型
+		llm.GET("/story-config/:storyId", llmH.GetStoryConfig) // 玩家在某作品的模型配置
 		llm.PUT("/story-config/:storyId", llmH.SetStoryConfig)
 	}
 

@@ -24,7 +24,7 @@ router = APIRouter(tags=["play"])
 
 
 def _cfg(x) -> dict | None:
-    """把请求里的 LLMConfig 转成下发字典；无 api_key 时返回 None（让 agent 回退 .env 默认）。"""
+    """把请求里的 LLMConfig 转成下发字典；缺 api_key 时返回 None，由 agent 报配置缺失。"""
     if x is not None and getattr(x, "api_key", ""):
         return x.model_dump()
     return None

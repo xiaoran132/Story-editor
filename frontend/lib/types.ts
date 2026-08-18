@@ -285,6 +285,26 @@ export interface Character {
 }
 
 // world_config 的对象形态（对齐后端 WorldConfig；attributes/initial_state 存盘时由 AttrRowData[] 派生）。
+export interface StyleProfile {
+  narrative_distance?: "close" | "medium" | "distant";
+  rhythm?: "mixed" | "tight" | "relaxed";
+  sensory_focus?: string[];
+  dialogue_rule?: string;
+  avoid?: string[];
+}
+
+export interface StyleIssue {
+  category: "ai_tell" | "rhythm" | "dialogue_voice" | "style_drift" | "redundancy";
+  span_hint: string;
+  goal: string;
+}
+
+export interface PolishDraft {
+  text: string;
+  applied: boolean;
+  feedback: StyleIssue[];
+}
+
 export interface WorldConfigObj {
   background: string;
   style: string;
@@ -294,6 +314,7 @@ export interface WorldConfigObj {
   initial_state: Record<string, unknown>;
   attributes: Record<string, Record<string, unknown>>;
   theme?: string; // 作品级主题 id（缺省 star）；透传，后端忽略未知键
+  style_profile?: StyleProfile;
 }
 
 // /assist/world 响应

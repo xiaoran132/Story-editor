@@ -73,17 +73,17 @@ normalize
 
 三阶段演进（成本换体验，逐步逼近上图）：
 
-- **阶段一（已完成）｜生成质量闭环 + 流式**：单次生成同时产出「节拍把控的正文 + 后果预期的选项 + 滚动 `summary`」；`summary` 落库到 `story_nodes.summary`（即「④节点树增量摘要」，见 [context-strategy.md](context-strategy.md)），续写时作【前情提要】喂回。**已含流式**：正文以 SSE 逐字流出（详见下「流式生成与质量策略」）。生成后低温 `review` 审查承接/属性/选项后果/delta 与摘要一致性，拒绝则**有记忆写手在上一稿上修订**，**超限降级交付最后一稿**（不硬失败）。另含**故事大纲导演**（outline）、**隐藏属性**（hidden，仅供 AI 参考不泄漏给玩家）、审校**分级**（只挡硬伤）。
-- **阶段二（部分完成）｜拆真节点 + RAG**：**流式已在阶段一落地**；剩余为把单次生成拆成 director/recall/write/critic 职责独立节点，recall 从节点摘要升级到 RAG（③）。
+- **阶段一（已完成）｜生成质量闭环 + 流式**：Writer 只流式产出节拍把控的正文；随后同一 `llm_write` 配置下的 Structurer 根据已写正文产出选项、属性变化、结局与滚动 `summary`。`summary` 落库到 `story_nodes.summary`（即「④节点树增量摘要」，见 [context-strategy.md](context-strategy.md)），续写时作【前情提要】喂回。**已含流式**：正文以 SSE 逐字流出（详见下「流式生成与质量策略」）。生成后低温 `review` 审查承接/属性/选项后果/delta 与摘要一致性，拒绝则完整重跑 Writer → Structurer，并由**有记忆写手在上一稿上修订**，**超限降级交付最后一稿**（不硬失败）。另含**故事大纲导演**（outline）、**隐藏属性**（hidden，仅供 AI 参考不泄漏给玩家）、审校**分级**（只挡硬伤）。
+- **阶段二（部分完成）｜拆真节点 + RAG**：Writer / Structurer 的最小职责拆分已在阶段一落地；剩余为 director、recall、critic 等职责独立节点，以及将 recall 从节点摘要升级到 RAG（③）。
 - **阶段三｜按人物 fan-out**：多 NPC 同场时并行派发人物子 agent，主 agent 归纳——补齐完整多 agent 形态。
 
-> 当前 `agent/` 生成编排是**单条 `_stream_pipeline`（真流式）**：`prepare →（chat_stream 逐字写作）→ 解析哨兵 → normalize → review`，拒绝则有记忆修订、超限降级交付。历史上的 langgraph 非流式图已退休；`prepare`/`normalize`/`review` 为共享纯函数（见 [agent/README.md](../agent/README.md)、`prompts.py`）。尚未拆出 director/recall/write 的完整子图。
+> 当前 `agent/` 生成编排是**单条 `_stream_pipeline`（真流式）**：`prepare → Writer（chat_stream 逐字正文）→ Structurer（同一 llm_write 的 JSON 元数据）→ normalize → 可选 review`，拒绝则完整重跑 Writer → Structurer → Reviewer，并有记忆修订、超限降级交付。历史上的 langgraph 非流式图已退休；`prepare`/`normalize`/`review` 为共享纯函数（见 [agent/README.md](../agent/README.md)、`prompts.py`）。尚未拆出 director/recall/critic 的完整子图。
 
 ### 流式生成与质量策略（当前实现的关键设计决策）
 
 **为什么流式**：完整生成 + 审校约 7~8s，玩家点选项后要等这么久才见字。改为正文逐字 SSE 后**首字延迟降到 ~1s**，遮住尾延迟。
 
-**单次调用·哨兵分隔**：写手一次调用输出「正文 `<<<META>>>` JSON尾（options/state_delta/summary/…，不含 content）」。正文逐字外发，结束后按哨兵切出 JSON 尾解析。这样**只 1 次生成调用、成本不变**，且避开了「流式 JSON 里增量提取 content」的脆弱做法。尾缺失/非法时用 `STRUCTURE_SYSTEM` 兜底（对已得正文补结构化），保住正文不重来。
+**写作 / 结构化分责**：Writer 一次 `chat_stream` 只输出正文并逐字外发；正文结束后 Structurer 以 `chat_json` 根据该正文生成 `options`、`state_delta`、`summary` 等 JSON。两阶段共用同一 `llm_write` 配置，正式 `usage.write` 聚合两次调用，不新增模型设置或计费阶段。这样不再要求流式模型生成可解析的 JSON 尾；代价是正文流完后多一次结构化调用，增加尾延迟与 write 成本，但首字不受阻塞。
 
 **SSE 契约**（前端 ← Go ← agent，全程不缓冲）：
 ```
@@ -274,10 +274,10 @@ LIMIT 20;
 前端                     Go 后端                        Python AI 服务
  │ POST /choice/stream (SSE) │                              │
  │ ────────────────────────> │ 1. 校验会话、递归 CTE 回溯 history │
- │                           │ 2. ContinueStream ─────────> │ prepare→chat_stream 逐字写作
- │      delta 正文增量 ◀──────┼──── SSE delta 逐帧转发 ◀──────┤   (正文 <<<META>>> JSON尾)
- │      (revise 时清空重来)    │                              │ 结束: 解析尾→normalize→review
- │                           │ 3. 流结束拿到完整 AIResult:   │   (拒绝→有记忆修订/超限→降级)
+ │                           │ 2. ContinueStream ─────────> │ prepare→Writer 逐字写正文
+ │      delta 正文增量 ◀──────┼──── SSE delta 逐帧转发 ◀──────┤   (纯正文)
+ │      (revise 时清空重来)    │                              │ 结束: Structurer→normalize→review
+ │                           │ 3. 流结束拿到完整 AIResult:   │   (拒绝→完整重跑 Writer/Structurer→降级)
  │                           │    mergeState → tryMerge 去重 │
  │                           │    事务: INSERT 节点 +        │
  │                           │          UPDATE 会话          │

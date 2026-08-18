@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 )
 
 // BizCodeInvalidWorldConfig 是 world_config 结构校验失败的业务错误码。
@@ -12,6 +13,14 @@ const BizCodeInvalidWorldConfig = 10012
 // worldConfigShape 是校验用的宽松解析形态：只取校验关心的字段。
 // 与 service.WorldConfig / agent schema 对齐，但此处自解析以保持 pkg 零业务依赖
 // （service 依赖 pkg，pkg 不可反向依赖 service，否则成环）。
+type styleProfileShape struct {
+	NarrativeDistance string   `json:"narrative_distance"`
+	Rhythm            string   `json:"rhythm"`
+	SensoryFocus      []string `json:"sensory_focus"`
+	DialogueRule      string   `json:"dialogue_rule"`
+	Avoid             []string `json:"avoid"`
+}
+
 type worldConfigShape struct {
 	Background   string                    `json:"background"`
 	Style        string                    `json:"style"`
@@ -20,6 +29,7 @@ type worldConfigShape struct {
 	Characters   []map[string]any          `json:"characters"`
 	InitialState map[string]any            `json:"initial_state"`
 	Attributes   map[string]map[string]any `json:"attributes"`
+	StyleProfile *styleProfileShape        `json:"style_profile"`
 }
 
 // ValidateWorldConfig 校验 world_config JSON 的结构一致性。
@@ -61,6 +71,10 @@ func ValidateWorldConfig(raw []byte, strict bool) *AppError {
 		if len(w.Characters) == 0 {
 			return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig, "至少需要一个角色（characters）")
 		}
+	}
+
+	if err := validateStyleProfile(w.StyleProfile); err != nil {
+		return err
 	}
 
 	// 规则 3：键集合严格一一对应
@@ -146,6 +160,40 @@ func ValidateWorldConfig(raw []byte, strict bool) *AppError {
 		}
 	}
 
+	return nil
+}
+
+// trimSpace 去掉字节切片首尾的 ASCII 空白，避免为空判定误差。
+
+func validateStyleProfile(profile *styleProfileShape) *AppError {
+	if profile == nil {
+		return nil
+	}
+	if profile.NarrativeDistance != "" && profile.NarrativeDistance != "close" && profile.NarrativeDistance != "medium" && profile.NarrativeDistance != "distant" {
+		return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig, "style_profile.narrative_distance 必须为 close/medium/distant")
+	}
+	if profile.Rhythm != "" && profile.Rhythm != "mixed" && profile.Rhythm != "tight" && profile.Rhythm != "relaxed" {
+		return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig, "style_profile.rhythm 必须为 mixed/tight/relaxed")
+	}
+	if len(profile.SensoryFocus) > 3 {
+		return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig, "style_profile.sensory_focus 最多 3 条")
+	}
+	if len(profile.Avoid) > 5 {
+		return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig, "style_profile.avoid 最多 5 条")
+	}
+	if len([]rune(profile.DialogueRule)) > 160 || profile.DialogueRule != strings.TrimSpace(profile.DialogueRule) {
+		return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig, "style_profile.dialogue_rule 须为去除首尾空白后的短文本（最多 160 字）")
+	}
+	for _, pair := range []struct {
+		name   string
+		values []string
+	}{{"sensory_focus", profile.SensoryFocus}, {"avoid", profile.Avoid}} {
+		for _, value := range pair.values {
+			if len([]rune(value)) == 0 || len([]rune(value)) > 48 || value != strings.TrimSpace(value) {
+				return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig, "style_profile."+pair.name+" 每条须为去除首尾空白后的非空短文本（最多 48 字）")
+			}
+		}
+	}
 	return nil
 }
 
