@@ -1,0 +1,218 @@
+/* 选项与自由行动。
+   ⚠️ 原型的 .choice 里有一组「属性变化预测」角标（.cost）。**这里不做**：
+   handoff §9.2 把 hint 结构明确否决过（剧透 + 套路化），agent 侧的 normalize
+   到现在还在防御性剥离它。选项必须是纯动作文本。 */
+
+.choices {
+  margin-top: 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.choice {
+  width: 100%;
+  text-align: left;
+  padding: 16px 18px;
+  border-radius: var(--r-md);
+  border: 1px solid oklch(1 0 0 / 0.12);
+  background: oklch(1 0 0 / 0.05);
+  color: var(--fg);
+  font-family: inherit;
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  transition: background 0.16s var(--ease), border-color 0.16s var(--ease),
+    transform 0.09s var(--ease);
+}
+
+/* hover 只改背景与描边，绝不把前景改暗（§9） */
+.choice:hover:not(:disabled) {
+  background: oklch(1 0 0 / 0.1);
+  border-color: var(--w-line);
+}
+
+.choice:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.choice:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.choice:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* 已提交的那条留在亮态：生成期间玩家要看得见自己刚点了什么 */
+.committed {
+  opacity: 1;
+  border-color: var(--w-line);
+  background: oklch(0.24 0.05 var(--hue) / 0.6);
+}
+
+.idx {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  margin-top: 2px;
+  font-size: 11.5px;
+  font-weight: 590;
+  color: var(--w-kick);
+  background: oklch(1 0 0 / 0.07);
+  border: 1px solid oklch(1 0 0 / 0.1);
+}
+
+.txt {
+  font-family: var(--font-display);
+  font-size: 15.5px;
+  line-height: 1.75;
+  letter-spacing: 0;
+  color: var(--w-text);
+}
+
+/* ============ 自由行动 ============ */
+.compose {
+  position: relative;
+  margin-top: 16px;
+  margin-bottom: 62px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.compose textarea {
+  flex: 1;
+  min-height: 46px;
+  max-height: 120px;
+  resize: none;
+  padding: 13px 15px;
+  border-radius: var(--r-md);
+  border: 1px solid oklch(1 0 0 / 0.14);
+  background: oklch(1 0 0 / 0.05);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 13.5px;
+  line-height: 1.55;
+  transition: background 0.16s var(--ease), border-color 0.16s var(--ease);
+}
+
+.compose textarea::placeholder {
+  color: oklch(0.66 0.015 265);
+}
+
+.compose textarea:hover:not(:disabled) {
+  background: oklch(1 0 0 / 0.07);
+}
+
+.compose textarea:focus-visible {
+  outline: none;
+  border-color: var(--w-line);
+  background: oklch(1 0 0 / 0.07);
+  box-shadow: var(--ring);
+}
+
+.compose textarea:disabled {
+  opacity: 0.55;
+}
+
+/* 本屏暖金配额第 2 处（第 1 处是章节号）。整屏唯一的实心主键。 */
+.send {
+  flex: none;
+  height: 46px;
+  padding: 0 20px;
+  border-radius: var(--r-pill);
+  border: 0;
+  background: var(--accent);
+  color: oklch(0.16 0.03 85);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 590;
+  letter-spacing: 0.03em;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.16s var(--ease), transform 0.1s var(--ease);
+}
+
+.send:hover:not(:disabled) {
+  background: oklch(0.9 0.135 85);
+}
+
+.send:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.send:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+/* disabled 是唯一允许降对比度的状态（§9） */
+.send:disabled {
+  background: oklch(0.42 0.03 85);
+  color: oklch(0.72 0.01 85);
+  cursor: not-allowed;
+}
+
+.meter {
+  position: absolute;
+  right: 2px;
+  bottom: -18px;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.over {
+  color: oklch(0.78 0.12 30);
+}
+
+.note {
+  position: absolute;
+  left: 0;
+  bottom: -60px;
+  max-width: 62ch;
+  font-size: 11px;
+  line-height: 1.65;
+  color: oklch(0.62 0.015 265);
+}
+
+@media (max-width: 1000px) {
+  .compose {
+    flex-direction: column;
+    align-items: stretch;
+    margin-bottom: 0;
+  }
+
+  .note {
+    position: static;
+    order: 1;
+    margin-top: 1px;
+  }
+
+  .meter {
+    position: static;
+    text-align: right;
+    order: 2;
+    margin-top: -4px;
+  }
+
+  .send {
+    order: 3;
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 420px) {
+  .choice {
+    padding: 14px;
+  }
+}

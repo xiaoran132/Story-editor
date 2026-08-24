@@ -1,0 +1,144 @@
+/* 属性三态面板。三种可见性必须在 UI 上读得出区别（DESIGN §8）：
+   常显 = 名 + 值（+ 有 max 才画条）；渐显未揭示 = 锁形占位，只说「会显现」不给值；
+   hidden = **整条不出现**（连它存在都不该让玩家知道）。 */
+
+.group {
+  margin-bottom: 20px;
+}
+
+.group:last-child {
+  margin-bottom: 0;
+}
+
+.groupTitle {
+  font-size: 10.5px;
+  letter-spacing: 0.22em;
+  color: var(--muted);
+  font-weight: 590;
+  margin-bottom: 13px;
+}
+
+.attr {
+  margin-bottom: 14px;
+}
+
+.attr:last-of-type {
+  margin-bottom: 0;
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.k {
+  font-size: 12.5px;
+  font-weight: 510;
+  letter-spacing: 0.03em;
+}
+
+.v {
+  margin-left: auto;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--w-text);
+}
+
+/* 增量角标：涨用 --w-kick（作品色相的亮档），跌用中性偏暗，
+   不用红绿——属性的涨跌不总是好坏，颜色替玩家下判断是越界。 */
+.delta {
+  font-style: normal;
+  margin-left: 7px;
+  font-size: 11.5px;
+  color: var(--w-kick);
+}
+
+.deltaDown {
+  color: oklch(0.68 0.02 265);
+}
+
+/* 进度条只画给声明了 max 的 number 属性。没有上限就没有「满」的概念，
+   硬按 0–100 画会让 gold:500 永远满格、affinity:-20 永远空格，比不画更误导。 */
+.bar {
+  position: relative;
+  height: 3px;
+  border-radius: 99px;
+  background: oklch(1 0 0 / 0.1);
+  overflow: hidden;
+}
+
+.bar i {
+  display: block;
+  height: 100%;
+  border-radius: 99px;
+  background: var(--w-line);
+  transition: width 0.42s var(--ease);
+}
+
+/* 刚变过的那一行闪一下作品色相，比一个红绿箭头更安静也更准确 */
+.just {
+  animation: attr-just 0.42s var(--ease);
+}
+
+@keyframes attr-just {
+  0% {
+    background: oklch(0.72 0.14 var(--hue) / 0.22);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+.locked {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: oklch(0.62 0.015 265);
+}
+
+.locked svg {
+  flex: none;
+}
+
+.set {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.set span {
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  padding: 3px 9px;
+  border-radius: var(--r-pill);
+  border: 1px solid oklch(1 0 0 / 0.12);
+  background: oklch(1 0 0 / 0.05);
+  color: var(--w-text);
+}
+
+.setKey {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.empty {
+  font-size: 12px;
+  line-height: 1.7;
+  color: oklch(0.62 0.015 265);
+}
+
+.note {
+  margin-top: 15px;
+  padding-top: 13px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  line-height: 1.65;
+  color: var(--muted);
+}

@@ -11,6 +11,7 @@ import {
   type StoryLLMConfig,
 } from "@/lib/types";
 import Switch from "@/components/Switch";
+import styles from "./StoryLLMConfigPanel.module.css";
 import { useToast } from "@/components/Toast";
 
 // 作品详情页的「本作品 AI 配置」面板。
@@ -106,36 +107,36 @@ export default function StoryLLMConfigPanel({
   const reviewIncomplete = reviewOn && !draft.review?.conn;
 
   return (
-    <div className="od-settings">
-      <button className="od-stog" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+    <div className={styles.settings}>
+      <button className={styles.stog} type="button" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
           <path d="M12 3v3M12 18v3M5 12H2m20 0h-3M6 6l2 2m8 8 2 2M6 18l2-2m8-8 2-2" />
         </svg>
         选择本次游玩的 AI 模型
-        <svg className="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+        <svg className={styles.chev} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
           <path d="m6 9 6 6 6-6" />
         </svg>
       </button>
 
       {open && (
-        <div className="od-sbody">
+        <div className={styles.sbody}>
           {hasRec && (
-            <p className="od-note">
-              <span className="rec">作者推荐</span>
+            <p className={styles.note}>
+              <span className={styles.rec}>作者推荐</span>
               {recommended.write?.model && <> 续写 {recommended.write.model}</>}
               {recommended.review?.model && <>　审校 {recommended.review.model}</>}
               　（仅供参考，不会自动套用）
             </p>
           )}
-          {error && <p className="od-note" style={{ color: "var(--read-err-ink)" }} role="alert">出错：{error}</p>}
+          {error && <p className={`${styles.note} ${styles.err}`} role="alert">出错：{error}</p>}
 
           {!loggedIn ? (
-            <p className="od-note">登录即赠 1 元体验额度，可直接用平台模型开玩；也可以配置自己的连接。</p>
+            <p className={styles.note}>登录即赠 1 元体验额度，可直接用平台模型开玩；也可以配置自己的连接。</p>
           ) : loading || !cfg ? (
-            <p className="od-note pulse">载入你的连接…</p>
+            <p className={`${styles.note} ${styles.pulse}`}>载入你的连接…</p>
           ) : (
             <>
-              <p className="od-note">
+              <p className={styles.note}>
                 平台体验额度剩余 <b>{formatCredit(credit)}</b>
                 {credit > 0
                   ? "。不选连接即用平台额度，按实际用量扣减；用尽后需配置自己的连接。"
@@ -143,7 +144,7 @@ export default function StoryLLMConfigPanel({
               </p>
 
               {conns.length === 0 && (
-                <p className="od-note">
+                <p className={styles.note}>
                   你还没有自己的 LLM 连接。到「个人主页 → AI 连接」添加一条，额度用尽后就不会被打断。
                 </p>
               )}
@@ -156,14 +157,14 @@ export default function StoryLLMConfigPanel({
                 const connId = `conn-${st.key}`;
                 const modelId = `model-${st.key}`;
                 return (
-                  <div className="od-fld" key={st.key}>
+                  <div className={styles.fld} key={st.key}>
                     {/* 环节名作组标题，两个控件各自再给 aria-label 区分连接/模型 */}
                     <label htmlFor={connId}>
                       {st.label}
-                      {st.key === "review" && <span className="od-req">（已开启审校，必选）</span>}
+                      {st.key === "review" && <span className={styles.req}>（已开启审校，必选）</span>}
                     </label>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                      <select id={connId} className="od-sel" value={b.conn}
+                    <div className={styles.row}>
+                      <select id={connId} className={styles.sel} value={b.conn}
                         aria-label={`${st.label} · 连接`}
                         onChange={(e) => setStage(st.key, { conn: e.target.value, model: "" })}>
                         {/* 「平台」独立成组：让玩家看见这条路存在，也看见它现在通不通 */}
@@ -184,7 +185,7 @@ export default function StoryLLMConfigPanel({
                           </optgroup>
                         )}
                       </select>
-                      <input id={modelId} className="od-inp" value={b.model} list={listId} disabled={!b.conn}
+                      <input id={modelId} className={styles.inp} value={b.model} list={listId} disabled={!b.conn}
                         aria-label={`${st.label} · 模型`}
                         placeholder={b.conn ? "选择或手填模型" : "用平台默认模型"}
                         onChange={(e) => setStage(st.key, { model: e.target.value })} />
@@ -198,28 +199,28 @@ export default function StoryLLMConfigPanel({
                 );
               })}
 
-              <div className="od-fld">
+              <div className={styles.fld}>
                 {/* Switch 自身的 label 是 sr-only（供读屏），可见标题要在这里给 */}
-                <div className="od-switch-row">
-                  <span className="od-switch-title">质量审校</span>
+                <div className={styles.switchRow}>
+                  <span className={styles.switchTitle}>质量审校</span>
                   <Switch checked={reviewOn} onChange={setReviewOn} label="质量审校" />
                 </div>
-                <p className="od-note" style={{ margin: 0 }}>
+                <p className={styles.note}>
                   开启后每段正文再过一遍低温校验，盯的是「属性变化与正文不符」「前情提要漏记新人物」
                   这类会毁掉长剧情的问题（真实拒绝率约 18%）。代价是 token 大约翻倍，且需要为它单独选一条连接。
                 </p>
               </div>
 
               {reviewIncomplete && (
-                <p className="od-note" style={{ color: "var(--read-err-ink)" }} role="alert">
+                <p className={`${styles.note} ${styles.err}`} role="alert">
                   开启了审校但没为它选连接。请选一条，或关掉这个开关。
                 </p>
               )}
 
               {/* 本屏唯一主 CTA 是「开始新游戏」，配置保存降为次级（DESIGN §7 每屏一个主按钮） */}
               <button
-                className="btn-read ghost"
-                style={{ height: 40 }}
+                className={styles.btnSave}
+                type="button"
                 disabled={busy || reviewIncomplete}
                 onClick={save}
               >

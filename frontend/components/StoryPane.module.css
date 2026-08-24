@@ -1,0 +1,114 @@
+/* 正文。字号/行距来自游玩页根元素的 --reader-size / --reader-lead（阅读设置可调）。
+   正文色跟随作品色相但只在 C 上带一点点：CJK 长文用高饱和会看不下去。 */
+
+.chapter {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+/* 本屏暖金配额第 1 处（第 2 处是发送键）。章节号是「你走到哪儿了」，
+   是这一屏唯一值得抢眼的静态信息。 */
+.chapter .no {
+  font-size: 10.5px;
+  letter-spacing: 0.24em;
+  color: var(--accent);
+  font-weight: 590;
+}
+
+.chapter .rule {
+  flex: 1;
+  height: 1px;
+  background: var(--border-2);
+}
+
+.chapter .cnt {
+  font-size: 11.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.prose p {
+  font-family: var(--font-display);
+  font-size: var(--reader-size, 17px);
+  line-height: var(--reader-lead, 2.05);
+  letter-spacing: 0;
+  color: oklch(0.94 0.012 var(--hue));
+  margin-bottom: 1.05em;
+  /* fill-mode backwards：静止态是「已完成」的样子，减动效下落终态而非隐藏态（§6） */
+  opacity: 0;
+  transform: translateY(9px);
+  animation: beat-in 0.58s var(--ease) forwards;
+}
+
+@keyframes beat-in {
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* 正文禁 justify、不加首字下沉——两者在 CJK 上都会毁掉阅读节奏 */
+.loading p {
+  color: var(--muted);
+  animation: none;
+  opacity: 1;
+  transform: none;
+}
+
+/* 流式光标：跟在最后一段末尾 */
+.cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 3px;
+  vertical-align: -0.12em;
+  background: var(--w-kick);
+  animation: cursor-blink 1.1s steps(2, start) infinite;
+}
+
+@keyframes cursor-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.ending {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 30px;
+  padding: 22px 24px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--w-line);
+  background: oklch(0.14 0.03 var(--hue) / 0.7);
+}
+
+.ending .mk {
+  display: inline-flex;
+  color: var(--w-kick);
+}
+
+.ending .tx {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.5;
+  letter-spacing: 0;
+}
+
+.ending .hn {
+  width: 100%;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prose p {
+    opacity: 1;
+    transform: none;
+  }
+}

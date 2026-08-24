@@ -1,312 +1,170 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { api, assetUrl } from "@/lib/api";
 import { useAuthStore } from "@/store/authStore";
-import AppHeader from "@/components/AppHeader";
-import SessionCard from "@/components/SessionCard";
-import { SkeletonWall, EmptyState, ErrorState } from "@/components/State";
-import { IconPlus } from "@/components/icons";
-import { coverStyle, type SessionListItem, type Story, type UserProfile } from "@/lib/types";
+import { resolveTheme } from "@/lib/hue";
+import { hashSeed } from "@/lib/prng";
+import Backdrop from "@/components/sky/Backdrop";
+import Sky from "@/components/sky/Sky";
+import WorldScope from "@/components/sky/WorldScope";
+import WxHeader from "@/components/wx/WxHeader";
+import SubNav from "@/components/wx/SubNav";
+import WorkFace from "@/components/wx/WorkFace";
+import type { Story, UserProfile } from "@/lib/types";
+import styles from "./page.module.css";
 
-// 「我的空间」（对齐原型 my-space.html）：资料头 + 两个页签——我的创作 / 我在读。
-// 「我在读」原先寄居在首页，会让书库首屏被个人数据挤占；按原型迁到这里，
-// 顶栏只有「我的空间」一项入口（曾另有「我在读」直达第二页签，已移除——
-// 顶栏不该暴露页面内部页签）；深链 /mine?tab=reading 仍然有效。
+// 我的空间。规格 DESIGN.md §7.8，**已按 plan.md §一 降级**。
 //
-// 页签状态挂在 **查询参数**而不是 hash 上：两个导航项指向同一个路由，Next 用
-// history.pushState 做客户端跳转，而 pushState **不触发 hashchange**，Next 的
-// 路由 hook 也压根不暴露 hash——用 hash 的话点哪个都停在原页签（线上踩过）。
-// useSearchParams 是响应式的，同路由内切换能正确重渲染。
-type Tab = "works" | "reading";
+// 删掉的四块：衍生贡献、收藏、访客视角、关注。它们在后端一样都没有——
+// 没有 fork 模型、没有收藏表、没有关注关系。照设计稿画出来就是四块假数据。
+//
+// 原来的 `?tab=works|reading` 两个页签也取消了：阅读那半边整块迁到 /mine/history，
+// 由二级导航承载。一个页面里塞两套不相干的列表，两边都不好找。
 
-function parseTheme(worldConfig: string): string {
-  try {
-    return String(JSON.parse(worldConfig || "{}").theme ?? "star") || "star";
-  } catch {
-    return "star";
-  }
-}
-
-// useSearchParams 要求外层有 Suspense（否则静态预渲染会构建报错）。
 export default function MinePage() {
-  return (
-    <Suspense fallback={<div className="empty pulse">载入中…</div>}>
-      <MineInner />
-    </Suspense>
-  );
-}
-
-function MineInner() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const user = useAuthStore((s) => s.user);
   const initAuth = useAuthStore((s) => s.init);
+  const user = useAuthStore((s) => s.user);
 
-  // 页签由 URL 决定（唯一事实源），切换即改 URL —— 这样刷新/分享/前进后退都对得上。
-  const tab: Tab = searchParams.get("tab") === "reading" ? "reading" : "works";
-  const setTab = (t: Tab) =>
-    router.replace(t === "reading" ? "/mine?tab=reading" : "/mine", { scroll: false });
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [stories, setStories] = useState<Story[]>([]);
-  const [sessions, setSessions] = useState<SessionListItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  // 两种错误分开：loadError 决定整块列表要不要换成错误态；
-  // actionError（发布/删除失败）只作横幅，不能把用户的作品列表整个抹掉。
-  const [error, setError] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [works, setWorks] = useState<Story[]>([]);
+  const [status, setStatus] = useState<"loading" | "ok" | "error">("loading");
 
   useEffect(() => {
     initAuth();
   }, [initAuth]);
 
-  // useCallback 是为了能安全进 useEffect 依赖：函数体里只用到 setState（引用稳定）
-  // 与模块级的 api，空依赖即可。裸函数每次渲染都换新身份，进依赖数组会无限重取。
-  const reload = useCallback(() => {
-    setLoading(true);
-    setError(null);
+  const load = useCallback(() => {
+    setStatus("loading");
     Promise.all([
-      api.get<Story[]>("/stories/mine"),
-      api.get<UserProfile>("/auth/profile"),
-      api.get<SessionListItem[]>("/play/sessions"),
+      api.get<UserProfile>("/auth/profile").catch(() => null),
+      api.get<Story[]>("/stories/mine").catch(() => [] as Story[]),
     ])
-      .then(([st, p, se]) => {
-        setStories(st ?? []);
+      .then(([p, list]) => {
         setProfile(p);
-        setSessions(se ?? []);
+        // 这一栏只放**已发布**的原创作品；草稿有它自己的地方（/mine/drafts）
+        setWorks((list ?? []).filter((s) => s.status === "published"));
+        setStatus(p ? "ok" : "error");
       })
-      .catch((e) => setError((e as Error).message))
-      .finally(() => setLoading(false));
+      .catch(() => setStatus("error"));
   }, []);
 
-  useEffect(() => {
-    if (typeof window !== "undefined" && !localStorage.getItem("token")) {
-      router.replace("/login?next=/mine");
-      return;
-    }
-    reload();
-  }, [user, router, reload]);
+  useEffect(load, [load]);
 
-  // 「被游玩 / 获赞」由我的作品求和得出，不需要新接口。
-  const totals = useMemo(
-    () =>
-      stories.reduce(
-        (acc, s) => ({ play: acc.play + s.play_count, like: acc.like + s.like_count }),
-        { play: 0, like: 0 }
-      ),
-    [stories]
-  );
-
-  // 存档卡的缩略图取自对应作品的主题与封面；不在「我的作品」里的（别人的作品）回落默认渐变
-  // ——SessionListItem 只带 story_title，拿不到别人作品的 world_config/cover。
-  const themeOf = useMemo(() => {
-    const m = new Map<string, string>();
-    stories.forEach((s) => m.set(s.id, parseTheme(s.world_config)));
-    return m;
-  }, [stories]);
-  const coverOf = useMemo(() => {
-    const m = new Map<string, string>();
-    stories.forEach((s) => s.cover_url && m.set(s.id, s.cover_url));
-    return m;
-  }, [stories]);
-
-  const toggleStatus = async (s: Story) => {
-    const next = s.status === "published" ? "draft" : "published";
-    try {
-      setActionError(null);
-      await api.put(`/stories/${s.id}/status`, { status: next });
-      reload();
-    } catch (e) {
-      setActionError((e as Error).message);
-    }
-  };
-
-  const remove = async (id: string) => {
-    const prev = stories;
-    setStories((list) => list.filter((s) => s.id !== id));
-    setConfirmId(null);
-    try {
-      await api.del(`/stories/${id}`);
-    } catch (e) {
-      setStories(prev);
-      setActionError((e as Error).message);
-    }
-  };
-
-  const deleteSession = async (id: string) => {
-    const prev = sessions;
-    setSessions((list) => list.filter((s) => s.id !== id));
-    try {
-      await api.del(`/play/sessions/${id}`);
-    } catch (e) {
-      setSessions(prev);
-      setActionError((e as Error).message);
-    }
-  };
-
-  const nickname = profile?.nickname || user?.nickname || user?.username || "我";
+  const initial = (profile?.nickname || profile?.username || "·").trim().charAt(0);
 
   return (
-    <>
-      <AppHeader />
-      <main className="wrap">
-        <h1 className="sr-only">我的空间</h1>
+    <div>
+      <Backdrop />
+      <WxHeader />
+      <SubNav />
 
-        <section className="profile">
-          {/* 有头像用图；没有就保持原来的中性圆（不放默认灰头像，那是无信息占位） */}
-          {profile?.avatar_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img className="pic" src={assetUrl(profile.avatar_url)} alt="" />
-          ) : (
-            <span className="pic" aria-hidden="true" />
-          )}
-          <div className="who">
-            <h2>{nickname}</h2>
-            <p>{profile?.bio || "还没有个人简介"}</p>
-          </div>
-          <div className="nums">
-            <div>
-              <b>{profile?.work_count ?? stories.length}</b>
-              <span>作品</span>
-            </div>
-            <div>
-              <b>{totals.play}</b>
-              <span>被游玩</span>
-            </div>
-            <div>
-              <b>{totals.like}</b>
-              <span>获赞</span>
-            </div>
-          </div>
-          <Link className="btn secondary sm edit" href="/me">
-            编辑资料
-          </Link>
-        </section>
-
-        <div className="tabs" role="tablist" aria-label="我的空间">
-          <button role="tab" type="button" aria-selected={tab === "works"} onClick={() => setTab("works")}>
-            我的创作<span className="c">{stories.length}</span>
-          </button>
-          <button role="tab" type="button" aria-selected={tab === "reading"} onClick={() => setTab("reading")}>
-            我在读<span className="c">{sessions.length}</span>
-          </button>
+      <main className={styles.main}>
+        {/* 作者天空：你写过的每一部作品各出一层，叠在一起就是这个人的颜色。
+            ⚠️ isolation 挂在容器上——不挂的话 screen 会把页面背景一起混进来。 */}
+        <div className={styles.authorsky} aria-hidden="true">
+          {works.slice(0, 6).map((s) => {
+            const { hue } = resolveTheme(s.world_config, s.id);
+            return (
+              <WorldScope key={s.id} hue={hue} className={styles.layer}>
+                <Sky
+                  seed={hashSeed(s.id)}
+                  layers={{ halo: true, clouds: 1, stars: 18, horizon: true }}
+                />
+              </WorldScope>
+            );
+          })}
         </div>
 
-        {actionError && (
-          <div className="status err" role="alert">
-            出错：{actionError}
-          </div>
-        )}
-
-        {/* error 必须排在 empty 前面：拉取失败时显示「还没有作品」
-            是把错误伪装成空态，用户会以为自己的作品没了 */}
-        {loading ? (
-          <SkeletonWall count={3} />
-        ) : error ? (
-          <ErrorState
-            action={
-              <button className="btn primary sm" onClick={reload}>
-                重试
-              </button>
-            }
-          />
-        ) : tab === "works" ? (
-          stories.length === 0 ? (
-            <EmptyState
-              title="还没有作品"
-              desc="一句话灵感就能起步，AI 帮你把世界观、开场和分支都搭出来。"
-              action={
-                <Link className="btn primary sm" href="/create">
-                  写第一个故事
-                </Link>
-              }
-            />
+        <div className={styles.who}>
+          {profile?.avatar_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img className={styles.avatar} src={assetUrl(profile.avatar_url)} alt="" />
           ) : (
-            <div className="works">
-              {stories.map((s) => {
-                return (
-                  <article className="work" key={s.id}>
-                    <div className="cov" style={coverStyle(parseTheme(s.world_config), assetUrl(s.cover_url))}>
-                      <span className="ct">{s.title || "未命名作品"}</span>
-                    </div>
-                    <div className="info">
-                      <div className="trow">
-                        <h3>{s.title || "未命名作品"}</h3>
-                        <span className={`badge ${s.status === "published" ? "ok" : "info"}`}>
-                          {s.status === "published" ? "已发布" : "草稿"}
-                        </span>
-                      </div>
-                      <p className="meta">
-                        {s.status === "published"
-                          ? `${s.play_count} 游玩 · ${s.like_count} 赞`
-                          : "尚未发布"}
-                        {" · "}
-                        {new Date(s.created_at).toLocaleDateString("zh-CN")}
-                      </p>
-                      <div className="acts">
-                        <button className="btn secondary sm" onClick={() => router.push(`/edit/${s.id}`)}>
-                          编辑
-                        </button>
-                        {/* 草稿也要能试玩——不先跑一局，作者根本不知道自己写的世界观
-                            能不能撑起生成。后端本来就允许作者玩自己的任何状态的作品
-                            （service.canPlay），这里缺的只是入口。
-                            指向详情页而不是直接建会话：那一页带「生成设置」，没配模型时
-                            会就地拦下并说明原因，直接建会话只会让人落到游玩页吃报错。 */}
-                        <Link className="btn ghost sm" href={`/story/${s.id}`}>
-                          试玩
-                        </Link>
-                        <button className="btn ghost sm" onClick={() => toggleStatus(s)}>
-                          {s.status === "published" ? "下架" : "发布"}
-                        </button>
-                        {confirmId === s.id ? (
-                          <button className="btn danger sm ed-del" onClick={() => remove(s.id)}>
-                            确认删除？
-                          </button>
-                        ) : (
-                          <button className="btn ghost sm ed-del" onClick={() => setConfirmId(s.id)}>
-                            删除
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          )
-        ) : sessions.length === 0 ? (
-          <EmptyState
-            title="还没有在读的故事"
-            desc="挑一个世界走进去，进度会自动存在这里，随时接着往下走。"
-            action={
-              <Link className="btn primary sm" href="/">
-                去书库逛逛
-              </Link>
-            }
-          />
-        ) : (
-          <div className="saves">
-            {sessions.map((s) => (
-              <SessionCard
-                key={s.id}
-                item={s}
-                theme={themeOf.get(s.story_id)}
-                cover={coverOf.get(s.story_id)}
-                onDelete={() => deleteSession(s.id)}
-              />
-            ))}
+            <span className={`${styles.avatar} ${styles.avatarFallback}`} aria-hidden="true">
+              {initial}
+            </span>
+          )}
+          <div>
+            <p className={styles.name}>{profile?.nickname || profile?.username || "还没登录"}</p>
+            {profile?.username && <p className={styles.handle}>@{profile.username}</p>}
           </div>
+          {profile && (
+            <Link className={styles.editLink} href="/mine/settings">
+              编辑资料
+            </Link>
+          )}
+        </div>
+
+        {profile?.bio && <p className={styles.bio}>{profile.bio}</p>}
+
+        {profile && (
+          <dl className={styles.facts}>
+            <div className={styles.fact}>
+              <dt>已发布</dt>
+              <dd>{works.length}</dd>
+            </div>
+            <div className={styles.fact}>
+              <dt>累计游玩</dt>
+              <dd>{works.reduce((n, s) => n + s.play_count, 0)}</dd>
+            </div>
+            <div className={styles.fact}>
+              <dt>收到的赞</dt>
+              <dd>{works.reduce((n, s) => n + s.like_count, 0)}</dd>
+            </div>
+            {/* 关注 / 粉丝两个计数器列都在，但没有任何关注入口——
+                摆一个恒为 0 的「粉丝」只会被读成「没人关注你」。等社区落地再放。 */}
+          </dl>
         )}
 
-        {tab === "works" && stories.length > 0 && (
-          <Link className="btn primary newwork" href="/create">
-            <IconPlus /> 创作新作品
-          </Link>
+        <p className={styles.sectionTitle}>我的作品</p>
+
+        {status === "error" && !user ? (
+          <div className={styles.state}>
+            <p className={styles.stateTitle}>先登录</p>
+            <p>作品与存档都挂在账号上。</p>
+            <Link className={styles.btn} href="/login?next=/mine">
+              去登录
+            </Link>
+          </div>
+        ) : status === "error" ? (
+          <div className={styles.state}>
+            <p className={styles.stateTitle}>资料取不回来</p>
+            <button className={styles.btn} type="button" onClick={load}>
+              重新尝试
+            </button>
+          </div>
+        ) : status === "loading" ? (
+          <p className={styles.state}>正在整理…</p>
+        ) : works.length === 0 ? (
+          <div className={styles.state}>
+            <p className={styles.stateTitle}>还没有发布过作品</p>
+            <p>写完的世界会出现在这里，也会出现在星海里。</p>
+            <Link className={styles.btn} href="/create">
+              写一个世界
+            </Link>
+          </div>
+        ) : (
+          <div className={styles.grid}>
+            {works.map((s) => {
+              const { hue } = resolveTheme(s.world_config, s.id);
+              return (
+                <WorldScope
+                  key={s.id}
+                  as={Link}
+                  hue={hue}
+                  className={styles.card}
+                  href={`/story/${s.id}`}
+                  aria-label={`打开作品：${s.title}`}
+                >
+                  <WorkFace story={s} />
+                </WorldScope>
+              );
+            })}
+          </div>
         )}
       </main>
-    </>
+    </div>
   );
 }

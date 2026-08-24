@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { api } from "@/lib/api";
+import { DEFAULT_THEME, resolveTheme, type Theme } from "@/lib/hue";
 import type {
   AttrRowData,
   AttrType,
@@ -29,7 +30,14 @@ interface EditorForm {
   openingOptions: Option[]; // 仅预览，不入库（开场 options 游玩时由后端重生成）
   recWriteModel: string; // 作者推荐的续写模型（仅标注展示给玩家，不自动套用）
   recReviewModel: string; // 作者推荐的审校模型
-  theme: string; // 作品级主题 id（star/ink/horror…），玩家进详情/游玩页整页换肤
+  // 作品主题：**存值不存 id**（plan.md §二·补）。预设若只是前端常量，改动某个预设的
+  // 色相会让所有用它的作品一起变色；值固化进作品后，颜色是作品身份的一部分。
+  // 读取仍两种形态都吃（库里 12 部有 7 部是老的字符串 id），解析统一走 lib/hue.resolveTheme。
+  theme: Theme;
+  // 「主题被显式选过」——段 5 的就绪判定（DESIGN.md §7.7 那张表）。
+  // theme 现在恒有值（缺省 252/gaze），光看值分不出「作者选过」和「还没碰过」。
+  // **不进 world_config**：它是编辑期的一个足迹，不是作品数据。
+  themePicked: boolean;
   // 题材标签。约定 tags[0] 是主题材（首页 chip 按它归类），其余作展示。
   // 与 theme 是两回事：theme 只决定配色，别拿它当题材（见 CLAUDE.md「Genre tags」）。
   tags: string[];
@@ -92,7 +100,8 @@ const EMPTY_FORM: EditorForm = {
   openingOptions: [],
   recWriteModel: "",
   recReviewModel: "",
-  theme: "star",
+  theme: DEFAULT_THEME,
+  themePicked: false,
   tags: [],
 };
 
@@ -150,7 +159,7 @@ function worldObject(f: EditorForm) {
     characters: f.characters,
     initial_state,
     attributes,
-    theme: f.theme || "star",
+    theme: f.theme, // 写入永远是 {hue, figure} 对象
     ...(styleProfile ? { style_profile: styleProfile } : {}),
     ...(f.tags.length ? { tags: f.tags } : {}),
     ...(Object.keys(rec).length ? { recommended_models: rec } : {}),
@@ -296,7 +305,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         recReviewModel: String(
           ((w.recommended_models as Record<string, { model?: string }>)?.review?.model) ?? ""
         ),
-        theme: String(w.theme ?? "star") || "star",
+        theme: resolveTheme(w, s.id), // 老数据的字符串 id 在这里被解析成值
+        // 作品里已经存着 theme，就是选过了——别让作者重开一部旧作品时看见天空缺一层
+        themePicked: w.theme !== undefined && w.theme !== null,
         tags: Array.isArray(w.tags) ? (w.tags as unknown[]).map(String).filter(Boolean) : [],
         polishInstruction: "",
         polishSourceText: null,

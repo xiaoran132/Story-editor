@@ -1,0 +1,54 @@
+/* /story/[id] —— 只负责外壳与三态；内容全在 <WorkDetail variant="page">。 */
+
+.main {
+  position: relative;
+  z-index: 10;
+  min-height: calc(100dvh - 76px);
+}
+
+.state {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 96px 24px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.8;
+}
+
+.stateTitle {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 20px;
+  line-height: 1.4;
+  color: var(--fg);
+}
+
+.stateDesc {
+  margin-top: 10px;
+}
+
+.stateLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin-top: 22px;
+  padding: 0 18px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-pill);
+  color: var(--fg);
+  font-size: 13.5px;
+  letter-spacing: 0.03em;
+  text-decoration: none;
+  transition: background 0.16s var(--ease), border-color 0.16s var(--ease);
+}
+
+.stateLink:hover {
+  background: oklch(1 0 0 / 0.06);
+  border-color: var(--bright);
+}
+
+.stateLink:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}

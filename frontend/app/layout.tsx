@@ -3,8 +3,8 @@ import { Inter, Noto_Serif_SC } from "next/font/google";
 import "./globals.css";
 import PrefsBoot from "@/components/PrefsBoot";
 
-// UI / 管理态无衬线：Inter —— 清晰、可扫，用于界面文本、标签、数字。
-// 注意变量名：注入的是 --font-sans-inter，由 globals.css 的 --font-sans 引用并接系统回退栈。
+// UI 无衬线：Inter —— 清晰、可扫，用于界面文本、标签、数字。
+// 注意变量名：注入的是 --font-sans-inter，由 globals.css 的 --font-ui 引用并接系统回退栈。
 // 两边不能同名，否则 globals.css 的 :root 与 next/font 注入的 class 权重相同、
 // 后加载的 globals 覆盖掉真实字体名，webfont 白下载不生效。
 const inter = Inter({

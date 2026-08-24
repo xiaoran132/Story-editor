@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/store/authStore";
-import AppHeader from "@/components/AppHeader";
+import Backdrop from "@/components/sky/Backdrop";
+import WxHeader from "@/components/wx/WxHeader";
+import styles from "./page.module.css";
 import { IconChevronLeft } from "@/components/icons";
 import { useToast } from "@/components/Toast";
 import {
@@ -111,94 +113,95 @@ export default function AdminPage() {
   const stageDesc = (stage: string) => LLM_STAGES.find((s) => s.key === stage)?.desc || "";
 
   return (
-    <>
-    <AppHeader />
-    <main className="wrap">
-      <div className="topbar">
-        <button className="back" onClick={() => router.push("/me")}>
+    <div>
+    <Backdrop />
+    <WxHeader />
+    <main className={styles.main}>
+      <div>
+        <button className={styles.back} type="button" onClick={() => router.push("/mine/settings")}>
           <IconChevronLeft size={14} /> 个人主页
         </button>
       </div>
-      <h1 className="ed-h1">平台 AI 设置</h1>
-      <p className="me-desc">
+      <h1 className={styles.h1}>平台 AI 设置</h1>
+      <p className={styles.desc}>
         每个环节配一套平台连接，作为用户未配自带连接时的回退。key 加密存储、不回显。
       </p>
-      {error && <div className="status err">出错：{error}</div>}
+      {error && <div className={styles.err} role="alert">出错：{error}</div>}
 
       {loading ? (
-        <div className="empty pulse">载入中…</div>
+        <div className={styles.state}>载入中…</div>
       ) : rows.length === 0 ? (
         // 后端按 LLM_STAGES 补齐空壳，正常不会为空；真为空时给句人话，别只剩一个标题
-        <div className="empty">尚未初始化任何环节配置，请检查后端 /admin/llm/platform 是否可用。</div>
+        <div className={styles.state}>尚未初始化任何环节配置，请检查后端 /admin/llm/platform 是否可用。</div>
       ) : (
         rows.map((r) => (
-          <section className="ed-section" key={r.stage}>
-            <span className="eyebrow">
-              {stageLabel(r.stage)} <span className="ed-hint">{stageDesc(r.stage)}</span>
+          <section className={styles.stage} key={r.stage}>
+            <span className={styles.stageTitle}>
+              {stageLabel(r.stage)} <span className="wx-hint">{stageDesc(r.stage)}</span>
             </span>
-            <div className="me-key-status">
+            <div className={styles.keyStatus}>
               当前：
               {r.has_key ? (
-                <span className="badge active">已配置 {r.key_hint || ""}</span>
+                <span className={`${styles.badge} ${styles.badgeOn}`}>已配置 {r.key_hint || ""}</span>
               ) : (
-                <span className="badge ended">未配置</span>
+                <span className={styles.badge}>未配置</span>
               )}
             </div>
-            <label className="ed-field">
-              <span className="ed-label">供应商</span>
-              <select className="ed-input ed-select" value={r.provider} onChange={(e) => pickProvider(r.stage, e.target.value)}>
+            <label className="wx-field">
+              <span className="wx-label">供应商</span>
+              <select className="wx-select" value={r.provider} onChange={(e) => pickProvider(r.stage, e.target.value)}>
                 <option value="">（选择预设）</option>
                 {LLM_PROVIDERS.map((p) => (
                   <option key={p.key} value={p.key}>{p.label}</option>
                 ))}
               </select>
             </label>
-            <label className="ed-field">
-              <span className="ed-label">Base URL</span>
-              <input className="ed-input" value={r.base_url} placeholder="https://api.example.com/v1"
+            <label className="wx-field">
+              <span className="wx-label">Base URL</span>
+              <input className="wx-input" value={r.base_url} placeholder="https://api.example.com/v1"
                 onChange={(e) => patch(r.stage, { base_url: e.target.value })} />
             </label>
-            <label className="ed-field">
-              <span className="ed-label">模型</span>
-              <input className="ed-input" value={r.model} placeholder="如 deepseek-chat"
+            <label className="wx-field">
+              <span className="wx-label">模型</span>
+              <input className="wx-input" value={r.model} placeholder="如 deepseek-chat"
                 onChange={(e) => patch(r.stage, { model: e.target.value })} />
             </label>
-            <label className="ed-field">
-              <span className="ed-label">API Key <span className="ed-hint">（留空则保留原 key）</span></span>
-              <input className="ed-input" type="password" value={r.api_key} placeholder="sk-..." autoComplete="off"
+            <label className="wx-field">
+              <span className="wx-label">API Key <span className="wx-hint">（留空则保留原 key）</span></span>
+              <input className="wx-input" type="password" value={r.api_key} placeholder="sk-..." autoComplete="off"
                 onChange={(e) => patch(r.stage, { api_key: e.target.value })} />
             </label>
             {/* 单价决定玩家那 1 元赠送额度怎么扣。为 0 = 永远扣不动 = 平台 key 无限量，
                 所以这里必须显式警告，而不是让它安静地是 0。 */}
-            <div className="ed-field">
-              <span className="ed-label">
-                单价 <span className="ed-hint">元 / 百万 token，照抄供应商定价页</span>
+            <div className="wx-field">
+              <span className="wx-label">
+                单价 <span className="wx-hint">元 / 百万 token，照抄供应商定价页</span>
               </span>
-              <div className="admin-price">
+              <div className={styles.price}>
                 <label>
-                  <span className="ed-hint">输入</span>
-                  <input className="ed-input" type="number" min="0" step="0.01" value={r.price_in_per_mtok ?? 0}
+                  <span className="wx-hint">输入</span>
+                  <input className="wx-input" type="number" min="0" step="0.01" value={r.price_in_per_mtok ?? 0}
                     aria-label={`${stageLabel(r.stage)} · 输入单价（元/百万 token）`}
                     onChange={(e) => patch(r.stage, { price_in_per_mtok: Number(e.target.value) })} />
                 </label>
                 <label>
-                  <span className="ed-hint">输出</span>
-                  <input className="ed-input" type="number" min="0" step="0.01" value={r.price_out_per_mtok ?? 0}
+                  <span className="wx-hint">输出</span>
+                  <input className="wx-input" type="number" min="0" step="0.01" value={r.price_out_per_mtok ?? 0}
                     aria-label={`${stageLabel(r.stage)} · 输出单价（元/百万 token）`}
                     onChange={(e) => patch(r.stage, { price_out_per_mtok: Number(e.target.value) })} />
                 </label>
               </div>
               {!r.price_in_per_mtok && !r.price_out_per_mtok && (
-                <span className="up-err" role="alert">
+                <span className="wx-err" role="alert">
                   单价为 0：玩家用这个环节的平台 key 时不会扣任何额度，等于无限免费。请填上真实单价。
                 </span>
               )}
             </div>
-            <div className="me-key-actions">
-              <button className="btn secondary" disabled={busy === r.stage} onClick={() => save(r)}>
+            <div className={styles.actions}>
+              <button className="wx-btn strong" disabled={busy === r.stage} onClick={() => save(r)}>
                 {busy === r.stage ? "保存中…" : "保存"}
               </button>
-              <button className="btn secondary sm" disabled={busy === r.stage} onClick={() => test(r)}>
+              <button className="wx-btn sm" disabled={busy === r.stage} onClick={() => test(r)}>
                 测试连接
               </button>
             </div>
@@ -208,6 +211,6 @@ export default function AdminPage() {
 
       {toastNode}
     </main>
-    </>
+    </div>
   );
 }

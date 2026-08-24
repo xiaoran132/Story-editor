@@ -1,0 +1,222 @@
+/* /mine · 我的空间 —— 规格 DESIGN.md §7.8，**已按 plan.md §一 降级**：
+   只保留本人视角 + 原创作品。衍生贡献、收藏、访客视角、关注全部删掉——
+   它们在后端一样都没有，画出来就是四块假数据。 */
+
+.main {
+  position: relative;
+  z-index: 10;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 34px 26px 96px;
+}
+
+/* 作者天空：N 部作品各一层，mix-blend-mode: screen 叠加。
+   ⚠️ isolation: isolate 必须挂在容器上，否则 screen 会把页面背景一起混进来。 */
+.authorsky {
+  position: relative;
+  isolation: isolate;
+  height: 220px;
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: oklch(0.075 0.016 265);
+}
+
+.layer {
+  position: absolute;
+  inset: 0;
+  mix-blend-mode: screen;
+  opacity: 0.55;
+}
+
+.who {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  margin-top: -46px;
+  padding: 0 20px;
+  position: relative;
+  z-index: 2;
+}
+
+.avatar {
+  width: 76px;
+  height: 76px;
+  flex: none;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--bg-deep);
+  background: var(--surface);
+}
+
+.avatarFallback {
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display);
+  font-size: 28px;
+  color: var(--muted);
+}
+
+.name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 21px;
+  line-height: 1.4;
+  letter-spacing: 0;
+  color: var(--fg);
+}
+
+.handle {
+  margin-top: 4px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.editLink {
+  margin-left: auto;
+  min-height: 40px;
+  padding: 0 15px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-pill);
+  color: var(--fg);
+  font-size: 12.5px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  transition: background 0.16s var(--ease), border-color 0.16s var(--ease);
+}
+
+.editLink:hover {
+  background: oklch(1 0 0 / 0.07);
+  border-color: var(--bright);
+}
+
+.editLink:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.bio {
+  margin-top: 16px;
+  max-width: 56ch;
+  font-size: 13px;
+  line-height: 1.9;
+  color: var(--muted);
+}
+
+/* 只列有写入路径的数字。关注/粉丝两个计数器列都在，但没有任何关注入口——
+   摆一个恒为 0 的「粉丝」出来只会被读成「没人关注你」。 */
+.facts {
+  display: flex;
+  gap: 26px;
+  flex-wrap: wrap;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+.fact dt {
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+
+.fact dd {
+  margin-top: 5px;
+  font-size: 18px;
+  font-weight: 590;
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.sectionTitle {
+  margin-top: 36px;
+  font-size: 11px;
+  font-weight: 590;
+  letter-spacing: 0.22em;
+  color: var(--muted);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(178px, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.card {
+  position: relative;
+  display: block;
+  aspect-ratio: 170 / 228;
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  border: 1px solid oklch(1 0 0 / 0.14);
+  background: var(--bg);
+  text-decoration: none;
+  transition: border-color 0.22s var(--ease), box-shadow 0.22s var(--ease);
+}
+
+.card:hover {
+  border-color: var(--w-line);
+  box-shadow: 0 0 26px -6px var(--w-glow);
+}
+
+.card:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.state {
+  padding: 40px 24px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.9;
+}
+
+.stateTitle {
+  font-family: var(--font-display);
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--fg);
+}
+
+.btn {
+  min-height: 42px;
+  padding: 0 16px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 13px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  transition: background 0.16s var(--ease), border-color 0.16s var(--ease);
+}
+
+.btn:hover {
+  background: oklch(1 0 0 / 0.07);
+  border-color: var(--bright);
+}
+
+.btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+@media (max-width: 640px) {
+  .main {
+    padding: 24px 16px 80px;
+  }
+
+  .who {
+    flex-wrap: wrap;
+  }
+
+  .editLink {
+    margin-left: 0;
+  }
+}

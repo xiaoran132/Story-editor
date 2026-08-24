@@ -2,7 +2,8 @@
 
 import { useEditorStore } from "@/store/editorStore";
 
-// 发布检查清单（原型 create-editor.html:292-302）。
+// 发布体检的判定。清单本身由段 6 渲染（components/editor/StoryEditor.tsx），
+// 这里只出数据——它同时驱动「天空即完成度」的第 6 层，两处不能各算一遍。
 //
 // 这里镜像的是 `backend/pkg/worldvalidate.go` 的 **strict** 规则 + `SetStatus` 的标题校验。
 // 目的不是替代后端校验（后端才是硬防线），而是让作者**在点发布之前**就知道差什么——
@@ -12,7 +13,7 @@ import { useEditorStore } from "@/store/editorStore";
 export interface CheckItem {
   ok: boolean;
   label: string;
-  step: number; // 缺这项该去第几步补（驱动「去补 →」回跳与左侧步骤的完成态）
+  step: number; // 缺这项该去第几段补（驱动段 6 的「去补 →」回跳）
 }
 
 export function usePublishChecks(): CheckItem[] {
@@ -33,70 +34,4 @@ export function usePublishChecks(): CheckItem[] {
       step: 2,
     },
   ];
-}
-
-// StepRequired 把「这一步有哪些必填项、填没填」摆在作者正在看的那一页上。
-// 以前必填项只在最后一步的发布检查里露面，作者填到第 6 步才知道第 2 步漏了东西。
-export function StepRequired({ checks, step }: { checks: CheckItem[]; step: number }) {
-  const own = checks.filter((c) => c.step === step);
-  if (own.length === 0) return null;
-  const left = own.filter((c) => !c.ok).length;
-  return (
-    <div className={`step-req${left === 0 ? " done" : ""}`}>
-      <span className="sr-head">
-        {left === 0 ? "本步必填项已齐" : `本步还差 ${left} 项必填`}
-      </span>
-      <ul>
-        {own.map((c) => (
-          <li key={c.label} className={c.ok ? "ok" : "no"}>
-            <span className="mk" aria-hidden="true">{c.ok ? "✓" : "•"}</span>
-            {c.label}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-export default function PublishCheck({
-  checks,
-  onJump,
-}: {
-  checks: CheckItem[];
-  onJump: (step: number) => void;
-}) {
-  const failed = checks.filter((c) => !c.ok);
-  return (
-    <div className="ed-field">
-      <span className="ed-label">
-        发布检查
-        <span className="ed-hint">
-          {failed.length === 0 ? "全部通过，可以发布" : `还差 ${failed.length} 项`}
-        </span>
-      </span>
-      <ul className="check">
-        {checks.map((c) => (
-          <li key={c.label} className={c.ok ? "ok" : "no"}>
-            <span className="mk" aria-hidden="true">
-              {c.ok ? (
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6">
-                  <path d="M20 6 9 17l-5-5" />
-                </svg>
-              ) : (
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6">
-                  <path d="M18 6 6 18M6 6l12 12" />
-                </svg>
-              )}
-            </span>
-            {c.label}
-            {!c.ok && (
-              <button type="button" className="btn ghost sm fix" onClick={() => onJump(c.step)}>
-                去补
-              </button>
-            )}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
 }

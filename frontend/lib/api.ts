@@ -123,8 +123,35 @@ async function upload(kind: string, file: File | Blob, filename = "image"): Prom
   return env.data.url;
 }
 
+/**
+ * 与 request 并列的一条取数路径：**同时要 data 和 meta**。
+ *
+ * request() 只 `return env.data`，meta 被丢掉；而 /works 需要 `meta.total` 判断这批
+ * 有没有被 limit 截断——截断了就得如实说，不能默默显示前若干条冒充全部。
+ * ⚠️ 不改 request 的返回类型：那会波及全部调用点，为一个页面的需要重写整条取数路径
+ * 不划算。这里重跑一遍信封解析，代价是几行重复。
+ */
+async function requestWithMeta<T>(path: string): Promise<{ data: T; meta?: { total?: number } }> {
+  const res = await safeFetch(path, {
+    method: "GET",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+  });
+  if (res.status === 401 && handleUnauthorized(path)) throw new Error(EXPIRED_ERR);
+  let env: Envelope<T>;
+  try {
+    env = (await res.json()) as Envelope<T>;
+  } catch {
+    throw new Error(httpErr(res.status));
+  }
+  if (!res.ok || !env.success) {
+    throw new Error(env.error?.message || httpErr(res.status));
+  }
+  return { data: env.data, meta: (env.meta ?? undefined) as { total?: number } | undefined };
+}
+
 export const api = {
   get: <T>(path: string) => request<T>("GET", path),
+  getWithMeta: <T>(path: string) => requestWithMeta<T>(path),
   post: <T>(path: string, body?: unknown) => request<T>("POST", path, body),
   put: <T>(path: string, body?: unknown) => request<T>("PUT", path, body),
   del: <T>(path: string) => request<T>("DELETE", path),

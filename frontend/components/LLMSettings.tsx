@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { LLM_PROVIDERS, type LLMConnection, type TestResult } from "@/lib/types";
 import { IconPlus } from "@/components/icons";
 import Dialog from "@/components/Dialog";
+import styles from "./LLMSettings.module.css";
 
 // BYOK 连接管理（账号级）：增删改多个 LLM 连接（供应商/base_url/key/默认模型）。
 // 各作品用哪个模型在「作品详情页」按作品单独配（此处只管连接本身）。key 只写不回显。
@@ -120,35 +121,35 @@ export default function LLMSettings({ flash }: { flash: (m: string) => void }) {
   };
 
   return (
-    <section className="ed-section">
-      <span className="eyebrow">AI 连接（BYOK）</span>
-      <p className="me-desc">
+    <section>
+      <span className={styles.eyebrow}>AI 连接（BYOK）</span>
+      <p className={styles.desc}>
         添加你自己的 LLM 连接（任意 OpenAI 兼容端点，key 加密存储、绝不回显）。
-        <span className="ed-hint">每部作品「用哪个模型」在作品详情页里单独配；这里只管连接本身。</span>
+        <span className="wx-hint">每部作品「用哪个模型」在作品详情页里单独配；这里只管连接本身。</span>
       </p>
       {/* 弹窗打开时错误改在弹窗内显示——留在这里会被遮罩挡住，用户只会看到「保存」毫无反应 */}
-      {error && form === null && <div className="status err" role="alert">出错：{error}</div>}
+      {error && form === null && <div className="wx-err" role="alert">出错：{error}</div>}
 
       {/* 连接列表 */}
-      <div className="llm-conn-list">
+      <div className={styles.list}>
         {loading ? (
-          <div className="ed-hint pulse">载入连接…</div>
+          <div className={`wx-hint ${styles.loading}`}>载入连接…</div>
         ) : (
-          conns.length === 0 && !error && <div className="ed-hint">还没有连接，添加一个开始。</div>
+          conns.length === 0 && !error && <div className="wx-hint">还没有连接，添加一个开始。</div>
         )}
         {conns.map((c) => (
-          <div className="llm-conn-row" key={c.id}>
-            <div className="llm-conn-meta">
-              <span className="llm-conn-name">{c.name}</span>
-              <span className="badge">{providerLabel(c.provider)}</span>
-              <span className="ed-hint">{c.default_model}</span>
-              {c.has_key && <span className="ed-hint">{c.key_hint}</span>}
+          <div className={styles.row} key={c.id}>
+            <div className={styles.meta}>
+              <span className={styles.name}>{c.name}</span>
+              <span className={styles.badge}>{providerLabel(c.provider)}</span>
+              <span className="wx-hint">{c.default_model}</span>
+              {c.has_key && <span className="wx-hint">{c.key_hint}</span>}
             </div>
-            <div className="llm-conn-ops">
-              <button className="btn secondary sm" onClick={() => openEdit(c)} disabled={busy}>
+            <div className={styles.ops}>
+              <button className="wx-btn sm" onClick={() => openEdit(c)} disabled={busy}>
                 编辑
               </button>
-              <button className="btn ghost sm ed-del" onClick={() => delConn(c.id)} disabled={busy}>
+              <button className="wx-btn quiet sm danger" onClick={() => delConn(c.id)} disabled={busy}>
                 删除
               </button>
             </div>
@@ -156,7 +157,7 @@ export default function LLMSettings({ flash }: { flash: (m: string) => void }) {
         ))}
       </div>
 
-      <button className="btn secondary sm ed-add" onClick={openNew}>
+      <button className="wx-btn sm" onClick={openNew}>
         <IconPlus /> 添加连接
       </button>
 
@@ -166,17 +167,17 @@ export default function LLMSettings({ flash }: { flash: (m: string) => void }) {
         open={form !== null}
         title={form?.id ? "编辑连接" : "添加连接"}
         desc="任意 OpenAI 兼容端点。Key 加密存储、绝不回显。"
-        labelledBy="llm-conn-dialog-title"
+        labelledBy="conn-dialog-title"
         onClose={() => setForm(null)}
         actions={
           <>
-            <button className="btn secondary sm" disabled={testing || busy} onClick={testForm}>
+            <button className="wx-btn sm" disabled={testing || busy} onClick={testForm}>
               {testing ? "测试中…" : "测试连接"}
             </button>
-            <button className="btn ghost sm" disabled={busy} onClick={() => setForm(null)}>
+            <button className="wx-btn quiet sm" disabled={busy} onClick={() => setForm(null)}>
               取消
             </button>
-            <button className="btn primary sm" disabled={busy} onClick={saveConn}>
+            <button className="wx-btn strong sm" disabled={busy} onClick={saveConn}>
               {busy ? "保存中…" : "保存"}
             </button>
           </>
@@ -184,33 +185,33 @@ export default function LLMSettings({ flash }: { flash: (m: string) => void }) {
       >
         {form && (
           <>
-            {error && <div className="status err" role="alert" style={{ marginBottom: 12 }}>出错：{error}</div>}
-            <label className="ed-field">
-              <span className="ed-label">名称</span>
-              <input className="ed-input" value={form.name} placeholder="如 我的 DeepSeek"
+            {error && <div className="wx-err" role="alert" style={{ marginBottom: 12 }}>出错：{error}</div>}
+            <label className="wx-field">
+              <span className="wx-label">名称</span>
+              <input className="wx-input" value={form.name} placeholder="如 我的 DeepSeek"
                 onChange={(e) => setForm({ ...form, name: e.target.value })} />
             </label>
-            <label className="ed-field">
-              <span className="ed-label">供应商</span>
-              <select className="ed-input ed-select" value={form.provider} onChange={(e) => pickProvider(e.target.value)}>
+            <label className="wx-field">
+              <span className="wx-label">供应商</span>
+              <select className="wx-select" value={form.provider} onChange={(e) => pickProvider(e.target.value)}>
                 {LLM_PROVIDERS.map((p) => (
                   <option key={p.key} value={p.key}>{p.label}</option>
                 ))}
               </select>
             </label>
-            <label className="ed-field">
-              <span className="ed-label">Base URL</span>
-              <input className="ed-input" value={form.base_url} placeholder="https://api.example.com/v1"
+            <label className="wx-field">
+              <span className="wx-label">Base URL</span>
+              <input className="wx-input" value={form.base_url} placeholder="https://api.example.com/v1"
                 onChange={(e) => setForm({ ...form, base_url: e.target.value })} />
             </label>
-            <label className="ed-field">
-              <span className="ed-label">默认模型</span>
-              <input className="ed-input" value={form.default_model} placeholder="如 deepseek-chat"
+            <label className="wx-field">
+              <span className="wx-label">默认模型</span>
+              <input className="wx-input" value={form.default_model} placeholder="如 deepseek-chat"
                 onChange={(e) => setForm({ ...form, default_model: e.target.value })} />
             </label>
-            <label className="ed-field">
-              <span className="ed-label">API Key {form.id && <span className="ed-hint">（留空则保留原 key）</span>}</span>
-              <input className="ed-input" type="password" value={form.api_key} placeholder="sk-..." autoComplete="off"
+            <label className="wx-field">
+              <span className="wx-label">API Key {form.id && <span className="wx-hint">（留空则保留原 key）</span>}</span>
+              <input className="wx-input" type="password" value={form.api_key} placeholder="sk-..." autoComplete="off"
                 onChange={(e) => setForm({ ...form, api_key: e.target.value })} />
             </label>
           </>

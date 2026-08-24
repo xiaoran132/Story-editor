@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { api, postStream } from "@/lib/api";
 import type { Session, SessionResult, Story, StoryNode } from "@/lib/types";
+import { DEFAULT_THEME, resolveTheme, type Theme } from "@/lib/hue";
+import { workKicker } from "@/lib/work";
 
 interface PlayState {
   session: Session | null;
@@ -8,7 +10,8 @@ interface PlayState {
   allNodes: StoryNode[]; // 该会话已探索的全部节点，供树状视图建树
   storyTitle: string; // 作品标题，用于游玩页顶栏展示
   coverUrl: string; // 作品封面：作为阅读背景图注入 --reader-bg（无则保持纯场景色）
-  theme: string; // 作品级主题 id：游玩页整页换肤（挂 <html data-theme>）
+  storyKicker: string; // 题材角标（tags[0]，缺 tags 时有兜底），顶栏作品名下那行
+  theme: Theme; // 作品主题：{hue, figure}，驱动整页 --hue 与身后剪影的姿态
   hiddenAttrs: string[]; // world_config.attributes 里标了 hidden 的属性键：仅供 AI 参考，玩家端不展示
   revealGated: string[]; // world_config.attributes 里标了 reveal 的门控属性键：揭示前不显示
   attrMax: Record<string, number>; // 声明了 max 的 number 属性上限：只有它才画进度条，其余只显示数字
@@ -57,15 +60,6 @@ function parseAttrMax(worldConfig: string): Record<string, number> {
   }
 }
 
-// 从作品 world_config 取主题 id（缺省 star）。
-function parseTheme(worldConfig: string): string {
-  try {
-    return String(JSON.parse(worldConfig || "{}").theme ?? "star") || "star";
-  } catch {
-    return "star";
-  }
-}
-
 // 开场流式的去重守卫（按 sessionId）：避免 React 严格模式下 effect 双触发重复生成开场。
 // 放模块级，reset() 不清除，跨重挂载有效；出错时清除以允许重试。
 const openingRequested: Record<string, boolean> = {};
@@ -102,8 +96,9 @@ export const usePlayStore = create<PlayState>((set, get) => ({
   currentNode: null,
   allNodes: [],
   storyTitle: "",
+  storyKicker: "",
   coverUrl: "",
-  theme: "star",
+  theme: DEFAULT_THEME,
   hiddenAttrs: [],
   revealGated: [],
   attrMax: {},
@@ -119,8 +114,9 @@ export const usePlayStore = create<PlayState>((set, get) => ({
       currentNode: null,
       allNodes: [],
       storyTitle: "",
+      storyKicker: "",
       coverUrl: "",
-      theme: "star",
+      theme: DEFAULT_THEME,
       hiddenAttrs: [],
       revealGated: [],
       attrMax: {},
@@ -148,8 +144,11 @@ export const usePlayStore = create<PlayState>((set, get) => ({
         .then((story) =>
           set({
             storyTitle: story.title,
+            storyKicker: workKicker(story),
             coverUrl: story.cover_url ?? "",
-            theme: parseTheme(story.world_config),
+            // resolveTheme 两种形态都吃：库里 12 部有 5 部是对象 {hue,figure}、7 部是
+            // 字符串预设 id。旧的 parseTheme 对对象形态会 String() 成 "[object Object]"。
+            theme: resolveTheme(story.world_config, story.id),
             hiddenAttrs: parseFlaggedAttrs(story.world_config, "hidden"),
             revealGated: parseFlaggedAttrs(story.world_config, "reveal"),
             attrMax: parseAttrMax(story.world_config),

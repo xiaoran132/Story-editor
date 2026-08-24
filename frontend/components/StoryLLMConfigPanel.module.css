@@ -1,0 +1,188 @@
+/* 「本作品 AI 配置」折叠面板。视觉跟新体系（万象）走，逻辑一行未动。
+   本屏唯一主 CTA 是「走进这个世界」，所以这里的保存键是描边次级，
+   选中/强调一律用中性亮态，不占暖金配额（§3）。 */
+
+.settings {
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: oklch(1 0 0 / 0.03);
+}
+
+.stog {
+  width: 100%;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 15px;
+  background: transparent;
+  border: 0;
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 510;
+  letter-spacing: 0.01em;
+  text-align: left;
+  transition: background 0.15s var(--ease);
+}
+
+.stog:hover {
+  background: oklch(1 0 0 / 0.05);
+}
+
+.stog:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.chev {
+  margin-left: auto;
+  transition: transform 0.22s var(--ease);
+}
+
+.stog[aria-expanded="true"] .chev {
+  transform: rotate(180deg);
+}
+
+.sbody {
+  padding: 6px 15px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.fld label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 6px;
+  letter-spacing: 0.01em;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.sel,
+.inp {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-2);
+  background: oklch(1 0 0 / 0.05);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 13px;
+  transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
+}
+
+.sel:hover,
+.inp:hover {
+  background: oklch(1 0 0 / 0.08);
+}
+
+.sel:focus-visible,
+.inp:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+
+/* disabled 是唯一允许降对比度的状态（§9） */
+.sel:disabled,
+.inp:disabled {
+  opacity: 0.5;
+}
+
+/* 深底下原生下拉的选项面板由系统画，这里至少把收起态的字压回深色 */
+.sel option,
+.sel optgroup {
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.note {
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.note b {
+  color: var(--fg);
+  font-weight: 590;
+  font-variant-numeric: tabular-nums;
+}
+
+.rec,
+.req {
+  color: var(--bright);
+  font-weight: 510;
+}
+
+.err {
+  color: oklch(0.8 0.135 27);
+}
+
+.pulse {
+  animation: llmPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes llmPulse {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.switchRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.switchTitle {
+  font-size: 13px;
+  font-weight: 510;
+  color: var(--fg);
+}
+
+.btnSave {
+  align-self: flex-start;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  transition: background 0.16s var(--ease), border-color 0.16s var(--ease);
+}
+
+.btnSave:hover:not(:disabled) {
+  background: oklch(1 0 0 / 0.06);
+  border-color: var(--bright);
+}
+
+.btnSave:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.btnSave:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

@@ -1,4 +1,3 @@
-import type { CSSProperties } from "react";
 
 // 与 Go 后端 DTO 对齐的类型。
 // 注意：current_state / suggested_options / state_snapshot 后端以 JSON **字符串** 返回，
@@ -52,57 +51,6 @@ export const LLM_PROVIDERS: { key: string; label: string; baseURL: string; model
   { key: "moonshot", label: "Moonshot", baseURL: "https://api.moonshot.cn/v1", model: "moonshot-v1-8k" },
   { key: "custom", label: "自定义", baseURL: "", model: "" },
 ];
-
-// ===== 作品级主题换肤 =====
-// 主题是作品属性（存于 world_config.theme，透传、零后端改动）。仅阅读态（详情/游玩）
-// 整页换肤，管理态外壳永远中性。swatch=[强调色, 渐变起, 渐变止] —— 强调色用于卡片 kicker/点缀，
-// 两段底色用于封面渐变 + 阅读场景背景。色值取自 docs/design/tokens.css 作品主题色板。
-export const THEMES: { id: string; label: string; swatch: [string, string, string] }[] = [
-  { id: "star", label: "末世 · 星海", swatch: ["#7fc4f2", "#1a1c2b", "#0e1730"] },
-  { id: "ink", label: "水墨 · 武侠", swatch: ["#5eead4", "#0b1a1a", "#134e4a"] },
-  { id: "horror", label: "恐怖 · 怪谈", swatch: ["#fca5a5", "#3b0a12", "#7f1d1d"] },
-  { id: "sci", label: "软科幻", swatch: ["#a5b4fc", "#111827", "#312e81"] },
-  { id: "love", label: "言情", swatch: ["#fbcfe8", "#4a1d3f", "#be185d"] },
-  { id: "xian", label: "仙侠", swatch: ["#fde68a", "#1c1917", "#4d3a10"] },
-  { id: "heal", label: "治愈日常", swatch: ["#bef264", "#1a2417", "#3f6212"] },
-  { id: "radio", label: "冷绿电台", swatch: ["#7fe3c8", "#04121c", "#08303f"] },
-];
-// 取某主题的强调色，未知 id 回落星海冷蓝。
-export function themeAccent(id: string | undefined): string {
-  return THEMES.find((t) => t.id === id)?.swatch[0] ?? "#7fc4f2";
-}
-// 取某主题的封面/场景渐变对 [起, 止]，未知 id 回落星海。
-export function themeGradient(id: string | undefined): [string, string] {
-  const t = THEMES.find((x) => x.id === id);
-  return t ? [t.swatch[1], t.swatch[2]] : ["#1a1c2b", "#0e1730"];
-}
-/**
- * 封面背景样式：有作者上传的封面就用图，否则回落主题渐变。
- *
- * 有图时**仍然叠一层主题渐变**（半透明罩层）而不是裸铺照片，两个理由：
- * ① 封面上压着白色标题/摘要/CTA，任意照片都可能让对比度跌破 4.5:1；
- * ② 设计铁律要求「彩色只来自作品主题色」，保留罩层，主题识别就不会被照片冲掉。
- */
-export function coverStyle(themeId: string | undefined, url: string): CSSProperties {
-  const [g0, g1] = themeGradient(themeId);
-  if (!url) {
-    return { background: `linear-gradient(155deg, ${g0}, ${g1} 55%, ${g0})` };
-  }
-  const scrim =
-    `linear-gradient(155deg, color-mix(in srgb, ${g0} 74%, transparent), ` +
-    `color-mix(in srgb, ${g1} 60%, transparent) 55%, ` +
-    `color-mix(in srgb, ${g0} 82%, transparent))`;
-  return {
-    backgroundImage: `${scrim}, url("${url}")`,
-    backgroundSize: "cover",
-    backgroundPosition: "center",
-  };
-}
-
-// 取某主题的显示名（卡片 kicker / 题材标注用）。
-export function themeLabel(id: string | undefined): string {
-  return THEMES.find((t) => t.id === id)?.label ?? "AI 生成";
-}
 
 // ===== 题材与基调（存 world_config.tags，透传；约定 tags[0] 为主题材） =====
 // 取自原型 create-editor.html 的题材表，并补上种子作品实际用到的「悬疑推理 / 奇幻」。
@@ -209,6 +157,9 @@ export interface Story {
   status: string;
   play_count: number;
   like_count: number;
+  // 当前访问者赞过没有。**只有 GET /stories/:id 会填**——列表接口是匿名可读的，
+  // 为它查一遍赞表是整页的额外开销。列表里读到的恒为 false，别拿它画按钮态。
+  liked?: boolean;
   created_at: string;
 }
 

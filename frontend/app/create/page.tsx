@@ -1,15 +1,18 @@
 "use client";
 
 import { useEffect } from "react";
+import type { CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { useEditorStore } from "@/store/editorStore";
 import { useAuthStore } from "@/store/authStore";
-import AppHeader from "@/components/AppHeader";
+import Backdrop from "@/components/sky/Backdrop";
+import WxHeader from "@/components/wx/WxHeader";
 import StoryEditor from "@/components/editor/StoryEditor";
 
 export default function CreatePage() {
   const router = useRouter();
   const reset = useEditorStore((s) => s.reset);
+  const theme = useEditorStore((s) => s.theme);
   const user = useAuthStore((s) => s.user);
   const initAuth = useAuthStore((s) => s.init);
 
@@ -26,14 +29,14 @@ export default function CreatePage() {
     }
   }, [user, router]);
 
-  // 编辑器属管理态（DESIGN §2），沿用全局导航头。
+  // 整片深空跟着正在创作的这部作品的色相走：拖色相条时背景一起变，
+  // 「这是你的世界的颜色」这件事不必再解释一遍。
   return (
-    <>
-      <AppHeader />
-      <main className="page-narrow section-space">
-        {/* key 固定 new：从 /edit/xxx 切过来时强制重挂载，否则会继承上一部作品的步骤状态 */}
-        <StoryEditor key="new" />
-      </main>
-    </>
+    <div style={{ "--ambient-hue": theme.hue } as CSSProperties}>
+      <Backdrop />
+      <WxHeader />
+      {/* key 固定 new：从 /edit/xxx 切过来时强制重挂载，否则会继承上一部作品的段落状态 */}
+      <StoryEditor key="new" />
+    </div>
   );
 }

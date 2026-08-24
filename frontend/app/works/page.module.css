@@ -1,0 +1,361 @@
+/* ==========================================================
+   /works · 作品馆 —— 规格 DESIGN.md §7.2，视觉目标 docs/design/works-library.html
+   ========================================================== */
+
+.main {
+  position: relative;
+  z-index: 10;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 34px 26px 96px;
+}
+
+.eyebrow {
+  font-size: 11px;
+  font-weight: 590;
+  letter-spacing: 0.26em;
+  color: var(--muted);
+}
+
+.h1 {
+  margin-top: 14px;
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: clamp(28px, 3.4vw, 42px);
+  /* CJK 标题行高 ≥1.3、不加负字距（§5） */
+  line-height: 1.34;
+  letter-spacing: 0;
+  color: var(--fg);
+}
+
+.lede {
+  margin-top: 16px;
+  max-width: 52ch;
+  font-size: 13.5px;
+  line-height: 1.9;
+  color: var(--muted);
+}
+
+/* ================= 目录控件 ================= */
+.tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 30px;
+}
+
+.search {
+  flex: 1;
+  min-width: 220px;
+  max-width: 420px;
+  min-height: 46px;
+  padding: 0 15px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border-2);
+  background: oklch(1 0 0 / 0.05);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 13.5px;
+}
+
+.search::placeholder {
+  color: oklch(0.62 0.015 265);
+}
+
+.search:hover {
+  background: oklch(1 0 0 / 0.08);
+}
+
+.search:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+
+.sortWrap {
+  position: relative;
+}
+
+.sortBtn,
+.clearBtn {
+  min-height: 46px;
+  padding: 0 16px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border-2);
+  background: oklch(1 0 0 / 0.04);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.16s var(--ease), border-color 0.16s var(--ease);
+}
+
+.sortBtn:hover,
+.clearBtn:hover {
+  background: oklch(1 0 0 / 0.08);
+  border-color: var(--bright);
+}
+
+.sortBtn:focus-visible,
+.clearBtn:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+/* 排序是 role=menu + menuitemradio，不是一堆并列按钮——四个选项互斥，
+   读屏该听到「四选一，当前第 N 项」而不是四个独立开关。 */
+.menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 30;
+  min-width: 176px;
+  padding: 5px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border-2);
+  background: oklch(0.11 0.02 265 / 0.96);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 24px 60px -30px oklch(0.02 0 0 / 0.95);
+}
+
+.menu button {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.menu button:hover {
+  color: var(--fg);
+  background: oklch(1 0 0 / 0.07);
+}
+
+.menu button[aria-checked="true"] {
+  color: var(--bright);
+}
+
+.menu button:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.tick {
+  width: 12px;
+  flex: none;
+}
+
+/* ================= 两栏：筛选侧栏 + 结果 ================= */
+.body {
+  display: grid;
+  grid-template-columns: 216px minmax(0, 1fr);
+  gap: 28px;
+  margin-top: 26px;
+  align-items: start;
+}
+
+.side {
+  position: sticky;
+  top: 22px;
+  display: grid;
+  gap: 22px;
+}
+
+.sideTitle {
+  font-size: 11px;
+  font-weight: 590;
+  letter-spacing: 0.2em;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+
+.facets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.facet {
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  background: oklch(1 0 0 / 0.04);
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 12px;
+  transition: color 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+
+.facet:hover {
+  color: var(--fg);
+}
+
+.facet[aria-pressed="true"] {
+  border-color: var(--bright);
+  color: var(--bright);
+}
+
+.facet:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 40px;
+  font-size: 12.5px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.check input {
+  accent-color: var(--bright);
+  width: 16px;
+  height: 16px;
+}
+
+.check:hover {
+  color: var(--fg);
+}
+
+.note {
+  font-size: 11px;
+  line-height: 1.7;
+  color: oklch(0.6 0.015 265);
+}
+
+/* ================= 结果 ================= */
+.resultbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
+  gap: 16px;
+}
+
+/* 一张卡就是一片天空。整卡是链接，不在卡里再塞第二个可点区域 */
+.card {
+  position: relative;
+  display: block;
+  aspect-ratio: 170 / 228;
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  border: 1px solid oklch(1 0 0 / 0.14);
+  background: var(--bg);
+  text-decoration: none;
+  transition: border-color 0.24s var(--ease), box-shadow 0.24s var(--ease),
+    transform 0.24s var(--ease);
+}
+
+.card:hover {
+  border-color: var(--w-line);
+  box-shadow: 0 0 30px -6px var(--w-glow), 0 20px 50px -28px oklch(0.02 0 0 / 0.9);
+  transform: translateY(-2px);
+}
+
+.card:focus-visible {
+  outline: none;
+  box-shadow: var(--ring), 0 20px 50px -28px oklch(0.02 0 0 / 0.9);
+}
+
+/* 状态：加载 / 空结果 / 出错。首屏静默失败等于白屏 */
+.state {
+  padding: 56px 24px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.9;
+}
+
+.stateTitle {
+  font-family: var(--font-display);
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--fg);
+}
+
+/* ================= 分页 ================= */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 30px;
+}
+
+.pager button {
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: oklch(1 0 0 / 0.03);
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pager button:hover:not(:disabled) {
+  color: var(--fg);
+  background: oklch(1 0 0 / 0.08);
+}
+
+.pager button[aria-current="true"] {
+  border-color: var(--bright);
+  color: var(--bright);
+}
+
+.pager button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.pager button:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+@media (max-width: 900px) {
+  .main {
+    padding: 24px 16px 80px;
+  }
+
+  .body {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+
+  .side {
+    position: static;
+    grid-template-columns: 1fr;
+  }
+
+  .grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 12px;
+  }
+}

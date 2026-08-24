@@ -1,0 +1,1108 @@
+/* ==========================================================
+   创作编辑器 —— 规格 DESIGN.md §7.7，视觉目标 docs/design/create-editor.html
+   「编辑器是一部作品的天空第一次被点亮的地方，不是贴在深色背景上的六步表单。」
+   ========================================================== */
+
+.wrap {
+  position: relative;
+  z-index: 10;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 22px 26px 96px;
+}
+
+/* 顶部：作品名 + 状态 + 保存播报 */
+.head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.h1 {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: clamp(22px, 2.4vw, 30px);
+  line-height: 1.34;
+  letter-spacing: 0;
+  color: var(--fg);
+}
+
+.badge {
+  padding: 4px 11px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border-2);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+.badgeLive {
+  border-color: var(--bright);
+  color: var(--bright);
+}
+
+.saved {
+  margin-left: auto;
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.err {
+  margin-bottom: 18px;
+  padding: 12px 14px;
+  border-radius: var(--r-sm);
+  border: 1px solid oklch(0.5 0.1 30);
+  background: oklch(1 0 0 / 0.04);
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: oklch(0.84 0.11 30);
+}
+
+/* ================= 两栏 =================
+   左 44% 是正在成形的天空（sticky，滚动时始终可见），右 56% 是段落轨 + 面板。 */
+.editor {
+  display: grid;
+  grid-template-columns: 44fr 56fr;
+  gap: 28px;
+  align-items: start;
+}
+
+/* ⚠️ 左栏必须撑满视口高，天空吃掉剩余空间。
+   天空是 sticky 的短块，右边是能长到 1500px 的面板——固定 4:3 的话，左栏下方
+   永远吊着一大片什么都没有的黑（实测 1440×900 首屏就是 592×306，进到世界观那段
+   会变成近 1000px 高）。那不是「留白」，是没铺满。
+   顺带也更贴主张：这一页说的是「一部作品的天空第一次被点亮」，天空该占住这一栏。 */
+.skyside {
+  position: sticky;
+  top: 22px;
+  height: calc(100dvh - 44px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pane {
+  min-width: 0;
+  max-width: 640px;
+}
+
+/* ================= 天空即完成度 ================= */
+.sky {
+  position: relative;
+  flex: 1;
+  min-height: 260px;
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  /* 未点亮时不是空白，是「入夜前的空场」——所有层都缺席，但地还在 */
+  background: oklch(0.075 0.016 var(--hue));
+}
+
+.sky > * {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 0.62s var(--ease);
+}
+
+.sky > [data-on] {
+  opacity: 1;
+}
+
+/* 减动效：点亮不做过渡，静止态即最终态 */
+.sky[data-reduced] > * {
+  transition: none;
+}
+
+/* 段 2：渐变天空 */
+.skyGrad {
+  background: linear-gradient(
+    180deg,
+    oklch(0.13 0.05 var(--hue)) 0%,
+    oklch(0.22 0.085 var(--hue)) 52%,
+    oklch(0.3 0.1 var(--hue)) 100%
+  );
+}
+
+/* 段 2：环境星点。120 颗 × 1.9px（22% 放大到 2.7px）——
+   首版 30 颗 × 1.5px 撒在整块预览上肉眼无感，等于这一层没发生。 */
+.skyStars i {
+  position: absolute;
+  display: block;
+  border-radius: 50%;
+  background: oklch(0.98 0.02 var(--hue));
+}
+
+/* 段 5：云。**不能用 §4 的 --w-cloud(0.20)**——它比 --w-sky-md(0.22) 还暗，
+   压上去是负对比。这两档比它们盖住的天空亮，合成后 ΔL≈0.12。
+   位置移到中段天空，底部让给辉光与剪影。 */
+.skyCloud {
+  inset: auto 0 auto 0;
+  border-radius: 50%;
+}
+
+.cloudA {
+  height: 15%;
+  bottom: 44%;
+  left: -12%;
+  width: 86%;
+  background: radial-gradient(
+    closest-side,
+    oklch(0.4 0.08 var(--hue) / 0.58) 0%,
+    oklch(0.4 0.08 var(--hue) / 0.58) 30%,
+    transparent 100%
+  );
+}
+
+.cloudB {
+  height: 11%;
+  bottom: 56%;
+  left: 34%;
+  width: 68%;
+  background: radial-gradient(
+    closest-side,
+    oklch(0.52 0.09 var(--hue) / 0.44) 0%,
+    oklch(0.52 0.09 var(--hue) / 0.44) 26%,
+    transparent 100%
+  );
+}
+
+/* 段 5：流星痕 */
+.skyStreak {
+  inset: 12% auto auto 16%;
+  width: 92px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, oklch(0.96 0.02 var(--hue)));
+  transform: rotate(26deg);
+  transform-origin: right center;
+}
+
+/* 段 1：地平线辉光带。**四档渐变，不是一条线**。
+   首版拿 --w-ink(0.055) 压在 0.075 的底上，ΔL 0.02 等于没画，还把剪影一起吃掉。
+   真实天空本就地平线最亮，这么画合成后 ΔL≈0.18，同时给纯黑剪影一个背衬
+   （同 404 的 groundGlow、登录页的地平线余光）。 */
+.skyHorizon {
+  inset: auto 0 0 0;
+  height: 42%;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    oklch(0.5 0.1 var(--hue) / 0.42) 34%,
+    oklch(0.5 0.1 var(--hue) / 0.4) 52%,
+    oklch(0.5 0.1 var(--hue) / 0.22) 72%,
+    oklch(0.055 0.015 var(--hue)) 100%
+  );
+}
+
+/* 段 4：剪影落位 */
+.skyFigure {
+  inset: auto 0 14% 0;
+  display: grid;
+  place-items: center;
+  color: oklch(0.055 0.015 var(--hue));
+}
+
+.skyFigure svg {
+  width: clamp(42px, 16%, 78px);
+  height: auto;
+  display: block;
+}
+
+/* 段 6：体检全过时划过的那一道。一次性，不循环 */
+.skyMeteor {
+  position: absolute;
+  inset: 18% auto auto 8%;
+  width: 0;
+  height: 1px;
+  opacity: 0;
+  background: linear-gradient(90deg, transparent, oklch(0.98 0.03 var(--hue)));
+  transform: rotate(24deg);
+  transform-origin: left center;
+  animation: edMeteor 1.3s 0.15s var(--ease) forwards;
+}
+
+@keyframes edMeteor {
+  0% {
+    opacity: 0;
+    width: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  74% {
+    opacity: 1;
+    width: 46%;
+  }
+  100% {
+    opacity: 0;
+    width: 58%;
+  }
+}
+
+/* ================= 段 3：属性星 =================
+   语义元素：一个属性一颗，数量由作品决定，**不能为了「够亮」注水**。
+   所以改的是单颗的可见性，不是加数量。 */
+.attrStars span {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  width: max-content;
+  max-width: 96px;
+}
+
+.attrStars em {
+  font-style: normal;
+  font-size: 10px;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  text-align: center;
+  color: oklch(0.88 0.02 var(--hue));
+  /* 长属性名换行，不靠 overflow 掩盖 */
+  overflow-wrap: anywhere;
+}
+
+/* 可见属性 = 一颗亮星：核 4.4px + 双层光晕 */
+.attrStar b {
+  display: block;
+  width: 4.4px;
+  height: 4.4px;
+  border-radius: 50%;
+  background: oklch(0.98 0.03 var(--hue));
+  box-shadow: 0 0 0 3px oklch(0.82 0.1 var(--hue) / 0.3),
+    0 0 12px 4px oklch(0.72 0.14 var(--hue) / 0.42);
+}
+
+/* reveal（渐显）= 不发光的虚线待亮环，17s 自转 */
+.attrStarWait b {
+  display: block;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 1.6px dashed oklch(0.7 0.05 var(--hue) / 0.8);
+  /* 极弱内晕：没有它，虚线环在深色天空上会散成几个点 */
+  box-shadow: inset 0 0 6px 1px oklch(0.6 0.06 var(--hue) / 0.22);
+  animation: edSpin 17s linear infinite;
+}
+
+.attrStarWait em {
+  color: oklch(0.74 0.02 var(--hue));
+}
+
+@keyframes edSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.sky[data-reduced] .attrStarWait b {
+  animation: none;
+}
+
+/* 天空下方的一行说明：哪一层还没亮 */
+.skyLegend {
+  flex: none;
+  font-size: 11.5px;
+  line-height: 1.8;
+  color: var(--muted);
+}
+
+.skyLegend b {
+  color: var(--fg);
+  font-weight: 590;
+}
+
+/* ================= 段落轨 =================
+   ⚠️ 六个站点是**静态标记**，不是 JS 建出来的；渲染只改状态，不重建 DOM。
+   这是 §6「静止态必须是已完成的样子」在导航骨架上的同一条纪律。 */
+.rail {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 22px;
+}
+
+.station {
+  min-height: 62px;
+  padding: 9px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: oklch(1 0 0 / 0.03);
+  color: var(--muted);
+  font-family: inherit;
+  text-align: left;
+  display: grid;
+  gap: 3px;
+  align-content: start;
+  transition: background 0.16s var(--ease), border-color 0.16s var(--ease),
+    color 0.16s var(--ease);
+}
+
+.station:hover {
+  background: oklch(1 0 0 / 0.07);
+  color: var(--fg);
+}
+
+.station:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.station[aria-current="true"] {
+  border-color: var(--bright);
+  color: var(--fg);
+  background: oklch(1 0 0 / 0.08);
+}
+
+.stationNo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--border-2);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 段就绪 = 那一层天空亮了。轨上的标记与天空说的是同一件事 */
+.station[data-state="on"] .stationNo {
+  border-color: var(--w-kick, var(--bright));
+  color: var(--bright);
+}
+
+.stationName {
+  font-size: 12.5px;
+  font-weight: 510;
+  line-height: 1.4;
+}
+
+.stationSub {
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: oklch(0.62 0.015 265);
+}
+
+/* ================= 面板 ================= */
+.panel {
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: oklch(1 0 0 / 0.03);
+  padding: 24px 24px 20px;
+}
+
+.eyebrow {
+  font-size: 11px;
+  font-weight: 590;
+  letter-spacing: 0.24em;
+  color: var(--muted);
+}
+
+.h2 {
+  margin-top: 10px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 20px;
+  line-height: 1.4;
+  letter-spacing: 0;
+  color: var(--fg);
+}
+
+.h2:focus {
+  outline: none;
+}
+
+.desc {
+  margin-top: 10px;
+  font-size: 13px;
+  line-height: 1.85;
+  color: var(--muted);
+}
+
+.desc strong {
+  color: var(--fg);
+  font-weight: 590;
+}
+
+.hint {
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: oklch(0.62 0.015 265);
+}
+
+/* ================= 表单件 ================= */
+.field {
+  margin-top: 18px;
+}
+
+.label {
+  display: block;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  font-weight: 590;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.input,
+.textarea,
+.select {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-2);
+  background: oklch(1 0 0 / 0.05);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 13.5px;
+  line-height: 1.7;
+  transition: background 0.16s var(--ease), border-color 0.16s var(--ease);
+}
+
+.input,
+.select {
+  min-height: 46px;
+}
+
+.textarea {
+  resize: vertical;
+  min-height: 92px;
+}
+
+.input:hover,
+.textarea:hover,
+.select:hover {
+  background: oklch(1 0 0 / 0.08);
+}
+
+.input:focus-visible,
+.textarea:focus-visible,
+.select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+
+.input::placeholder,
+.textarea::placeholder {
+  color: oklch(0.6 0.015 265);
+}
+
+.select option,
+.select optgroup {
+  background: var(--bg);
+  color: var(--fg);
+}
+
+/* 题材 chip */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  background: oklch(1 0 0 / 0.04);
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 12.5px;
+  transition: background 0.15s var(--ease), border-color 0.15s var(--ease),
+    color 0.15s var(--ease);
+}
+
+.chip:hover {
+  color: var(--fg);
+  background: oklch(1 0 0 / 0.08);
+}
+
+/* 选中态用中性亮态，不占暖金配额（配额给顶栏品牌点与「发布」） */
+.chip[aria-pressed="true"] {
+  border-color: var(--bright);
+  color: var(--bright);
+  background: oklch(1 0 0 / 0.09);
+}
+
+.chip:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+/* ================= 密集行表（角色 / 属性） =================
+   表头是 aria-hidden 的视觉标签，每个控件另挂带行号的 aria-label——
+   密集表格逐格挂可见 label 会把表单撑成噪音，但读屏必须知道自己在第几行的哪一格。 */
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rowHead {
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: oklch(0.62 0.015 265);
+  padding: 0 2px;
+}
+
+.charHead,
+.charRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.4fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.attrHead,
+.attrRow {
+  display: grid;
+  grid-template-columns: 1.4fr 0.9fr 1.2fr 0.7fr 44px 44px 32px;
+  gap: 8px;
+  align-items: center;
+}
+
+.attrHead span:first-child,
+.attrHead span:nth-child(3) {
+  text-align: left;
+}
+
+.attrHead {
+  text-align: center;
+}
+
+/* 行内控件比独立字段矮一档：一行七格，用 46px 的输入框会把表撑散 */
+.rowInput {
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 11px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-2);
+  background: oklch(1 0 0 / 0.05);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  transition: background 0.16s var(--ease), border-color 0.16s var(--ease);
+}
+
+.rowInput:hover {
+  background: oklch(1 0 0 / 0.08);
+}
+
+.rowInput:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+
+.rowInput::placeholder {
+  color: oklch(0.58 0.015 265);
+}
+
+.rowInput option,
+.rowInput optgroup {
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.cell {
+  display: grid;
+  place-items: center;
+  min-height: 40px;
+}
+
+.cell input {
+  accent-color: var(--bright);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+/* 删除是破坏性的，但一行一个图标按钮不该做成红的——一屏七八个红点比没有更糟。
+   用中性描边，hover 才提亮。 */
+.rowDel {
+  width: 32px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--muted);
+  transition: color 0.15s var(--ease), background 0.15s var(--ease);
+}
+
+.rowDel:hover {
+  color: var(--bright);
+  background: oklch(1 0 0 / 0.07);
+}
+
+.rowDel:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+/* 窄屏：属性表七列排不下，整表横滚；角色行改成堆叠 */
+@media (max-width: 720px) {
+  .attrScroll {
+    overflow-x: auto;
+  }
+
+  .attrHead,
+  .attrRow {
+    min-width: 640px;
+  }
+
+  .charHead {
+    display: none;
+  }
+
+  .charRow {
+    grid-template-columns: 1fr auto;
+    grid-template-areas: "a d" "b d" "c d";
+    align-items: start;
+  }
+
+  .charRow > *:nth-child(1) {
+    grid-area: a;
+  }
+
+  .charRow > *:nth-child(2) {
+    grid-area: b;
+  }
+
+  .charRow > *:nth-child(3) {
+    grid-area: c;
+  }
+
+  .charRow > *:nth-child(4) {
+    grid-area: d;
+    align-self: center;
+  }
+}
+
+/* ================= 段 5：主题 =================
+   ⚠️ 不是设计稿那套「8 选 1 的 id」。plan.md §二·补推翻了它：world_config 是 JSON 列
+   且未知键原样透传，存连续色相同样是零后端改动；而预设若只是前端常量，改动某个预设的
+   色相会让所有用它的作品一起变色。所以是 15 个预设 + 自由色相条 + 6 个姿态，
+   落库的是 {hue, figure} 的值。 */
+.presets {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+}
+
+.preset {
+  min-height: 62px;
+  padding: 8px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: oklch(1 0 0 / 0.03);
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1.4;
+  display: grid;
+  gap: 7px;
+  justify-items: center;
+  transition: border-color 0.15s var(--ease), color 0.15s var(--ease);
+}
+
+.preset:hover {
+  color: var(--fg);
+  border-color: var(--border-2);
+}
+
+.preset[aria-pressed="true"] {
+  border-color: var(--bright);
+  color: var(--bright);
+}
+
+.preset:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+/* 色块就是那部作品的天空缩影，不是一个抽象色点 */
+.presetChip {
+  width: 100%;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid oklch(1 0 0 / 0.14);
+}
+
+.hueRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.hueRow input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--bright);
+}
+
+.hueRow input[type="range"]:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.hueVal {
+  flex: none;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  min-width: 4ch;
+  text-align: right;
+}
+
+.poses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pose {
+  width: 56px;
+  height: 62px;
+  padding: 6px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: oklch(1 0 0 / 0.03);
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+  transition: border-color 0.15s var(--ease), color 0.15s var(--ease);
+}
+
+.pose svg {
+  width: 100%;
+  height: 100%;
+}
+
+.pose:hover {
+  border-color: var(--border-2);
+  color: var(--fg);
+}
+
+.pose[aria-pressed="true"] {
+  border-color: var(--bright);
+  color: var(--bright);
+}
+
+.pose:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+/* ================= 段 6：发布体检 ================= */
+.checks {
+  margin-top: 16px;
+  display: grid;
+  gap: 8px;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 13px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: oklch(1 0 0 / 0.03);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.checkOk {
+  color: var(--fg);
+}
+
+.checkMark {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border-2);
+}
+
+.checkOk .checkMark {
+  border-color: var(--bright);
+  color: var(--bright);
+}
+
+.checkFix {
+  margin-left: auto;
+  flex: none;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border-2);
+  background: none;
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.checkFix:hover {
+  background: oklch(1 0 0 / 0.07);
+  border-color: var(--bright);
+}
+
+.checkFix:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+/* ================= 按钮 ================= */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 18px;
+}
+
+.btn {
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border-2);
+  background: oklch(1 0 0 / 0.04);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.16s var(--ease), border-color 0.16s var(--ease);
+}
+
+.btn:hover:not(:disabled) {
+  background: oklch(1 0 0 / 0.08);
+  border-color: var(--bright);
+}
+
+.btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+/* disabled 是唯一允许降对比度的状态（§9） */
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btnQuiet {
+  border-color: transparent;
+  background: none;
+  color: var(--muted);
+}
+
+.btnQuiet:hover:not(:disabled) {
+  color: var(--fg);
+  background: oklch(1 0 0 / 0.06);
+}
+
+/* **实心暖金主 CTA 只此一个**（§7.7 段 6）。整个编辑器就这一处。 */
+.btnPublish {
+  min-height: 48px;
+  padding: 0 24px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  color: oklch(0.16 0.03 85);
+  font-family: inherit;
+  font-size: 14.5px;
+  font-weight: 590;
+  letter-spacing: 0.03em;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  transition: background 0.16s var(--ease), transform 0.1s var(--ease);
+}
+
+.btnPublish:hover:not(:disabled) {
+  background: oklch(0.9 0.135 85);
+}
+
+.btnPublish:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btnPublish:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.btnPublish:disabled {
+  background: oklch(0.42 0.03 85);
+  color: oklch(0.72 0.01 85);
+  cursor: not-allowed;
+}
+
+.btnDanger {
+  margin-left: auto;
+}
+
+.btnDanger[data-confirm="1"] {
+  border-color: var(--bright);
+  color: var(--bright);
+}
+
+/* 段内导航 */
+.navbtns {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 26px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+/* 常驻的存草稿 / 发布 / 删除 */
+.publishbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 20px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: oklch(1 0 0 / 0.03);
+}
+
+/* AI 起草槽：接口未接入时**诚实说明**，不伪造候选内容 */
+.slot {
+  margin-top: 18px;
+  padding: 13px 15px;
+  border: 1px dashed var(--border-2);
+  border-radius: var(--r-md);
+  font-size: 11.5px;
+  line-height: 1.75;
+  color: var(--muted);
+}
+
+.preview {
+  margin-top: 14px;
+  display: grid;
+  gap: 8px;
+}
+
+.previewItem {
+  padding: 11px 13px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: oklch(1 0 0 / 0.03);
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+
+/* ================= 响应式 =================
+   ⚠️ 窄屏只钉一条，钉的是**段落轨**，不是天空——写到一半时能切段比能看见天空更要紧，
+   天空滚一下就能回看。
+   ⚠️ 且 .editor 必须退成 display:block：position:sticky 挂在 grid item 上时包含块是
+   它自己那一行，单列下行高就等于轨自身高度，行程为 0，top 写什么都钉不住。 */
+@media (max-width: 1120px) {
+  .editor {
+    display: block;
+  }
+
+  .skyside {
+    position: static;
+    height: auto;
+    display: block;
+  }
+
+  .sky {
+    flex: none;
+    height: 200px;
+  }
+
+  .skyLegend {
+    margin-top: 10px;
+  }
+
+  .pane {
+    max-width: none;
+    margin-top: 20px;
+  }
+
+  .rail {
+    position: sticky;
+    top: 60px;
+    z-index: 28;
+    margin: 0 -18px 20px;
+    padding: 10px 18px;
+    background: oklch(0.09 0.018 265 / 0.86);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* 六段是固定的六个，应当一眼全见：6 等分网格，序号在上、名称在下，副标题隐藏 */
+  .station {
+    min-height: 52px;
+    justify-items: center;
+    text-align: center;
+    padding: 7px 4px;
+  }
+
+  .stationSub {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .wrap {
+    padding: 16px 18px 80px;
+  }
+
+  .sky {
+    height: 168px;
+  }
+}
+
+@media (max-width: 560px) {
+  .wrap {
+    padding: 14px 14px 72px;
+  }
+
+  .sky {
+    height: 150px;
+  }
+
+  .rail {
+    margin: 0 -14px 18px;
+    padding: 8px 14px;
+  }
+
+  .head {
+    gap: 10px;
+  }
+
+  .h1 {
+    width: 100%;
+  }
+
+  .panel {
+    padding: 18px 16px 16px;
+  }
+}

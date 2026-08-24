@@ -1,0 +1,79 @@
+/* BYOK 连接管理的版式。表单件与按钮走 wanxiang.css 的共享控件层，
+   这里只放连接列表这一件东西独有的几何。 */
+
+.eyebrow {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  font-weight: 590;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+.desc {
+  font-size: 13px;
+  line-height: 1.75;
+  color: var(--muted);
+  margin-bottom: 16px;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: oklch(1 0 0 / 0.03);
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.name {
+  font-size: 13.5px;
+  font-weight: 590;
+  color: var(--fg);
+}
+
+/* 供应商角标：只读标签，中性配色——彩色只允许来自作品自身（§3）。 */
+.badge {
+  padding: 2px 9px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  background: oklch(1 0 0 / 0.05);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.ops {
+  display: flex;
+  gap: 8px;
+  flex: none;
+}
+
+/* 载入中：不能直接说「还没有连接」——那是假空态。 */
+.loading {
+  animation: wx-breathe 1.6s ease-in-out infinite;
+}
+
+@media (max-width: 560px) {
+  .row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

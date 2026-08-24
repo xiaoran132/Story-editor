@@ -1,148 +1,95 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useEditorStore } from "@/store/editorStore";
-import { api } from "@/lib/api";
-import { GENRES, THEMES, TONES, type LLMConnection } from "@/lib/types";
-import Textarea from "./Textarea";
-import Input from "./Input";
-import CharacterList from "./CharacterList";
-import AttrTable from "./AttrTable";
+import { GENRES } from "@/lib/types";
+import { useReducedMotion } from "@/lib/useReducedMotion";
 import { Toast } from "@/components/Toast";
-import ImageUpload from "@/components/ImageUpload";
-import PublishCheck, { StepRequired, usePublishChecks } from "./PublishCheck";
-import { NEW_GATE_ID, moveGate, readGate, walkedGate, writeGate, type Gate } from "@/lib/editorGate";
+import { usePublishChecks } from "./PublishCheck";
+import EditorSky, { type SegReady } from "./EditorSky";
+import Seg1 from "./seg1";
+import Seg2 from "./seg2";
+import Seg3 from "./seg3";
+import Seg4 from "./seg4";
+import Seg5 from "./seg5";
+import Seg6 from "./seg6";
+import styles from "./editor.module.css";
 
-// 创作编辑器主体：AI 优先流程——灵感生成世界观 → 结构化微调 → 生成开场 → 存草稿/发布。
+// 创作编辑器。规格 DESIGN.md §7.7，视觉目标 docs/design/create-editor.html。
 // create 与 edit 两页共用；差异仅初始化（create 调 reset、edit 调 loadStory）。
 //
-// 布局对齐原型 create-editor.html：左侧步骤导航 + 右侧单步面板（分步向导，不是长表单滚动）。
-// 分步的理由不只是「原型这么画」——世界观那一段字段密集（标题/简介/背景/风格/题材/基调/
-// 规则/大纲/角色），和开场、属性表堆在一页里会让作者不知道下一步该干什么。
-const STEPS = [
+// **编辑器是一部作品的天空第一次被点亮的地方**，不是贴在深色背景上的六步表单：
+// 进度不由进度条表示，进度就是左边那片天空，六段各点亮一层。某段没写完，天空就缺
+// 那一层——不需要读错误列表才知道还差什么。
+//
+// ⚠️ **段落可任意跳转，不强制线性**（§7.7）。旧实现有一道顺序解锁的门禁，理由是
+// 「属性系统这种不填也能存草稿、却决定整个玩法的步骤最容易被整个跳过」——那个担心
+// 是真的，但天空已经把它解决了：属性星那一层没亮就一直摆在眼前，比一把锁更有效，
+// 也不会把作者关在自己的作品外面。门禁连同 lib/editorGate 一起退场。
+
+const SEGS = [
   { t: "灵感", sub: "一句话起点" },
   { t: "世界观", sub: "设定 · 题材 · 基调" },
-  { t: "属性系统", sub: "数值 · 隐藏 · 门控" },
+  { t: "属性", sub: "数值 · 隐藏 · 门控" },
   { t: "开场", sub: "第一段正文" },
-  { t: "主题与生成", sub: "皮肤 · 推荐模型" },
-  { t: "发布检查", sub: "校验并上线" },
+  { t: "天空", sub: "主题 · 封面" },
+  { t: "发布", sub: "体检并上线" },
 ] as const;
+const NAMES = SEGS.map((x) => x.t);
+
 export default function StoryEditor() {
   const router = useRouter();
   const s = useEditorStore();
-  const [idea, setIdea] = useState("");
-  const [ideaStyle, setIdeaStyle] = useState("");
+  const reduced = useReducedMotion();
+
   const [confirmDel, setConfirmDel] = useState(false);
-  const [conns, setConns] = useState<LLMConnection[]>([]);
-  const [step, setStep] = useState(0);
-  // 步骤门禁：顺序解锁 + 离开才打勾，保证每一页都被看见过——放开全部跳转，
-  // 「属性系统」这种不填也能存草稿、却决定整个玩法的步骤最容易被整个跳过。
-  //
-  // 状态**按作品持久化**（lib/editorGate），不按入口区分：走到第 3 步存了草稿、
-  // 明天从「我的创作」再进来，第 5 步照样锁着。没有记录的既有作品视为已走查完
-  // （walkedGate）——本功能上线前就存在的作品，总不能反过来把作者锁在自己的成品外面。
-  const [gate, setGate] = useState<Gate>(() => walkedGate(STEPS.length));
-  const unlocked = (i: number) => i <= gate.maxUnlocked;
+  const [seg, setSeg] = useState(0);
+  const headingRef = useRef<HTMLHeadingElement>(null);
 
-  // 门禁归属的键：已保存作品用它的 id，未保存的新作品先挂占位键。
-  const gateId = s.storyId || NEW_GATE_ID;
+  // ⚠️ 必须在下面那个 `if (s.loading) return` **之前**调用——它是 hook。
+  // editorStore 是模块级的、跨页面导航不销毁：从编辑器发布完再进来，首帧带着上次的
+  // 已载入状态渲染（hooks 齐全），随后 effect 里的 reset() 把 loading 置回 true，
+  // 下一帧撞上提前 return 就少调一个 hook，React 直接抛「Rendered fewer hooks than expected」。
+  const checks = usePublishChecks();
 
-  useEffect(() => {
-    const saved = readGate(gateId);
-    // 新建且无记录 → 从头锁起；既有作品无记录 → 当作已走查完。
-    setGate(saved ?? (gateId === NEW_GATE_ID ? { maxUnlocked: 0, seen: [] } : walkedGate(STEPS.length)));
-    setStep(0);
-  }, [gateId]);
-
-  // 首次保存拿到 id：把占位记录搬到该作品名下，否则这次走查的进度会丢。
-  useEffect(() => {
-    if (s.storyId) moveGate(NEW_GATE_ID, s.storyId);
-  }, [s.storyId]);
-
-  const updateGate = (next: Gate) => {
-    setGate(next);
-    writeGate(gateId, next);
-  };
-
-  // 跳步后回到顶部——面板换了内容却停在半截滚动位置会很迷失。
-  const goStep = (i: number) => {
-    if (i < 0 || i >= STEPS.length || i === step) return;
-    updateGate({
-      // 离开当前步 → 记为看过（不是把「正要去的那一步」记进去）
-      seen: gate.seen.includes(step) ? gate.seen : [...gate.seen, step],
-      // 到达即解锁——「下一步」正是靠这句把门禁往前推
-      maxUnlocked: Math.max(gate.maxUnlocked, i),
-    });
-    setStep(i);
-    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-
-  // 拉取用户的 LLM 连接，供「使用连接」下拉（覆盖 world 环节绑定）。未登录/无连接则下拉只有默认项。
-  useEffect(() => {
-    api.get<LLMConnection[]>("/llm/connections").then((c) => setConns(c || [])).catch(() => {});
-  }, []);
-
-  // toast 文案由 editorStore 写入（genWorld / save 等异步流程都要用），
-  // 这里只负责自动消隐与渲染；样式与语义走共享的 <Toast>。
+  // toast 文案由 editorStore 写入（genWorld / save 等异步流程都要用），这里只负责自动消隐
   useEffect(() => {
     if (!s.toast) return;
     const t = setTimeout(() => useEditorStore.setState({ toast: null }), 2400);
     return () => clearTimeout(t);
   }, [s.toast]);
 
-  // 发布前置校验：镜像后端 strict 规则，未全通过则禁用发布按钮。
-  // 以前只能点了发布再等后端报错，而且一次只报一条。
-  //
-  // ⚠️ 必须在下面那个 `if (s.loading) return` **之前**调用——它是 hook。
-  // editorStore 是模块级的、跨页面导航不销毁：从编辑器发布完再进来，首帧带着上次的
-  // 已载入状态渲染（hooks 齐全），随后 effect 里的 reset() 把 loading 置回 true，
-  // 下一帧撞上提前 return 就少调一个 hook，React 直接抛
-  // 「Rendered fewer hooks than expected」。
-  const checks = usePublishChecks();
-
-  // 外壳（AppHeader）由页面层负责（app/create、app/edit），这里只渲染编辑器本体——
-  // 两边都渲染会得到两个 <header> + 两个 <nav>，屏幕阅读器的地标列表会出现两套相同导航。
-  if (s.loading)
-    return <div className="empty pulse">载入中…</div>;
-
-  // tags 的单一事实源就是 store 里的数组，UI 只做增删排序，**不认识的标签原样保留**——
-  // AI 生成或作者手填的「民国」「本格」这类不在建议表里，抹掉就是数据丢失。
-  // 排序约定：题材在前（tags[0] 决定书库分类）、自定义居中、基调置尾。
-  const isGenre = (t: string) => (GENRES as readonly string[]).includes(t);
-  const isTone = (t: string) => (TONES as readonly string[]).includes(t);
-  const extraTags = s.tags.filter((t) => !isGenre(t) && !isTone(t));
-  const reorder = (list: string[]) => [
-    ...GENRES.filter((g) => list.includes(g)),
-    ...list.filter((t) => !isGenre(t) && !isTone(t)),
-    ...list.filter(isTone),
-  ];
-  const toggleGenre = (g: string) =>
-    s.setField(
-      "tags",
-      reorder(s.tags.includes(g) ? s.tags.filter((t) => t !== g) : [...s.tags, g])
-    );
-  const setTone = (tone: string) =>
-    s.setField("tags", reorder([...s.tags.filter((t) => !isTone(t)), ...(tone ? [tone] : [])]));
-
-  const canPublish = checks.every((c) => c.ok);
-  // 打勾 = **离开过这一步** ∧ 它的必填项全过。两个条件都必要——
-  //   只看必填项 → 「属性系统」的检查是「键名均已填写」，一个属性都没有时空数组天然
-  //   通过，作者刚进编辑器就看见它被打了勾；
-  //   只看足迹   → 一进入就打勾，等于替作者宣布他看完了。
-  // 当前步的实时进度由页内 <StepRequired> 表达，不靠左侧这个勾。
-  // 走查完的作品 seen 是全集，于是退化成「只看必填项」——正是编辑既有作品时要的信号：
-  // 哪一步现在缺东西。
-  const stepDone = (i: number) => {
-    if (!gate.seen.includes(i)) return false;
-    return checks.filter((c) => c.step === i).every((c) => c.ok);
+  // 切段后焦点移到该段标题（§7.7 无障碍）：不这么做，键盘用户点完轨上的站点，
+  // 焦点还留在轨上，读屏不会念新面板里有什么。
+  const go = (i: number) => {
+    if (i < 0 || i >= SEGS.length || i === seg) return;
+    setSeg(i);
+    window.requestAnimationFrame(() => headingRef.current?.focus());
   };
 
-  const aiWorld = s.aiBusy === "world";
-  const aiOpening = s.aiBusy === "opening";
-  const aiPolish = s.aiBusy === "polish";
-  const polishStale = s.polishSourceText !== null && s.openingContent !== s.polishSourceText;
+  if (s.loading) return <p className={styles.desc}>载入中…</p>;
+
   const anyBusy = s.aiBusy !== null || s.saving;
+  const canPublish = checks.every((c) => c.ok);
+
+  // 六段的就绪判定（§7.7 那张表）。它同时驱动天空的六层与轨上的标记——
+  // 两处说的必须是同一件事，所以只算一次。
+  const attrsOk =
+    s.attributes.length > 0 &&
+    s.attributes.every((a) => a.key.trim()) &&
+    new Set(s.attributes.map((a) => a.key.trim())).size === s.attributes.length &&
+    s.attributes.every((a) => a.type !== "number" || Number.isFinite(Number(a.initial)));
+  const isGenre = (t: string) => (GENRES as readonly string[]).includes(t);
+  const ready: SegReady = [
+    s.description.trim().length >= 8 && s.tags.some(isGenre),
+    !!(s.background.trim() && s.style.trim() && s.rules.trim()),
+    attrsOk,
+    s.openingContent.trim().length >= 40,
+    s.themePicked,
+    canPublish,
+  ];
+  const missing = SEGS.filter((_, i) => !ready[i]).map((x) => x.t);
 
   const onDelete = async () => {
     try {
@@ -153,396 +100,116 @@ export default function StoryEditor() {
     }
   };
 
-  // 每个面板底部的上一步/下一步（原型 .navbtns）。
-  // 「下一步」永远可点：必填项没填完不拦——草稿本来就允许半成品，拦住只会逼作者
-  // 为了往下看而胡乱填一通。是否合规由发布按钮和 <StepRequired> 表达。
-  const NavBtns = ({ i }: { i: number }) => (
-    <div className="navbtns">
-      {i > 0 ? (
-        <button className="btn ghost sm" type="button" onClick={() => goStep(i - 1)}>
-          ← {STEPS[i - 1].t}
-        </button>
-      ) : (
-        <span />
-      )}
-      {i < STEPS.length - 1 && (
-        <button className="btn secondary sm" type="button" onClick={() => goStep(i + 1)}>
-          下一步 · {STEPS[i + 1].t} →
-        </button>
-      )}
-    </div>
-  );
-
   return (
-    <div className="ed-wrap">
-      <div className="topbar">
-        {/* 返回入口交给 AppHeader 的「我的创作」，这里只留状态徽标 */}
-        <span className={`badge ${s.status === "published" ? "active" : "ended"}`}>
+    <div className={styles.wrap}>
+      <div className={styles.head}>
+        <h1 className={styles.h1}>{s.storyId ? "编辑作品" : "写一个世界"}</h1>
+        <span className={`${styles.badge} ${s.status === "published" ? styles.badgeLive : ""}`}>
           {s.status === "published" ? "已发布" : "草稿"}
+        </span>
+        <span className={styles.saved} role="status" aria-live="polite">
+          {s.saving ? "保存中…" : ""}
         </span>
       </div>
 
-      <h1 className="ed-h1">{s.storyId ? "编辑作品" : "创作新作品"}</h1>
-
       {s.error && (
-        <div className="status err" role="alert">
+        <p className={styles.err} role="alert">
           出错：{s.error}
-        </div>
+        </p>
       )}
 
-      <div className="ed-shell">
-        <nav className="steps" aria-label="创作步骤">
-          {STEPS.map((st, i) => {
-            const open = unlocked(i);
-            return (
+      <div className={styles.editor}>
+        {/* ============ 左：正在成形的天空 ============ */}
+        <div className={styles.skyside}>
+          <EditorSky theme={s.theme} ready={ready} attrs={s.attributes} reduced={reduced} />
+          <p className={styles.skyLegend}>
+            {missing.length === 0 ? (
+              <>这片天空齐了。<b>可以发布。</b></>
+            ) : (
+              <>
+                天空还缺 <b>{missing.join(" · ")}</b> 这几层——写完那几段，它们会自己亮起来。
+              </>
+            )}
+          </p>
+        </div>
+
+        {/* ============ 右：段落轨 + 面板 ============ */}
+        <div className={styles.pane}>
+          {/* 六个站点是静态标记，渲染只改状态、不重建 DOM——重建会让焦点掉出去 */}
+          <nav className={styles.rail} aria-label="创作段落">
+            {SEGS.map((st, i) => (
               <button
                 key={st.t}
                 type="button"
-                className={`step${stepDone(i) ? " done" : ""}${open ? "" : " locked"}`}
-                aria-current={step === i ? "true" : undefined}
-                disabled={!open}
-                title={open ? undefined : "按「下一步」依次解锁"}
-                onClick={() => goStep(i)}
+                className={styles.station}
+                aria-current={seg === i ? "true" : undefined}
+                data-state={ready[i] ? "on" : undefined}
+                onClick={() => go(i)}
               >
-                <span className="n" aria-hidden="true">
-                  {stepDone(i) ? (
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                      <path d="M20 6 9 17l-5-5" />
-                    </svg>
-                  ) : open ? (
-                    i + 1
-                  ) : (
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
-                      <rect x="4" y="11" width="16" height="10" rx="2" />
-                      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
-                    </svg>
-                  )}
+                <span className={styles.stationNo} aria-hidden="true">
+                  {i + 1}
                 </span>
-                <span className="t">
-                  {st.t}
-                  <small>{st.sub}</small>
-                </span>
+                <span className={styles.stationName}>{st.t}</span>
+                <span className={styles.stationSub}>{st.sub}</span>
               </button>
-            );
-          })}
-        </nav>
+            ))}
+          </nav>
 
-        <div className="ed-panels">
-          {/* 1. 灵感 → 世界观 */}
-          {step === 0 && (
-            <section className="ed-section">
-              <span className="eyebrow lead">第 1 步 · 灵感</span>
-              <p className="me-desc">
-                先写下最模糊的那点冲动——一个场景、一句台词、一种氛围。AI 会把它扩写成完整世界观，你再回来改。
-              </p>
-              <div className="ed-idea">
-                <Textarea
-                  label="灵感"
-                  rows={3}
-                  placeholder="例：民国上海，一桩密室命案，侦探须在三日内破案…"
-                  value={idea}
-                  onChange={setIdea}
-                />
-                <Input
-                  label="风格"
-                  hint="（可选）"
-                  placeholder="如 本格推理 / 冷峻"
-                  value={ideaStyle}
-                  onChange={setIdeaStyle}
-                />
-                {conns.length > 0 && (
-                  <label className="ed-field">
-                    <span className="ed-label">
-                      使用连接 <span className="ed-hint">（AI 生成用哪套 key，默认按设置）</span>
-                    </span>
-                    <select
-                      className="ed-input ed-select"
-                      value={s.connectionId}
-                      onChange={(e) => s.setConnectionId(e.target.value)}
-                    >
-                      <option value="">默认（按环节绑定 / 平台）</option>
-                      {conns.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}（{c.default_model}）
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-                <button
-                  className="btn accent"
-                  disabled={anyBusy}
-                  onClick={() => {
-                    s.genWorld(idea, ideaStyle);
-                    goStep(1); // 生成结果落在世界观那步，直接把作者带过去看
-                  }}
-                >
-                  {aiWorld ? "AI 构思中…" : "AI 生成世界观"}
-                </button>
-              </div>
-              <NavBtns i={0} />
-            </section>
-          )}
+          <section className={styles.panel}>
+            <p className={styles.eyebrow}>第 {seg + 1} 段 · {SEGS[seg].sub}</p>
+            <h2 className={styles.h2} ref={headingRef} tabIndex={-1}>
+              {SEGS[seg].t}
+            </h2>
 
-          {/* 2. 世界观结构化微调 */}
-          {step === 1 && (
-            <section className={`ed-section ${aiWorld ? "ai-generating" : ""}`}>
-              <span className="eyebrow lead">第 2 步 · 世界观</span>
-              <p className="me-desc">
-                这段会作为系统设定注入每一次生成，写清楚世界怎么运转、玩家是谁、什么不可违背。
-              </p>
-              <StepRequired checks={checks} step={1} />
-              <Textarea label="标题" value={s.title} onChange={(v) => s.setField("title", v)} rows={1} />
-              <Textarea
-                label="简介"
-                value={s.description}
-                onChange={(v) => s.setField("description", v)}
-                rows={2}
-                hint="列表卡片展示用"
-              />
-              <Textarea label="背景" value={s.background} onChange={(v) => s.setField("background", v)} />
-              <Textarea label="风格" value={s.style} onChange={(v) => s.setField("style", v)} rows={1} />
-              <div className="ed-field">
-                <span className="ed-label">文风档案</span>
-                <span className="ed-hint">可选；用于作者侧精品润色，不改变玩家游玩链路。</span>
-                <div className="ed-field" style={{ marginTop: 10, maxWidth: 560 }}>
-                  <span className="ed-label">叙述距离</span>
-                  <select className="ed-input ed-select" value={s.styleProfile.narrative_distance ?? ""} onChange={(e) => s.setField("styleProfile", { ...s.styleProfile, narrative_distance: (e.target.value || undefined) as "close" | "medium" | "distant" | undefined })}>
-                    <option value="">（不指定）</option>
-                    <option value="close">贴近人物</option>
-                    <option value="medium">中等距离</option>
-                    <option value="distant">疏离旁观</option>
-                  </select>
-                </div>
-                <div className="ed-field" style={{ maxWidth: 560 }}>
-                  <span className="ed-label">节奏</span>
-                  <select className="ed-input ed-select" value={s.styleProfile.rhythm ?? ""} onChange={(e) => s.setField("styleProfile", { ...s.styleProfile, rhythm: (e.target.value || undefined) as "mixed" | "tight" | "relaxed" | undefined })}>
-                    <option value="">（不指定）</option>
-                    <option value="mixed">张弛混合</option>
-                    <option value="tight">紧凑</option>
-                    <option value="relaxed">舒缓</option>
-                  </select>
-                </div>
-                <Input label="感官焦点" value={(s.styleProfile.sensory_focus ?? []).join("、")} onChange={(value) => s.setField("styleProfile", { ...s.styleProfile, sensory_focus: value.split(/[、,，]/).map((item) => item.trim().slice(0, 48)).filter(Boolean).slice(0, 3) })} hint="可选，最多 3 条，用顿号或逗号分隔" />
-                <Textarea label="对白规则" value={s.styleProfile.dialogue_rule ?? ""} onChange={(value) => s.setField("styleProfile", { ...s.styleProfile, dialogue_rule: value.slice(0, 160) })} rows={2} hint="可选，例如：对白只保留必要的试探" />
-                <Textarea label="禁忌表达 / 结构" value={(s.styleProfile.avoid ?? []).join("\n")} onChange={(value) => s.setField("styleProfile", { ...s.styleProfile, avoid: value.split("\n").map((item) => item.trim().slice(0, 48)).filter(Boolean).slice(0, 5) })} rows={3} hint="可选，最多 5 条；每行一条" />
-              </div>
+            {seg === 0 && <Seg1 go={go} names={NAMES} />}
+            {seg === 1 && <Seg2 go={go} names={NAMES} />}
+            {seg === 2 && <Seg3 go={go} names={NAMES} />}
+            {seg === 3 && <Seg4 go={go} names={NAMES} />}
+            {seg === 4 && <Seg5 go={go} names={NAMES} />}
+            {seg === 5 && <Seg6 go={go} names={NAMES} />}
+          </section>
 
-              <div className="ed-field">
-                <span className="ed-label">
-                  题材
-                  <span className="ed-hint">可多选；第一个决定作品在书库里归到哪个筛选分类</span>
-                </span>
-                <div className="tagpicks">
-                  {GENRES.map((g) => (
-                    <button
-                      type="button"
-                      key={g}
-                      className="tagpick"
-                      aria-pressed={s.tags.includes(g)}
-                      onClick={() => toggleGenre(g)}
-                    >
-                      {g}
-                    </button>
-                  ))}
-                </div>
-                {extraTags.length > 0 && (
-                  <p className="ed-hint">
-                    另有自定义标签：{extraTags.join("、")}（AI 生成或手填，保留展示）
-                  </p>
-                )}
-              </div>
-
-              <label className="ed-field" style={{ maxWidth: 280 }}>
-                <span className="ed-label">基调</span>
-                <select
-                  className="ed-input ed-select"
-                  value={s.tags.find((t) => (TONES as readonly string[]).includes(t)) ?? ""}
-                  onChange={(e) => setTone(e.target.value)}
-                >
-                  <option value="">（不指定）</option>
-                  {TONES.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <Textarea label="规则" value={s.rules} onChange={(v) => s.setField("rules", v)} />
-              <Textarea
-                label="大纲"
-                value={s.outline}
-                onChange={(v) => s.setField("outline", v)}
-                rows={4}
-                hint="AI 导演的走向锚点，非线性脚本"
-              />
-              <CharacterList />
-              <NavBtns i={1} />
-            </section>
-          )}
-
-          {/* 3. 属性系统 */}
-          {step === 2 && (
-            <section className="ed-section">
-              <span className="eyebrow lead">第 3 步 · 属性系统</span>
-              <p className="me-desc">
-                属性完全自定义，后端不硬编码。类型决定合并方式：<strong>number</strong> 累加、
-                <strong>scalar</strong> 覆盖、<strong>set</strong> 集合增删。
-                <span className="ed-hint">隐藏 = 只供 AI 参考、玩家永不可见；门控 = 剧情揭示后才显示。</span>
-              </p>
-              <StepRequired checks={checks} step={2} />
-              <AttrTable />
-              <NavBtns i={2} />
-            </section>
-          )}
-
-          {/* 4. 开场 */}
-          {step === 3 && (
-            <section className={`ed-section ${aiOpening ? "ai-generating" : ""}`}>
-              <span className="eyebrow lead">第 4 步 · 开场</span>
-              <p className="me-desc">开场正文会在进入游玩时逐字流出。写一个把人拽进去的钩子，别做背景说明。</p>
-              <button className="btn accent sm" disabled={anyBusy} onClick={() => s.genOpening()}>
-                {aiOpening ? "AI 生成中…" : "AI 生成开场"}
-              </button>
-              <Textarea
-                label="开场正文"
-                value={s.openingContent}
-                onChange={(v) => s.setField("openingContent", v)}
-                rows={8}
-                hint="留空则由 AI 在开局时即时生成"
-              />
-              <div className="ed-field">
-                <Input label="润色目标（可选）" value={s.polishInstruction} onChange={(value) => s.setPolishInstruction(value)} hint="针对完整开场正文，例如：让对白更有试探感" />
-                <button className="btn accent sm" disabled={anyBusy || !s.openingContent.trim()} onClick={() => s.polishOpening()}>
-                  {aiPolish ? "精品润色中…" : "精品润色"}
-                </button>
-              </div>
-              {s.polishDraft !== null && (
-                <div className="ed-field">
-                  <span className="ed-label">精品润色预览</span>
-                  {s.polishFeedback.length > 0 && <div className="ed-opts-preview">{s.polishFeedback.slice(0, 2).map((issue, index) => <div className="opt" key={issue.category + "-" + index}><strong>{issue.category}</strong> · {issue.span_hint}：{issue.goal}</div>)}</div>}
-                  {!s.polishApplied ? <p className="ed-hint">未发现高置信改进，已保留原文。</p> : <>
-                    <textarea className="ed-textarea" value={s.polishDraft} readOnly rows={8} />
-                    {polishStale && <p className="ed-hint">正文已变更，请重新润色后再采纳。</p>}
-                    <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                      <button className="btn primary sm" disabled={polishStale} onClick={() => s.acceptPolish()}>替换开场正文</button>
-                      <button className="btn secondary sm" onClick={() => s.dismissPolish()}>保留原稿</button>
-                    </div>
-                  </>}
-                </div>
-              )}
-              {s.openingOptions.length > 0 && (
-                <div className="ed-opts-preview">
-                  <span className="ed-hint">起始选项预览（不入库，游玩时由 AI 生成）</span>
-                  {s.openingOptions.map((o, i) => (
-                    <div className="opt" key={i}>
-                      {o.text}
-                    </div>
-                  ))}
-                </div>
-              )}
-              <NavBtns i={3} />
-            </section>
-          )}
-
-          {/* 5. 主题皮肤 + 推荐模型 */}
-          {step === 4 && (
-            <section className="ed-section">
-              <span className="eyebrow lead">第 5 步 · 主题与生成</span>
-              {/* 封面与主题同属「这部作品长什么样」，放一起；不传则各处回落主题渐变 */}
-              <ImageUpload
-                kind="cover"
-                value={s.coverUrl}
-                onChange={(url) => s.setField("coverUrl", url)}
-                label="封面图"
-                hint="（可选，不传则用主题渐变）建议横图，会被裁成卡片比例"
-              />
-              <div className="ed-field">
-                <span className="ed-label">
-                  主题皮肤
-                  <span className="ed-hint">玩家进入本作品的详情/游玩页时整页换肤，离开恢复默认</span>
-                </span>
-                <div className="theme-picker">
-                  {THEMES.map((t) => (
-                    <button
-                      type="button"
-                      key={t.id}
-                      className={`theme-swatch${s.theme === t.id ? " on" : ""}`}
-                      onClick={() => s.setField("theme", t.id)}
-                      aria-pressed={s.theme === t.id}
-                    >
-                      <span
-                        className="theme-swatch-chip"
-                        style={{ background: t.swatch[1], borderColor: t.swatch[0] }}
-                      >
-                        <i style={{ background: t.swatch[0] }} />
-                      </span>
-                      {t.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <p className="me-desc" style={{ marginTop: 18 }}>
-                标注你创作/调试这部作品时各环节用的模型。
-                <span className="ed-hint">仅作推荐展示——玩家用自己的连接游玩，不会自动套用你的配置。</span>
-              </p>
-              <Input
-                label="推荐续写模型"
-                value={s.recWriteModel}
-                onChange={(v) => s.setField("recWriteModel", v)}
-                hint="如 deepseek-reasoner"
-              />
-              <Input
-                label="推荐审校模型"
-                value={s.recReviewModel}
-                onChange={(v) => s.setField("recReviewModel", v)}
-                hint="如 deepseek-chat"
-              />
-              <NavBtns i={4} />
-            </section>
-          )}
-
-          {/* 6. 发布检查 */}
-          {step === 5 && (
-            <section className="ed-section">
-              <span className="eyebrow lead">第 6 步 · 发布检查</span>
-              <p className="me-desc">发布会做严格校验，全部通过后「发布」才可用；未通过的项可直接跳去补。</p>
-              <PublishCheck checks={checks} onJump={goStep} />
-              <NavBtns i={5} />
-            </section>
-          )}
-
-          {/* 存草稿/发布/删除常驻：作者在任何一步都可能想先存一下 */}
-          <div className="ed-publishbar">
-            <button className="btn secondary sm" disabled={anyBusy} onClick={() => s.save()}>
+          {/* 存草稿 / 发布 / 删除常驻：作者在任何一段都可能想先存一下 */}
+          <div className={styles.publishbar}>
+            <button
+              className={styles.btn}
+              type="button"
+              disabled={anyBusy}
+              onClick={() => s.save()}
+            >
               {s.saving ? "保存中…" : "存草稿"}
             </button>
             {s.status === "published" ? (
-              <button className="btn secondary sm" disabled={anyBusy} onClick={() => s.unpublish()}>
+              <button
+                className={styles.btn}
+                type="button"
+                disabled={anyBusy}
+                onClick={() => s.unpublish()}
+              >
                 取消发布
               </button>
             ) : (
+              // 实心暖金主 CTA 整个编辑器只此一个（§7.7 段 6）
               <button
-                className="btn primary"
+                className={styles.btnPublish}
+                type="button"
                 disabled={anyBusy || !canPublish}
-                title={canPublish ? undefined : "还有必填项没补齐，见第 6 步发布检查"}
+                title={canPublish ? undefined : "还有体检项没过，见第 6 段"}
                 onClick={() => s.publish()}
               >
                 发布
               </button>
             )}
-            {s.storyId &&
-              (confirmDel ? (
-                <button className="btn danger sm ed-del confirm" onClick={onDelete}>
-                  确认删除？
-                </button>
-              ) : (
-                <button className="btn ghost sm ed-del" onClick={() => setConfirmDel(true)}>
-                  删除
-                </button>
-              ))}
+            {s.storyId && (
+              <button
+                className={`${styles.btn} ${styles.btnQuiet} ${styles.btnDanger}`}
+                type="button"
+                data-confirm={confirmDel ? "1" : undefined}
+                onClick={() => (confirmDel ? onDelete() : setConfirmDel(true))}
+              >
+                {confirmDel ? "确认删除？" : "删除"}
+              </button>
+            )}
           </div>
         </div>
       </div>

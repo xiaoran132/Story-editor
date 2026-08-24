@@ -1,0 +1,191 @@
+/* /mine/drafts · 草稿箱 —— 规格 DESIGN.md §7.9 */
+
+.main {
+  position: relative;
+  z-index: 10;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 34px 26px 96px;
+}
+
+.eyebrow {
+  font-size: 11px;
+  font-weight: 590;
+  letter-spacing: 0.26em;
+  color: var(--muted);
+}
+
+.h1 {
+  margin-top: 14px;
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: clamp(24px, 3vw, 34px);
+  line-height: 1.34;
+  letter-spacing: 0;
+  color: var(--fg);
+}
+
+.lede {
+  margin-top: 14px;
+  max-width: 52ch;
+  font-size: 13.5px;
+  line-height: 1.9;
+  color: var(--muted);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  margin-top: 28px;
+}
+
+.draft {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 14px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: oklch(1 0 0 / 0.03);
+  transition: border-color 0.2s var(--ease), background 0.2s var(--ease);
+}
+
+.draft:hover {
+  border-color: var(--w-line);
+  background: oklch(1 0 0 / 0.06);
+}
+
+/* 缩略天空：**只画已点亮的层**。这一栏的意义就是「这份草稿写到哪儿了」——
+   补全没写的层等于替作者宣布他写完了。 */
+.thumb {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  border: 1px solid oklch(1 0 0 / 0.1);
+  background: oklch(0.075 0.016 var(--hue));
+}
+
+.meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+  line-height: 1.45;
+  letter-spacing: 0;
+  color: var(--w-text);
+  overflow-wrap: anywhere;
+}
+
+.untitled {
+  color: var(--muted);
+}
+
+.hook {
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.when {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: oklch(0.6 0.015 265);
+}
+
+/* 缺哪几层，用文字再说一遍——缩略图小，光看层数看不出缺的是哪一段 */
+.gaps {
+  font-size: 11px;
+  line-height: 1.7;
+  color: oklch(0.62 0.015 265);
+}
+
+.gaps b {
+  color: var(--w-kick);
+  font-weight: 590;
+}
+
+.acts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+.btn {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 12.5px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  transition: background 0.16s var(--ease), border-color 0.16s var(--ease);
+}
+
+.btn:hover {
+  background: oklch(1 0 0 / 0.07);
+  border-color: var(--bright);
+}
+
+.btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+/* 删除是破坏性的：二次确认用中性亮态，不用红——一屏几张卡都挂红点比没有更糟 */
+.del {
+  margin-left: auto;
+  color: var(--muted);
+  border-color: transparent;
+}
+
+.del:hover {
+  color: var(--bright);
+}
+
+.del[data-confirm="1"] {
+  border-color: var(--bright);
+  color: var(--bright);
+}
+
+.state {
+  padding: 56px 24px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.9;
+}
+
+.stateTitle {
+  font-family: var(--font-display);
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--fg);
+}
+
+@media (max-width: 640px) {
+  .main {
+    padding: 24px 16px 80px;
+  }
+
+  .draft {
+    grid-template-columns: 110px minmax(0, 1fr);
+  }
+}

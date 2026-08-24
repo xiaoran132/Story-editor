@@ -3,15 +3,17 @@
 import { useId, useRef, useState } from "react";
 import { api, assetUrl } from "@/lib/api";
 import { ACCEPT_ATTR, ACCEPT_MIME, MAX_EDGE, shrinkImage } from "@/lib/imageResize";
+import styles from "./ImageUpload.module.css";
 
-// 通用图片上传控件（管理态）。
+// 通用图片上传控件。
 //
 // 只产出 URL，不负责落库——调用方拿到 url 后随自己那张表单一起保存
 // （头像走 PUT /auth/profile，封面走作品保存）。所以「传完还没保存」时页面上
 // 看到的是新图、库里还是旧值，这是刻意的：上传不该有副作用。
 //
 // 设计约束（docs/design/DESIGN.md §6/§7）：真 <button> 触发隐藏 file input，
-// 可见 label，错误 role="alert"，上传中/空/失败三态齐全，样式只引 tokens 变量。
+// 可见 label，错误 role="alert"，上传中/空/失败三态齐全。
+// 字段与按钮走 wanxiang.css 的共享控件层，独有的几何在 ImageUpload.module.css。
 
 const MAX_MB = 5; // 与后端 UPLOAD_MAX_MB 默认值一致
 
@@ -65,56 +67,56 @@ export default function ImageUpload({
   const src = assetUrl(value);
 
   return (
-    <div className="ed-field">
-      <span className="ed-label" id={`${errId}-label`}>
+    <div className="wx-field">
+      <span className="wx-label" id={`${errId}-label`}>
         {label}
-        {hint && <span className="ed-hint">{hint}</span>}
+        {hint && <span className="wx-hint">{hint}</span>}
       </span>
 
-      <div className="up-row">
-        <div className={`up-preview ${shape}`} data-busy={busy ? "1" : undefined}>
+      <div className={styles.row}>
+        <div className={`${styles.preview} ${styles[shape]}`} data-busy={busy ? "1" : undefined}>
           {src ? (
             // 原生 <img>：项目未配 next/image 的 remotePatterns，
             // 且这些图来自后端同源静态目录，用不上 next/image 的优化。
             // eslint-disable-next-line @next/next/no-img-element
             <img src={src} alt="" />
           ) : (
-            <span className="up-empty" aria-hidden="true">
+            <span className={styles.empty} aria-hidden="true">
               {busy ? "" : "未上传"}
             </span>
           )}
-          {busy && <span className="up-spin" aria-hidden="true" />}
+          {busy && <span className={styles.spin} aria-hidden="true" />}
         </div>
 
-        <div className="up-actions">
+        <div className={styles.actions}>
           <input
             ref={inputRef}
             type="file"
             accept={ACCEPT_ATTR}
-            className="up-file"
+            className={styles.file}
             aria-labelledby={`${errId}-label`}
             aria-describedby={error ? errId : undefined}
             onChange={(e) => void pick(e.target.files?.[0])}
           />
           <button
             type="button"
-            className="btn ghost sm"
+            className="wx-btn quiet sm"
             disabled={busy}
             onClick={() => inputRef.current?.click()}
           >
             {busy ? "上传中…" : value ? "更换图片" : "选择图片"}
           </button>
           {value && !busy && (
-            <button type="button" className="btn ghost sm up-remove" onClick={() => onChange("")}>
+            <button type="button" className="wx-btn quiet sm" onClick={() => onChange("")}>
               移除
             </button>
           )}
-          <span className="ed-hint">最大 {MAX_MB}MB · JPG/PNG/WebP/GIF</span>
+          <span className="wx-hint">最大 {MAX_MB}MB · JPG/PNG/WebP/GIF</span>
         </div>
       </div>
 
       {error && (
-        <span className="up-err" id={errId} role="alert">
+        <span className="wx-err" id={errId} role="alert">
           {error}
         </span>
       )}

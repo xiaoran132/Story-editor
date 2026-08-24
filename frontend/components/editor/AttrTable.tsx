@@ -3,6 +3,7 @@
 import { useEditorStore } from "@/store/editorStore";
 import type { AttrRowData, AttrType } from "@/lib/types";
 import { IconPlus, IconTrash } from "@/components/icons";
+import styles from "./editor.module.css";
 
 // 属性声明表：每属性一行——键 / 类型 / 初值（随类型切控件）/ 上限 / hidden / reveal / 删除。
 // initial_state 由这些行在存盘时派生，保证键严格一一对应（后端严格校验的对应项）。
@@ -13,17 +14,17 @@ export default function AttrTable() {
   const removeAttr = useEditorStore((s) => s.removeAttr);
 
   return (
-    <div className="ed-field">
-      <span className="ed-label">
+    <div className={styles.field}>
+      <span className={styles.label}>
         属性
-        <span className="ed-hint">
+        <span className={styles.hint}>
           number 数值累加 · scalar 覆盖 · set 集合；上限只对 number 有效，填了玩家端才画进度条；
           hidden 仅 AI 参考、reveal 发现前不显示
         </span>
       </span>
-      <div className="ed-list">
+      <div className={`${styles.list} ${styles.attrScroll}`}>
         {attributes.length > 0 && (
-          <div className="ed-attr-head" aria-hidden="true">
+          <div className={`${styles.attrHead} ${styles.rowHead}`} aria-hidden="true">
             <span>键名</span>
             <span>类型</span>
             <span>初值</span>
@@ -37,7 +38,7 @@ export default function AttrTable() {
           <AttrRow key={i} a={a} row={i} onChange={(patch) => updateAttr(i, patch)} onDel={() => removeAttr(i)} />
         ))}
       </div>
-      <button className="btn secondary sm ed-add" onClick={addAttr}>
+      <button className={styles.btn} onClick={addAttr}>
         <IconPlus /> 添加属性
       </button>
     </div>
@@ -59,16 +60,16 @@ function AttrRow({
 }) {
   const at = `第 ${row + 1} 个属性`;
   return (
-    <div className="ed-attr-row">
+    <div className={styles.attrRow}>
       <input
-        className="ed-input"
+        className={styles.rowInput}
         aria-label={`${at} · 键名`}
         placeholder="如 生命值"
         value={a.key}
         onChange={(e) => onChange({ key: e.target.value })}
       />
       <select
-        className="ed-input ed-select"
+        className={styles.rowInput}
         aria-label={`${at} · 类型`}
         value={a.type}
         onChange={(e) => onChange({ type: e.target.value as AttrType })}
@@ -80,7 +81,7 @@ function AttrRow({
       <InitialInput a={a} at={at} onChange={onChange} />
       {/* 上限：只有 number 能填。没上限就没有「满」的概念，玩家端不画条只显示数字。 */}
       <input
-        className="ed-input"
+        className={styles.rowInput}
         type="number"
         min={1}
         aria-label={`${at} · 上限`}
@@ -93,7 +94,7 @@ function AttrRow({
           onChange({ max: e.target.value === "" || !(n > 0) ? null : n });
         }}
       />
-      <label className="ed-check">
+      <label className={styles.cell}>
         <span className="sr-only">{at} · 隐藏（仅 AI 参考）</span>
         <input
           type="checkbox"
@@ -101,7 +102,7 @@ function AttrRow({
           onChange={(e) => onChange({ hidden: e.target.checked })}
         />
       </label>
-      <label className="ed-check">
+      <label className={styles.cell}>
         <span className="sr-only">{at} · 门控（发现前不显示）</span>
         <input
           type="checkbox"
@@ -109,7 +110,7 @@ function AttrRow({
           onChange={(e) => onChange({ reveal: e.target.checked })}
         />
       </label>
-      <button type="button" className="ed-row-del" aria-label={`删除${at}`} onClick={onDel}>
+      <button type="button" className={styles.rowDel} aria-label={`删除${at}`} onClick={onDel}>
         <IconTrash />
       </button>
     </div>
@@ -129,7 +130,7 @@ function InitialInput({
   if (a.type === "number") {
     return (
       <input
-        className="ed-input"
+        className={styles.rowInput}
         type="number"
         aria-label={`${at} · 初值`}
         value={typeof a.initial === "number" ? a.initial : 0}
@@ -141,7 +142,7 @@ function InitialInput({
     const text = Array.isArray(a.initial) ? a.initial.join("，") : "";
     return (
       <input
-        className="ed-input"
+        className={styles.rowInput}
         aria-label={`${at} · 初值（逗号分隔）`}
         placeholder="逗号分隔"
         value={text}
@@ -158,7 +159,7 @@ function InitialInput({
   }
   return (
     <input
-      className="ed-input"
+      className={styles.rowInput}
       aria-label={`${at} · 初值`}
       placeholder="初始值"
       value={typeof a.initial === "string" ? a.initial : ""}

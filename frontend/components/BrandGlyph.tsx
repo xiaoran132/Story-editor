@@ -1,4 +1,5 @@
-// 品牌标记（分支节点，见 docs/design/tokens.css 底部）。
+// 品牌标记（分支节点）。新设计的品牌标记见 docs/design/*.html 顶栏 .brand .mark：
+// 同为分叉造型，但末端有一个暖金圆点（每屏暖金配额的第 1 处）。
 // 曾在 AppHeader 与 login 页各存一份、颜色各写死一套（DESIGN §10 点名的「副本漂移」）。
 // 合并为一处并全用 currentColor：颜色交给容器（.brand .glyph 设 color），
 // 管理态与阅读态复用同一枚，不再有第二份需要同步。

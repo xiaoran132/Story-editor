@@ -1,9 +1,11 @@
 import { attrLabel, formatAttrValue, formatDelta, parseState } from "@/lib/state";
+import styles from "./AttrBar.module.css";
 
-// 阅读态左轨「状态」面板：可见属性 = 非 hidden ∧（非 reveal 门控 ∨ 已揭示）。
-// 进度条只画给**声明了 max 的 number 属性**（attrMax）——没有上限就没有「满」的概念，
-// 硬按 0–100 画会让 gold:500 永远满格、affinity:-20 永远空格，比不画更误导。
-// set 类属性（数组）归入「随身」，多于一个时带上键名，否则两组物品会糊成一片。
+// 「此刻的你」——属性三态面板。
+// 可见属性 = 非 hidden ∧（非 reveal 门控 ∨ 已揭示）。
+// hidden 的键**整条不出现**：它的契约是仅供 AI 参考，连它存在都不该让玩家知道。
+// 进度条只画给声明了 max 的 number 属性（attrMax），理由见 CSS 里的注释。
+// set 类属性（数组）归入「随身」，多于一组时带上键名，否则两组物品会糊成一片。
 export default function AttrBar({
   stateJSON,
   deltaJSON,
@@ -22,80 +24,93 @@ export default function AttrBar({
   const state = parseState(stateJSON);
   const delta = parseState(deltaJSON);
   const keys = Object.keys(state).filter(
-    (k) =>
-      !hiddenAttrs.includes(k) &&
-      (!revealGated.includes(k) || revealedAttrs.includes(k))
+    (k) => !hiddenAttrs.includes(k) && (!revealGated.includes(k) || revealedAttrs.includes(k)),
   );
 
-  // set 类属性（数组值）单独作「随身」；其余作属性行。
   const invKeys = keys.filter((k) => Array.isArray(state[k]));
   const attrKeys = keys.filter((k) => !Array.isArray(state[k]));
-  // 门控但未揭示的键：作锁定占位，暗示「剧情中会显现」。
+  // 门控但未揭示的键：作锁定占位，明说「剧情中会显现」但不泄露值。
   const lockedKeys = revealGated.filter(
-    (k) => !revealedAttrs.includes(k) && !hiddenAttrs.includes(k)
+    (k) => !revealedAttrs.includes(k) && !hiddenAttrs.includes(k),
   );
+
+  const nothing = attrKeys.length === 0 && lockedKeys.length === 0 && invKeys.length === 0;
 
   return (
     <>
-      <div className="panel">
-        <h2>状态</h2>
-        {attrKeys.length === 0 && lockedKeys.length === 0 ? (
-          <p className="od-locked">尚无可见状态</p>
-        ) : (
-          <>
-            {attrKeys.map((k) => {
-              const v = state[k];
-              const max = attrMax[k];
-              const pct =
-                typeof v === "number" && max > 0
-                  ? Math.max(0, Math.min(100, (v / max) * 100))
-                  : null;
-              const badge = Object.prototype.hasOwnProperty.call(delta, k) ? formatDelta(delta[k]) : null;
-              const up = badge?.startsWith("+");
-              return (
-                <div className="od-attr" key={k}>
-                  <div className="row">
-                    <b>{attrLabel(k)}</b>
-                    <span>{formatAttrValue(v)}</span>
-                  </div>
-                  {pct !== null && (
-                    <div className="od-bar">
-                      <i style={{ width: `${pct}%` }} />
-                    </div>
-                  )}
-                  {badge && <span className={`od-delta ${up ? "up" : "down"} run`}>{badge}</span>}
-                </div>
-              );
-            })}
-            {lockedKeys.map((k) => (
-              <div className="od-attr" key={k}>
-                <div className="od-locked">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                    <rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" />
-                  </svg>
-                  {attrLabel(k)} · 尚未显现
-                </div>
-              </div>
-            ))}
-          </>
-        )}
-      </div>
-
-      {invKeys.length > 0 && (
-        <div className="panel">
-          <h2>随身</h2>
-          {invKeys.map((k) => {
-            const arr = (state[k] as unknown[]).map(String);
+      {nothing ? (
+        <p className={styles.empty}>尚无可见状态</p>
+      ) : (
+        <>
+          {attrKeys.map((k) => {
+            const v = state[k];
+            const max = attrMax[k];
+            const pct =
+              typeof v === "number" && max > 0 ? Math.max(0, Math.min(100, (v / max) * 100)) : null;
+            const changed = Object.prototype.hasOwnProperty.call(delta, k);
+            const badge = changed ? formatDelta(delta[k]) : null;
+            const down = badge?.startsWith("-");
             return (
-              <div key={k} className="od-invgroup">
-                {invKeys.length > 1 && <span className="gk">{attrLabel(k)}</span>}
-                <div className="od-inv">
-                  {arr.length ? arr.map((it, i) => <span key={i}>{it}</span>) : <span className="od-locked">空</span>}
+              <div className={`${styles.attr} ${changed ? styles.just : ""}`} key={k}>
+                <div className={styles.row}>
+                  <span className={styles.k}>{attrLabel(k)}</span>
+                  <span className={styles.v}>
+                    {formatAttrValue(v)}
+                    {badge && (
+                      <em className={`${styles.delta} ${down ? styles.deltaDown : ""}`}>{badge}</em>
+                    )}
+                  </span>
                 </div>
+                {pct !== null && (
+                  <div className={styles.bar}>
+                    <i style={{ width: `${pct}%` }} />
+                  </div>
+                )}
               </div>
             );
           })}
-        </div>
+
+          {lockedKeys.map((k) => (
+            <div className={styles.attr} key={k}>
+              <p className={styles.locked}>
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  aria-hidden="true"
+                >
+                  <rect x="4" y="11" width="16" height="10" rx="2" />
+                  <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                </svg>
+                {attrLabel(k)} · 尚未显现
+              </p>
+            </div>
+          ))}
+
+          {invKeys.length > 0 && (
+            <div className={styles.group}>
+              <h3 className={styles.groupTitle}>随身</h3>
+              {invKeys.map((k) => {
+                const arr = (state[k] as unknown[]).map(String);
+                return (
+                  <div key={k}>
+                    {invKeys.length > 1 && <span className={styles.setKey}>{attrLabel(k)}</span>}
+                    <div className={styles.set}>
+                      {arr.length ? (
+                        arr.map((it, i) => <span key={i}>{it}</span>)
+                      ) : (
+                        <span className={styles.empty}>空</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
     </>
   );
