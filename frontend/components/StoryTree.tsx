@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { StoryNode } from "@/lib/types";
-import { layoutTree, NODE_H, type PositionedNode } from "@/lib/tree";
+import { layoutTree, NODE_H, FILLER_CHOICE, type PositionedNode } from "@/lib/tree";
 import styles from "./StoryTree.module.css";
 
 // 世界星图：这一局走过的全部航点，深度铺在横轴上（轴向的理由见 lib/tree.ts）。
@@ -14,6 +14,16 @@ import styles from "./StoryTree.module.css";
 // 全部留在图上，随时能再回去。别再把它描述成破坏性操作——那句假警告正好吓住了星图的
 // 核心用途。
 
+/** 折叠星的标签：一段没有分叉的翻页收成一颗，标出步数。 */
+export function foldedLabel(count: number): string {
+  return `${FILLER_CHOICE} ×${count}`;
+}
+
+/** 显示项的完整标签（不截断，供 <title> 用）。 */
+function itemLabel(p: PositionedNode): string {
+  return p.collapsed ? foldedLabel(p.collapsed.length) : nodeLabel(p.node);
+}
+
 /** 节点完整标签（不截断，供 <title> 与读数区用）。 */
 export function nodeLabel(n: StoryNode): string {
   if (!n.parent_id) return "开局";
@@ -23,8 +33,7 @@ export function nodeLabel(n: StoryNode): string {
 
 // 标签裁字：单行，宽度跟着实际层距走。横向流里两行标签会上下压到隔壁分支行，
 // 所以这里只留一行；完整文本在 <title> 与右侧读数区。
-function labelText(n: StoryNode, step: number): string {
-  const text = nodeLabel(n);
+function labelText(text: string, step: number): string {
   const max = Math.max(3, Math.floor((step - 10) / 11.5));
   return text.length > max ? text.slice(0, max - 1) + "…" : text;
 }
@@ -46,6 +55,9 @@ export default function StoryTree({
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [availWidth, setAvailWidth] = useState<number | undefined>(undefined);
+  // 已展开的折叠段（存段首节点 id）。抽屉一关就清空：每次打开都回到干净的默认视图，
+  // 玩家不必记得上次展开过哪几段。
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   // 量视口宽 → 自适应层距。初值 undefined（服务端没有 ResizeObserver，首帧若按真实
   // 宽度渲染会水合失配），layoutTree 那侧回落 STEP_MAX。
@@ -63,7 +75,8 @@ export default function StoryTree({
     return () => ro.disconnect();
   }, []);
 
-  const layout = nodes.length > 0 ? layoutTree(nodes, currentNodeId, availWidth) : null;
+  const layout =
+    nodes.length > 0 ? layoutTree(nodes, currentNodeId, availWidth, expanded) : null;
   // 最新布局放 ref 供滚动与键盘 effect 读取——把每次渲染新建的 layout 放进依赖，
   // 会在星图打开期间每次重渲都强制滚回当前星，与玩家手动滚动打架。
   const layoutRef = useRef(layout);
@@ -76,13 +89,17 @@ export default function StoryTree({
   useEffect(() => {
     if (!active) {
       openedRef.current = false;
+      setExpanded((prev) => (prev.size ? new Set() : prev)); // 空集时不 set，免得白重渲
       return;
     }
     const el = scrollRef.current;
     const lay = layoutRef.current;
     if (!el || !lay) return;
     const cur = lay.nodes.find((p) => p.isCurrent);
-    const target = lay.nodes.find((p) => p.id === selectedId) ?? cur;
+    const target =
+      lay.nodes.find(
+        (p) => p.id === selectedId || p.collapsed?.some((n) => n.id === selectedId)
+      ) ?? cur;
     if (!target) return;
 
     if (!openedRef.current) {
@@ -110,6 +127,19 @@ export default function StoryTree({
 
   // 焦点跟着选中项走。roving tabindex 下只有它是 tabIndex=0，
   // 所以必须显式把焦点搬过去，否则方向键走一步就丢焦点。
+  // 点折叠星 = 展开它，而不是检视。星图兼着回溯入口，直接吞掉这些航点会让玩家
+  // 没法回到翻页途中用自由输入岔出去；展开后它们就是普通航点，检视/回溯照旧。
+  const activate = (p: PositionedNode) => {
+    if (p.collapsed) {
+      // 整段的 id 都要进集合：只放段首的话，布局走到第二个节点又会折出一段新的。
+      const members = p.collapsed.map((n) => n.id);
+      setExpanded((prev) => new Set([...prev, ...members]));
+      focusNode(members[0]);
+      return;
+    }
+    onSelect(p.id);
+  };
+
   const focusNode = (id: string) => {
     requestAnimationFrame(() => {
       scrollRef.current?.querySelector<SVGGElement>(`[data-node="${id}"]`)?.focus();
@@ -125,25 +155,24 @@ export default function StoryTree({
     switch (e.key) {
       case "ArrowRight": {
         // 子节点优先取「同一行」的那个——按布局约定它就是主线上的子节点
-        const kids = at.filter((q) => q.node.parent_id === p.id).sort((a, b) => a.y - b.y);
+        const kids = at.filter((q) => q.parentItemId === p.id).sort((a, b) => a.y - b.y);
         target = kids.find((k) => k.y === p.y) ?? kids[0];
         break;
       }
       case "ArrowLeft":
-        target = at.find((q) => q.id === p.node.parent_id);
+        target = at.find((q) => q.id === p.parentItemId);
         break;
       case "ArrowUp":
       case "ArrowDown": {
-        // 同深度的其它分支：视觉上就是上下相邻的那颗星
-        const peers = at
-          .filter((q) => q.node.depth === p.node.depth)
-          .sort((a, b) => a.y - b.y);
+        // 同一**显示列**的其它分支：视觉上就是上下相邻的那颗星。
+        // 用 node.depth 会在折叠后错位——折叠段把后续节点整体左移了。
+        const peers = at.filter((q) => q.col === p.col).sort((a, b) => a.y - b.y);
         const i = peers.findIndex((q) => q.id === p.id);
         target = peers[e.key === "ArrowUp" ? i - 1 : i + 1];
         break;
       }
       case "Home":
-        target = at.find((q) => !q.node.parent_id);
+        target = at.find((q) => !q.parentItemId);
         break;
       case "End":
         target = at.find((q) => q.isCurrent);
@@ -151,7 +180,7 @@ export default function StoryTree({
       case "Enter":
       case " ":
         e.preventDefault();
-        onSelect(p.id);
+        activate(p);
         return;
       default:
         return;
@@ -166,13 +195,18 @@ export default function StoryTree({
   if (!layout) return null;
   const { nodes: pn, edges, width, height, step } = layout;
 
+  // 节点 id → 所属显示项。selectedId 指向的节点可能正被折在某颗星里（抽屉重开会重新折叠），
+  // 直接拿它当显示项 id 用会找不到东西：roving 会指向不存在的项，Tab 环里一个可聚焦元素都没有。
+  const itemFor = (nodeId: string | null) =>
+    nodeId
+      ? pn.find((p) => p.id === nodeId || p.collapsed?.some((n) => n.id === nodeId))
+      : undefined;
+  const selectedItem = itemFor(selectedId);
+
   // Tab 环里只留一个航点：否则 30 个航点全在环里，玩家要按 30 下才走到
   // 「回到这里重新选择」（游玩页那个焦点陷阱按 [tabindex] 选人）。
   const roving =
-    (selectedId && pn.some((p) => p.id === selectedId) ? selectedId : null) ??
-    currentNodeId ??
-    pn[0]?.id ??
-    null;
+    selectedItem?.id ?? pn.find((p) => p.isCurrent)?.id ?? pn[0]?.id ?? null;
 
   return (
     <div className={styles.scroll} ref={scrollRef}>
@@ -190,13 +224,14 @@ export default function StoryTree({
           const cls = [
             styles.node,
             p.isCurrent ? styles.current : p.onPath ? styles.visited : styles.branch,
-            p.id === selectedId ? styles.inspected : "",
+            p.id === selectedItem?.id ? styles.inspected : "",
             p.node.is_ending ? styles.ending : "",
+            p.collapsed ? styles.folded : "",
           ]
             .filter(Boolean)
             .join(" ");
           const r = p.isCurrent ? 7 : p.onPath ? 5.5 : 4.5;
-          const title = nodeLabel(p.node);
+          const title = itemLabel(p);
 
           return (
             // SVG 的 <g> 不是原生可聚焦元素，靠 role + tabIndex + 键盘处理补齐
@@ -206,9 +241,14 @@ export default function StoryTree({
               className={cls}
               role="button"
               tabIndex={p.id === roving ? 0 : -1}
-              aria-label={`查看航点：${title}`}
+              aria-label={
+                p.collapsed
+                  ? `展开 ${p.collapsed.length} 个连续翻页航点`
+                  : `查看航点：${title}`
+              }
+              aria-expanded={p.collapsed ? false : undefined}
               aria-current={p.isCurrent ? "true" : undefined}
-              onClick={() => onSelect(p.id)}
+              onClick={() => activate(p)}
               onKeyDown={(e) => onKeyDown(e, p)}
             >
               <title>{title}</title>
@@ -217,12 +257,20 @@ export default function StoryTree({
               <circle className={styles.hit} cx={p.x} cy={p.y} r={14} />
               <circle className={styles.halo} cx={p.x} cy={p.y} r={r + 3} />
               {p.node.is_ending && <circle className={styles.endRing} cx={p.x} cy={p.y} r={r + 6} />}
+              {/* 折叠星：两侧小点 = 「这里压着好几颗」。不用环——虚线环已经是结局的
+                  语汇（.ending .endRing）。点沿横轴排，正对被压缩掉的那一段。 */}
+              {p.collapsed && (
+                <>
+                  <circle className={styles.foldDot} cx={p.x - r - 5} cy={p.y} r={1.8} />
+                  <circle className={styles.foldDot} cx={p.x + r + 5} cy={p.y} r={1.8} />
+                </>
+              )}
               <circle className={styles.ringIn} cx={p.x} cy={p.y} r={r + 8} />
               <circle className={styles.ring} cx={p.x} cy={p.y} r={r + 10} />
               <circle className={styles.core} cx={p.x} cy={p.y} r={r} />
               <circle className={styles.pip} cx={p.x} cy={p.y} r={r * 0.34} />
               <text x={p.x} y={p.y + NODE_H / 2} textAnchor="middle">
-                {labelText(p.node, step)}
+                {labelText(title, step)}
               </text>
             </g>
           );

@@ -166,3 +166,23 @@
   stroke-dasharray: 3 5;
   opacity: 0.75;
 }
+
+/* 折叠星：一段没有分叉的「继续」翻页收成一颗（lib/tree.ts 的 collectRun）。
+   两侧小点表示「这里压着好几颗」，沿横轴排——正对被压缩掉的那一段。
+   不用环：虚线环已经是结局的语汇（.ending .endRing）。 */
+.folded .foldDot {
+  fill: oklch(0.72 0.02 var(--hue));
+  opacity: 0.42;
+  transition: opacity 0.2s var(--ease);
+}
+
+.folded:hover .foldDot,
+.folded:focus-visible .foldDot {
+  opacity: 0.85;
+}
+
+/* 折叠星的标签是「继续 ×N」这类读数，比普通航点标签更该被扫到 */
+.folded text {
+  fill: oklch(0.78 0.014 265);
+  font-variant-numeric: tabular-nums;
+}

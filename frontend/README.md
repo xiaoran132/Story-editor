@@ -121,5 +121,6 @@ frontend/
 - ⚠️ **`world_config` 在 API 入参里是 JSON 字符串，不是对象**（`service.StoryCreateInput.WorldConfig` 是 `string`）。传对象会被 400 挡回；读出来同样是字符串，要 `JSON.parse`。已实测踩过。
 - `current_state`、`suggested_options`、`state_snapshot`、`revealed_attrs` 后端以 **JSON 字符串** 返回，需经 `lib/state.ts` 解析后使用。
 - **属性可见性**（`AttrBar`）：显示某属性当且仅当 `非 hidden ∧（非 reveal 门控 ∨ 已在 session.revealed_attrs 揭示）`。后端已在服务端脱敏（`hidden` 与未揭示的 `reveal` 数值根本不下发），前端这层是一致性而非安全边界。语义详见交接手册 §5.3。
-- 续玩时后端只返回全部节点与 `current_node_id`；`store` 常驻这份 `allNodes`，`lib/tree.ts` 的 `layoutTree()` 用 `parent_id`/`depth` 建成星图——回溯不删数据，被放弃的分支也在图上（变暗）。当前路径由 `buildPath()` 沿 `parent_id` 回溯并高亮。
+- 续玩时后端只返回全部节点与 `current_node_id`；`store` 常驻这份 `allNodes`，`lib/tree.ts` 的 `layoutTree()` 用 `parent_id` 建成星图——回溯不删数据，被放弃的分支也在图上（变暗）。当前路径由 `buildPath()` 沿 `parent_id` 回溯并高亮。
+- **横轴是显示列，不是 `depth`。** 连续的「继续」翻页（AI 没给选项时 `OptionList` 只有一个继续按钮，提交字面量 `"继续"`）会被 `collectRun()` 折成一颗星，标「继续 ×N」，两侧带小点。它们不是决策点，各占一列等于用横轴长度表达「翻了几页」。**开局、当前所在、结局、真实选择一律不折叠**；末节点的分叉照常从折叠星上挂出去，结构不丢。点折叠星是**展开**而非检视（星图兼着回溯入口，直接吞掉会让玩家没法回到翻页途中用自由输入岔出去）；`expanded` 存段内每个节点 id，抽屉一关就清空。
 - `choose()` 把返回的 `current_node` **按 id 去重后**并入 `allNodes`：后端可能复用既有节点而不新建（逐字相同的选择在生成前就走既有分支，近义选择在生成后语义去重），无脑追加会让星图冒出一个重复分支。此时 SSE 只有 `done` 帧、没有 `delta`，正文瞬间出现而非逐字——这是正确表现，不是卡住。
