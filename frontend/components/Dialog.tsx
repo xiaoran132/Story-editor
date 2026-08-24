@@ -37,6 +37,14 @@ export default function Dialog({
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const restoreRef = useRef<HTMLElement | null>(null);
+  // onClose 走 ref：调用方几乎都传内联箭头函数，把它放进 effect 依赖会让
+  // 每次父组件重渲染（输入框每敲一个字符都算）都重跑一遍 effect ——
+  // 清理时把焦点还给触发元素，重跑时又聚焦面板内第一个可交互元素（关闭按钮），
+  // 表现就是「打一个字，光标跳到关闭按钮」。
+  const closeRef = useRef(onClose);
+  useEffect(() => {
+    closeRef.current = onClose;
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -50,13 +58,15 @@ export default function Dialog({
         ) ?? []
       ).filter((el) => el.offsetParent !== null);
 
-    // 优先聚焦面板内第一个可交互元素，没有就聚焦面板本身
-    (focusables()[0] ?? panel)?.focus();
+    // 优先聚焦第一个「内容里的」可交互元素——关闭按钮在 DOM 里排第一，
+    // 直接取 [0] 会让表单弹窗一打开焦点就落在「关闭」上。没有内容控件才退回它。
+    const initial = focusables();
+    (initial.find((el) => !el.classList.contains("dlg-close")) ?? initial[0] ?? panel)?.focus();
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
-        onClose();
+        closeRef.current();
         return;
       }
       if (e.key !== "Tab") return;
@@ -85,7 +95,7 @@ export default function Dialog({
       document.body.style.overflow = prevOverflow;
       restoreRef.current?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open || typeof document === "undefined") return null;
 

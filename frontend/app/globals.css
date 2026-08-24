@@ -1119,6 +1119,9 @@ html[data-motion="off"] .wx-space {
   display: inline-flex;
   align-items: center;
   cursor: pointer;
+  /* 命中区撑到 §9 的 ≥44px。轨道本身只有 30px 高，label 不给高度的话
+     整个开关就是个 30px 的目标，手指按不准。 */
+  min-height: 44px;
 }
 
 .sw input {
@@ -1129,14 +1132,26 @@ html[data-motion="off"] .wx-space {
 }
 
 .sw .track {
-  width: 38px;
-  height: 22px;
+  width: 52px;
+  height: 30px;
   border-radius: var(--r-pill);
   position: relative;
 }
 
+/* ⚠️ 滑块此前**根本不渲染**：只写了 background 与 transform，没有 content，
+   伪元素不生成，开关看上去就是一颗会变色的空药丸。 */
+.sw .track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+}
+
 .sw input:checked + .track::after {
-  transform: translateX(16px);
+  transform: translateX(22px);
 }
 
 .sw input:focus-visible + .track {

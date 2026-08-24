@@ -21,8 +21,8 @@ type LikeResult = { liked: boolean; like_count: number };
 //
 // 设计稿把详情做成星系里的聚焦面板浮层，没有独立详情页；但深链、分享链接、
 // /login?next=/story/xxx 的回跳都需要一个能单独存在的页面。所以这里出两种密度：
-//   overlay —— 浮层，止于「走进这个世界」（大卡 + 钩子 + 世界观 + 属性 + CTA）
-//   page    —— 整页，多出登场人物、生成设置、存档入口
+//   overlay —— 浮层，止于「走进这个世界」（大卡 + 钩子 + 世界观 + 属性 + 生成设置 + CTA）
+//   page    —— 整页，多出标题/作者、登场人物、游玩次数、存档入口
 // 解析、拦截、开局逻辑是同一份代码；差的只是 page 变体多渲染几段。
 //
 // 进入的拦截**必须在这里**，不能等玩家进了游玩页才吃一个流式报错：
@@ -292,18 +292,16 @@ export default function WorkDetail({ story, variant, open, onBack }: WorkDetailP
           </>
         )}
 
-        {isPage && (
-          <>
-            <h3 className={styles.h2}>生成设置</h3>
-            <StoryLLMConfigPanel
-              storyId={story.id}
-              recommended={world.recommended_models || {}}
-              loggedIn={!!user}
-              cfg={cfg}
-              onCfgChange={setCfg}
-            />
-          </>
-        )}
+        {/* 两种密度都给：浮层里同样能按「走进这个世界」，也同样会弹「没有可用模型」的
+            拦截横幅——只拦不给去路，玩家在浮层里就无路可走了。 */}
+        <h3 className={styles.h2}>生成设置</h3>
+        <StoryLLMConfigPanel
+          storyId={story.id}
+          recommended={world.recommended_models || {}}
+          loggedIn={!!user}
+          cfg={cfg}
+          onCfgChange={setCfg}
+        />
 
         {!user ? (
           <div className={styles.block}>
