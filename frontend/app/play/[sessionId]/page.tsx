@@ -11,6 +11,7 @@ import {
   SCRIM_MIN,
   SCRIM_MAX,
 } from "@/lib/readerPrefs";
+import { attrLabel, formatDelta, parseState } from "@/lib/state";
 import { useReducedMotion } from "@/lib/useReducedMotion";
 import Figure from "@/components/sky/Figure";
 import WorldScope from "@/components/sky/WorldScope";
@@ -210,6 +211,15 @@ export default function PlayPage() {
 
   const inspected = allNodes.find((n) => n.id === selectedNode) ?? null;
   const isCurrentInspected = inspected?.id === session?.current_node_id;
+  // 这一步带来的属性变化。⚠️ 不在这里做可见性过滤：后端 attrView.node
+  // （service/player_view.go）已按该节点自己的 revealed_snapshot 过滤过 state_delta，
+  // 前端再判一次只会和后端各说一套。
+  const inspectedDelta = useMemo(() => {
+    const d = parseState(inspected?.state_delta);
+    return Object.keys(d)
+      .map((k) => ({ k, badge: formatDelta(d[k]) }))
+      .filter((x): x is { k: string; badge: string } => x.badge !== null);
+  }, [inspected?.state_delta]);
   const onPathIds = useMemo(() => {
     // 根 → 当前的主线：读数区要据此说「已抵达 / 岔路」
     const byId = new Map(allNodes.map((n) => [n.id, n]));
@@ -432,8 +442,12 @@ export default function PlayPage() {
                 <i />
                 已放弃的岔路
               </span>
+              <span>
+                <i className={styles.dotEnd} />
+                结局
+              </span>
             </p>
-            <p className={styles.mapHint}>Tab 移动焦点 · Enter 查看 · Esc 关闭</p>
+            <p className={styles.mapHint}>← → 沿航迹走 · ↑ ↓ 切换分叉 · Home / End 跳到开局 / 所在处 · Esc 关闭</p>
           </div>
 
           <section className={styles.mapInspector} aria-labelledby="map-inspector-title">
@@ -459,14 +473,24 @@ export default function PlayPage() {
                         : "已放弃的岔路"}
                   </span>
                   <h3>{nodeLabel(inspected)}</h3>
-                  <p>{(inspected.content || "").slice(0, 120) || "这个航点还没有正文。"}</p>
+                  <p>{(inspected.content || "").slice(0, 200) || "这个航点还没有正文。"}</p>
+                  {inspectedDelta.length > 0 && (
+                    <div className={styles.mapDelta}>
+                      {inspectedDelta.map(({ k, badge }) => (
+                        <span key={k}>
+                          {attrLabel(k)}
+                          <b>{badge}</b>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </>
               ) : (
                 <p>选择任一航点，查看它在这次旅程中的位置。</p>
               )}
             </div>
 
-            {/* 回溯是破坏性动作：按钮文案必须把后果说出来，而不是叫「回溯」了事。
+            {/* 回溯只移动所在位置、不删数据（见下方 mapPrivacy）。
                 只读局与生成中一律禁用（locked）。 */}
             {inspected && !isCurrentInspected && (
               <button
@@ -494,7 +518,7 @@ export default function PlayPage() {
               </div>
             </dl>
             <p className={styles.mapPrivacy}>
-              查看任意航点不会改动剧情。只有「回到这里重新选择」会——它会清掉该航点之后的全部内容，包括你写下的自由行动。
+              查看任意航点不会改动剧情。「回到这里重新选择」也不删任何东西——它只把你所在的位置移回该航点，并恢复那时的属性与已揭示内容；走过的分支都留在星图上，随时能再回去。
             </p>
           </section>
         </div>

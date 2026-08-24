@@ -72,7 +72,7 @@ rg -n 'Math\.random\(' app components lib store       # 确定性伪随机走 li
 | `/` 星海 | 3D CSS 星系（`transform-style: preserve-3d`，**无 Three.js/WebGL**）：四种排布（星系 / 银河 / 书架 / 混沌）+ 拖拽旋转与惯性 + 2.6s 开屏。数据 `GET /stories?sort=plays&limit=12`。点卡片 → 星系转向 + 虚化后退 + `WorkDetail` 浮层。⚠️ ≤820px 降级为 2D 天空墙（小屏是重新编排，不是把桌面版压扁）。作品少于 6 部改「近景星群」排布，0 部是空态 +「去创作」，不是一个空球。 |
 | `/works` 作品馆 | `GET /stories?limit=100`，搜索 / 题材 / 排序 / 分页**全部前端做**。题材由在架作品的 `tags[0]` 派生。用 `meta.total` 判断有没有被截断，**有就如实说**。⚠️ 设计稿的「含隐藏属性」筛选**没做也不该做**：`sanitizeWorldConfig` 对非作者整条删键，能筛出来就等于泄露存在性。 |
 | `/story/[storyId]` | 作品详情。与星系浮层**共用 `components/WorkDetail`**（浮层与整页同一份内容契约，不写两套）——独立页是给深链、分享、`/login?next=` 回跳用的。含世界观 / 登场人物 / 属性三态 / 数据 / 生成设置（`StoryLLMConfigPanel`）/「走进这个世界」。 |
-| `/play/[sessionId]` | 游玩页。三栏舞台（左 `AttrBar` 状态轨 + 中正文 + 右旅程轨）+ 悬浮控制条（遮罩浓度 / 字号 / 行距 / 天空漂移）+ 底部选项坞（编号选项 + **1/2/3 快捷键** + 自由输入）+ 右滑世界星图抽屉（`StoryTree`）。正文衬线逐字流式（**无首字下沉**）。⚠️ 星图上点航点**只是查看**，回溯要另按「回到这里重新选择」——破坏性操作不藏在一次普通点击后面。 |
+| `/play/[sessionId]` | 游玩页。三栏舞台（左 `AttrBar` 状态轨 + 中正文 + 右旅程轨）+ 悬浮控制条（遮罩浓度 / 字号 / 行距 / 天空漂移）+ 底部选项坞（编号选项 + **1/2/3 快捷键** + 自由输入）+ 世界星图浮层（`StoryTree`，横向航迹：深度走 x、分叉走 y，层距按视口宽自适应）。正文衬线逐字流式（**无首字下沉**）。⚠️ 星图上点航点**只是查看**，回溯要另按「回到这里重新选择」——两者分开；但回溯本身**不删数据**（见下方数据流）。 |
 | `/create`·`/edit/[storyId]` | 六段式创作编辑器：左 44% sticky 天空（**天空即完成度**，六段各点亮一层）+ 右段落轨与面板（`components/editor/seg1..seg6`）。段落**可任意跳转**，没有顺序门禁。段 5 = 15 预设色块 + 自由色相条 + 6 个姿态。 |
 | `/login` | L0–L5 天空阶梯：邮箱输入逐层点亮世界。`maxLevel` 单向不倒退。登录/注册 tab 共用同一套阶梯。提交成功会写开屏已看时间戳，紧接着进星海不重播 2.6s 开屏（同一件事说两遍）。 |
 | `/mine` | 我的空间（本人视角）。作者天空（N 部作品各一层 `mix-blend-mode: screen`）+ 原创作品。数字只列**有写入路径**的三项（已发布 / 累计游玩 / 收到的赞）——摆一个恒为 0 的「粉丝」只会被读成「没人关注你」。 |
@@ -99,7 +99,7 @@ frontend/
 │   ├── prng.ts                    # 定种子线性同余。**全站禁 Math.random()**
 │   ├── types.ts                   # 后端 DTO 类型 + GENRES
 │   ├── state.ts                   # JSON 字符串字段解析 + buildPath 重建当前路径
-│   ├── tree.ts                    # 剧情线树布局（buildChildrenMap / layoutTree）
+│   ├── tree.ts                    # 航迹布局（buildChildrenMap / layoutTree，横轴=深度）
 │   ├── intro.ts                   # 开屏「播不播」的唯一判定（时间戳 + 6h TTL）
 │   ├── readerPrefs.ts             # 阅读偏好持久化（减动效 / 遮罩浓度）
 │   └── work.ts / imageResize.ts / useReducedMotion.ts

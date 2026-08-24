@@ -503,6 +503,29 @@
     linear-gradient(180deg, oklch(0.1 0.032 var(--hue)), oklch(0.048 0.014 var(--hue)));
 }
 
+/* 左右边缘渐隐：航迹是横向的，长局要让人看出「这一侧还有路」。
+   ⚠️ 不能用 mask-image 做——那会把里面那层的滚动条一起裁掉。 */
+.mapViewport::before,
+.mapViewport::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  bottom: 0;
+  width: 26px;
+  pointer-events: none;
+}
+
+.mapViewport::before {
+  left: 0;
+  background: linear-gradient(90deg, oklch(0.07 0.022 var(--hue)), transparent);
+}
+
+.mapViewport::after {
+  right: 0;
+  background: linear-gradient(270deg, oklch(0.07 0.022 var(--hue)), transparent);
+}
+
 .mapLegend {
   display: flex;
   gap: 16px;
@@ -537,6 +560,13 @@
 .mapLegend .dotNow {
   background: var(--w-star);
   border-color: var(--w-line);
+}
+
+/* 结局：虚线环。图上一直在画（StoryTree 的 .endRing），只是从来没人解释它。 */
+.mapLegend .dotEnd {
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--w-kick);
 }
 
 .mapHint {
@@ -596,9 +626,38 @@
 
 .mapReadout p {
   margin-top: 8px;
+  max-height: 136px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   font-size: 13px;
   line-height: 1.78;
   color: oklch(0.8 0.015 265);
+}
+
+/* 这一步带来的属性变化。后端 attrView.node 已按该节点自己的 revealed_snapshot
+   过滤过 state_delta，这里不需要也不应该再自己脱敏一遍。 */
+.mapDelta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.mapDelta span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 3px 9px;
+  border: 1px solid oklch(1 0 0 / 0.14);
+  border-radius: var(--r-pill);
+  font-size: 11px;
+  color: oklch(0.82 0.014 265);
+}
+
+.mapDelta b {
+  font-weight: 590;
+  color: var(--w-kick);
+  font-variant-numeric: tabular-nums;
 }
 
 /* 回溯是破坏性动作：文案必须把「会清掉之后的全部内容」说出来，
