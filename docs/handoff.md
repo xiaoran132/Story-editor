@@ -156,17 +156,18 @@ handler → service → repository
   → 流结束建根 StoryNode + 回填 current_node_id/node_count=1
   → done 帧携带持久化后的 SessionResult
 
-前端 POST /play/sessions/:id/choice/stream     （流式续写，SSE；旧的非流式 /choice 仍在）
+前端 POST /play/sessions/:id/choice/stream     （流式续写，SSE；续写只有这一条路径）
   → PlayService.MakeChoiceStream
   → loadChoiceContext：回溯出 history（带 summary）
+  → reuseExistingChild：同层子节点里有逐字相同的选择 → 直接挪指针，不生成不扣费，到此为止
   → Go 调 Agent POST /continue/stream，SSE 逐帧转发给前端：
        delta（正文增量）/ revise（审校拒绝，前端清空重来）
   → 流结束拿到完整 AIResult 后 applyContinueResult：
-       合并 state_delta → 同层语义合并去重 → 未命中才新建 StoryNode → 更新会话
+       合并 state_delta → 同层语义去重（tryMerge）→ 未命中才新建 StoryNode → 更新会话
   → done 帧携带持久化后的 SessionResult
 ```
 
-流式与审校共存（Writer / Structurer 分责）：Agent 先由 Writer 流式输出纯正文，结束后由复用同一 `llm_write` 配置的 Structurer 生成 options、state_delta、summary 等元数据；再规整并执行可选 review。拒绝则发 revise，并完整重跑 Writer → Structurer → Reviewer（上限同 `AI_REVIEW_MAX_RETRIES`）。Writer + Structurer 的累计用量回传为 `usage.write`，不新增模型配置或计费阶段。落库/去重/合并只能在流结束后做（依赖完整 delta/options）。前端游玩页 `load()` 见 `current_node=null` 即触发 `startOpening()`，有按 sessionId 的去重守卫防严格模式双触发。
+流式与审校共存（Writer / Structurer 分责）：Agent 先由 Writer 流式输出纯正文，结束后由复用同一 `llm_write` 配置的 Structurer 生成 options、state_delta、summary 等元数据；再规整并执行可选 review。拒绝则发 revise，并完整重跑 Writer → Structurer → Reviewer（上限同 `AI_REVIEW_MAX_RETRIES`）。Writer + Structurer 的累计用量回传为 `usage.write`，不新增模型配置或计费阶段。**语义**去重只能在流结束后做（依赖完整 delta/options）；逐字相同的选择则在生成之前就被 `reuseExistingChild` 截住，一个 token 都不烧（两级机制见 `docs/design.md`「分支复用与节点去重」）。前端游玩页 `load()` 见 `current_node=null` 即触发 `startOpening()`，有按 sessionId 的去重守卫防严格模式双触发。
 
 ### 6.2 Agent 质量闭环
 
@@ -217,7 +218,7 @@ prepare
 |---|---|
 | `POST /generate/stream` `POST /continue/stream` | 流式生成：SSE `delta`/`revise`/`done`/`error` 帧（`done` 携带完整 AIResult） |
 | `POST /opening/complete` | 为已写定的开场正文补起始选项 + summary（预设 opening_content 的作品） |
-| `POST /merge-check` | 在 Go 的 `state_delta` 硬过滤之后判断同层候选是否语义等价 |
+| `POST /merge-check` | 在 Go 的 `state_delta` 硬过滤之后判断同层候选是否语义等价。**必须带 `llm` 下发**（Go 侧 `judgeCfg`：优先审校档，未开审校退到写作档）——agent 无默认凭据，缺了每次 502 |
 | `POST /assist/world`、`/opening`、`/polish`、`/branches` | 创作辅助；**经 Go `/api/v1/assist/*` 转发**给创作编辑器消费（agent 无鉴权/CORS，前端不直连；Go 侧用 180s `assistClient`） |
 | `POST /assist/validate-key` | 校验某 LLM key 是否可用（一次性 ping，**独立于 `_build_llm` 缓存与生成管线**，不落库）；经 Go 的 `/llm/connections/test`、`/admin/llm/platform/test` 复用 |
 | `GET /health` | 检查模型配置状态 |
@@ -260,7 +261,7 @@ cd ..\agent
 
 ESLint 用 `next/core-web-vitals`，只关了 `@next/next/no-img-element` 一条（项目刻意用原生 `<img>`，理由见 `frontend/.eslintrc.json` 与 `components/ImageUpload.tsx`）。
 
-当前 Python 测试精简为十个关键回归：`test_stream.py` 覆盖正常流式回合、审校重写、耗尽降级和关闭审校，且在正常路径一并校验 reveal 门控与 usage 归属；`test_llm_parse_retry.py` 覆盖 JSON 重试和无默认凭据；`test_assist_polish.py` 覆盖润色闭环的未触发、采用、复审回退与预调用预算保护。Go 有 `play_merge_test.go`（节点语义合并契约）、`access_test.go` / `ownership_test.go`（可见性与归属）、`player_view_test.go`（玩家可见投影）、`llm_resolver_test.go`（BYOK 解析优先级）、`worldvalidate_test.go`（含 style_profile 发布校验）、`crypto_test.go` / `upload_test.go`，以及 `play_opening_test.go`（开场并发：AI 只生成一次、只扣一次费、后到者复用而非报错；leader 重读；唯一冲突翻幂等；约束名判定）。
+当前 Python 测试精简为十个关键回归：`test_stream.py` 覆盖正常流式回合、审校重写、耗尽降级和关闭审校，且在正常路径一并校验 reveal 门控与 usage 归属；`test_llm_parse_retry.py` 覆盖 JSON 重试和无默认凭据；`test_assist_polish.py` 覆盖润色闭环的未触发、采用、复审回退与预调用预算保护。Go 有 `play_merge_test.go`（节点语义合并契约）、`access_test.go` / `ownership_test.go`（可见性与归属）、`player_view_test.go`（玩家可见投影）、`llm_resolver_test.go`（BYOK 解析优先级）、`worldvalidate_test.go`（含 style_profile 发布校验）、`crypto_test.go` / `upload_test.go`，`play_opening_test.go`（开场并发：AI 只生成一次、只扣一次费、后到者复用而非报错；leader 重读；唯一冲突翻幂等；约束名判定），以及 `play_reuse_test.go`（逐字相同的选择不生成不扣费不建节点；`CheckMerge` 必须收到模型连接；语义命中复用既有节点；判定失败仍照常推进）。
 
 **可选的一档**（默认不编译）：`play_opening_integration_test.go` 带 `//go:build integration`，测的是替身测不出来的 Postgres 特性——部分唯一索引真的拒绝第二个根节点、23505 翻成幂等成功、脏库上 `EnsureRootIndex` 必须报错。⚠️ 这是刻意隔离的：现有 `go test -race ./...` 不需要 PostgreSQL 就能跑，一刀切加 PG 集成测试会让没装 PG 的人连 `go test ./...` 都过不了。
 

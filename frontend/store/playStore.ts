@@ -186,7 +186,9 @@ export const usePlayStore = create<PlayState>((set, get) => ({
   choose: async (choice) => {
     const { session, busy } = get();
     if (!session || busy || !choice.trim()) return;
-    // 续写：新子节点增量并入 allNodes。
+    // 续写：新子节点增量并入 allNodes。**按 id 去重**——后端可能复用既有节点而不新建
+    // （逐字相同的选择走 reuseExistingChild，近义选择走 tryMerge），此时返回的节点
+    // 已经在 allNodes 里，无脑 push 会让树上冒出一个重复分支。
     await runStream(
       set,
       `/play/sessions/${session.id}/choice/stream`,
@@ -195,7 +197,9 @@ export const usePlayStore = create<PlayState>((set, get) => ({
         set((s) => ({
           session: r.session,
           currentNode: r.current_node,
-          allNodes: r.current_node ? [...s.allNodes, r.current_node] : s.allNodes,
+          allNodes: r.current_node
+            ? [...s.allNodes.filter((n) => n.id !== r.current_node!.id), r.current_node]
+            : s.allNodes,
         }))
     );
   },

@@ -107,7 +107,7 @@ def merge_check(req: MergeCheckRequest) -> MergeCheckResponse:
     lines.append("\n请判断新选择是否与某个候选语义等价，返回 matched_index。")
 
     try:
-        data = chat_json(MERGE_SYSTEM, "\n".join(lines), temperature=0.0)
+        data = chat_json(MERGE_SYSTEM, "\n".join(lines), temperature=0.0, llm_cfg=_cfg(req.llm))
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"ai merge-check failed: {e}") from e
 

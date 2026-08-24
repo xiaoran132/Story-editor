@@ -62,7 +62,7 @@ type storyAI interface {
 		ctx context.Context, world WorldConfig, initialState map[string]any,
 		content string, write *AgentLLMConfig,
 	) (*AIResult, error)
-	CheckMerge(ctx context.Context, newChoice, newContent string, candidates []MergeCandidate) (int, error)
+	CheckMerge(ctx context.Context, newChoice, newContent string, candidates []MergeCandidate, judge *AgentLLMConfig) (int, error)
 }
 
 // playLLMResolver 是 PlayService 对 *LLMResolver 的调用面（BYOK 分环节解析）。

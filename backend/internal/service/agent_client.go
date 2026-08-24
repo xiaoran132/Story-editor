@@ -183,6 +183,7 @@ type mergeCheckRequest struct {
 	NewChoice  string           `json:"new_choice"`
 	NewContent string           `json:"new_content"`
 	Candidates []MergeCandidate `json:"candidates"`
+	LLM        *AgentLLMConfig  `json:"llm,omitempty"`
 }
 
 type mergeCheckResponse struct {
@@ -337,15 +338,22 @@ func normalizeAIResult(r *AIResult) {
 
 // CheckMerge 判定新选择是否与某个已有同层候选语义等价（候选已按 state_delta 相等预筛）。
 // 返回命中的候选下标；-1 表示不合并、应新建节点。候选为空时不调用 AI，直接返回 -1。
-func (c *AgentClient) CheckMerge(ctx context.Context, newChoice, newContent string, candidates []MergeCandidate) (int, error) {
+//
+// judge 必传：agent 不持有任何默认凭据。漏掉它曾让本接口每次都 502——而 tryMerge
+// 把错误与「不合并」当同一件事，于是合并功能全线静默失效。
+func (c *AgentClient) CheckMerge(ctx context.Context, newChoice, newContent string, candidates []MergeCandidate, judge *AgentLLMConfig) (int, error) {
 	if len(candidates) == 0 {
 		return -1, nil
+	}
+	if judge == nil {
+		return -1, fmt.Errorf("merge-check: 未解析到可用的模型连接")
 	}
 	var out mergeCheckResponse
 	err := c.postInto(ctx, "/merge-check", mergeCheckRequest{
 		NewChoice:  newChoice,
 		NewContent: newContent,
 		Candidates: candidates,
+		LLM:        judge,
 	}, &out)
 	if err != nil {
 		return -1, err

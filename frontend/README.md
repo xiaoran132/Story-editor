@@ -122,3 +122,4 @@ frontend/
 - `current_state`、`suggested_options`、`state_snapshot`、`revealed_attrs` 后端以 **JSON 字符串** 返回，需经 `lib/state.ts` 解析后使用。
 - **属性可见性**（`AttrBar`）：显示某属性当且仅当 `非 hidden ∧（非 reveal 门控 ∨ 已在 session.revealed_attrs 揭示）`。后端已在服务端脱敏（`hidden` 与未揭示的 `reveal` 数值根本不下发），前端这层是一致性而非安全边界。语义详见交接手册 §5.3。
 - 续玩时后端只返回全部节点与 `current_node_id`；`store` 常驻这份 `allNodes`，`lib/tree.ts` 的 `layoutTree()` 用 `parent_id`/`depth` 建成星图——回溯不删数据，被放弃的分支也在图上（变暗）。当前路径由 `buildPath()` 沿 `parent_id` 回溯并高亮。
+- `choose()` 把返回的 `current_node` **按 id 去重后**并入 `allNodes`：后端可能复用既有节点而不新建（逐字相同的选择在生成前就走既有分支，近义选择在生成后语义去重），无脑追加会让星图冒出一个重复分支。此时 SSE 只有 `done` 帧、没有 `delta`，正文瞬间出现而非逐字——这是正确表现，不是卡住。

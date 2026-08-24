@@ -390,7 +390,6 @@ func (s *PlayService) adoptExistingOpening(
 }
 
 // loadChoiceContext 校验会话并回溯出 AI 上下文（当前节点到根的路径 + history）。
-// MakeChoice 与 MakeChoiceStream 的前置阶段一致，抽出复用。
 // 返回 story 而非解析好的 WorldConfig：下游既要 world（合并属性）又要 CreatorID（判断
 // 是不是作者本人、决定要不要脱敏），拆成两个返回值不如直接给源。
 func (s *PlayService) loadChoiceContext(ctx context.Context, sessionID, playerID uuid.UUID) (
@@ -437,11 +436,72 @@ func (s *PlayService) loadChoiceContext(ctx context.Context, sessionID, playerID
 	return session, story, pathNodes, history, nil
 }
 
+// adoptNode 把会话指针挪到一个**已存在**的节点上：生成前逐字复用命中
+// （reuseExistingChild），或生成后语义去重命中（tryMerge）。
+// 只更新会话，不建节点、不动 NodeCount——那个节点早就在树上了。
+func (s *PlayService) adoptNode(
+	ctx context.Context, session *model.PlaySession, node *model.StoryNode, view attrView,
+) (*SessionResult, error) {
+	session.CurrentNodeID = &node.ID
+	session.CurrentState = node.StateSnapshot     // delta 与父状态一致，快照等价
+	session.RevealedAttrs = node.RevealedSnapshot // 揭示状态同步到复用节点快照
+	session.LastPlayedAt = time.Now()
+	if node.IsEnding {
+		session.Status = "ended"
+	}
+	if err := s.sessions.Update(ctx, session); err != nil {
+		return nil, err
+	}
+	return view.result(session, node), nil
+}
+
+// reuseExistingChild 在**生成之前**尝试复用既有分支：当前节点的直接子节点里若有一个
+// 选择文本逐字相同，直接把会话指针挪过去——不调 AI、不扣费。未命中返回 (nil, nil)。
+//
+// 为什么它和 tryMerge 各占一头，而不是合并成一个：两者判的不是同一件事。tryMerge 判
+// 「近义选择」（“冲进衣帽间”/“冲到衣帽间内”），必须先有正文才判得了，所以它最多省下
+// 一个重复节点，省不掉那次生成。而回溯后重点同一个推荐选项是**逐字**相同的，不需要任何
+// 模型就能认出来，也就没有理由先烧一次 token 再把结果丢掉。
+//
+// 代价说清楚：同一个选择从此不再重新掷骰，回溯重选必定回到原分支。想要不同的结果就换
+// 一句选择文本——自由输入天然匹配不上，照常走生成。
+func (s *PlayService) reuseExistingChild(
+	ctx context.Context, session *model.PlaySession, story *model.Story, choice string,
+) (*SessionResult, error) {
+	want := strings.TrimSpace(choice)
+	if want == "" {
+		return nil, nil
+	}
+	children, err := s.nodes.FindChildren(ctx, *session.CurrentNodeID)
+	if err != nil {
+		// 读失败就上抛，不要「读不到就当没有」——那等于烧一次 token 再长出一条重复分支。
+		return nil, err
+	}
+	for i := range children {
+		if children[i].ChoiceText == nil || strings.TrimSpace(*children[i].ChoiceText) != want {
+			continue
+		}
+		world := parseWorld(story.WorldConfig)
+		view := newAttrView(world, story.CreatorID == session.PlayerID)
+		return s.adoptNode(ctx, session, &children[i], view)
+	}
+	return nil, nil
+}
+
+// judgeCfg 选合并判定用的连接：优先审校档（判定是个小任务，审校模型通常更便宜），
+// 没开审校就退到写作档。agent 不持有默认凭据，这里必须给出一个。
+func judgeCfg(write, review *AgentLLMConfig) *AgentLLMConfig {
+	if review != nil {
+		return review
+	}
+	return write
+}
+
 // applyContinueResult 消费一次续写生成结果：状态合并 → 同层语义去重 → 建节点/复用 + 更新会话。
-// 非流式与流式共用（区别仅在生成阶段；落库阶段依赖完整结果，两者一致）。
+// judge 是去重判定用的模型连接（见 judgeCfg）。
 func (s *PlayService) applyContinueResult(
 	ctx context.Context, session *model.PlaySession, pathNodes []model.StoryNode,
-	story *model.Story, choice string, result *AIResult,
+	story *model.Story, choice string, result *AIResult, judge *AgentLLMConfig,
 ) (*SessionResult, error) {
 	world := parseWorld(story.WorldConfig)
 	view := newAttrView(world, story.CreatorID == session.PlayerID)
@@ -452,18 +512,15 @@ func (s *PlayService) applyContinueResult(
 
 	// 生成后去重：若新选择与当前节点的某个已有直接子节点「状态变化相同 + 语义等价」，
 	// 复用该子节点而不新建，避免近义选择（如“冲进衣帽间”/“冲到衣帽间内”）污染剧情树。
-	if merged, err := s.tryMerge(ctx, *session.CurrentNodeID, choice, result); err == nil && merged != nil {
-		session.CurrentNodeID = &merged.ID
-		session.CurrentState = merged.StateSnapshot     // delta 与父状态一致，快照等价
-		session.RevealedAttrs = merged.RevealedSnapshot // 揭示状态同步到复用节点快照
-		session.LastPlayedAt = time.Now()
-		if merged.IsEnding {
-			session.Status = "ended"
-		}
-		if err := s.sessions.Update(ctx, session); err != nil {
-			return nil, err
-		}
-		return view.result(session, merged), nil
+	// 逐字相同的选择在生成之前就被 reuseExistingChild 截住了，走不到这里。
+	merged, err := s.tryMerge(ctx, *session.CurrentNodeID, choice, result, judge)
+	if err != nil {
+		// 判定失败不拦玩家这一回合，照常建新节点——但必须留痕。把错误和「不合并」
+		// 当同一件事（原来的 `err == nil && merged != nil`）正是这个功能死了很久
+		// 都没人发现的原因：agent 每次都 502，外部表现只是「合并没生效」。
+		log.Printf("play: merge-check failed (session=%s): %v", session.ID, err)
+	} else if merged != nil {
+		return s.adoptNode(ctx, session, merged, view)
 	}
 
 	parentID := *session.CurrentNodeID
@@ -509,6 +566,15 @@ func (s *PlayService) MakeChoiceStream(
 	if err != nil {
 		return nil, err
 	}
+
+	// 生成前复用：逐字相同的选择直接走既有分支。放在 resolvePlay **之前**——
+	// 重走一条已经生成过的路不烧 token，没配模型不该是拦路理由。
+	if reused, err := s.reuseExistingChild(ctx, session, story, choice); err != nil {
+		return nil, err
+	} else if reused != nil {
+		return reused, nil
+	}
+
 	world := parseWorld(story.WorldConfig)
 	currentState := parseState(session.CurrentState)
 	write, review, err := s.resolvePlay(ctx, playerID, session.StoryID)
@@ -527,12 +593,14 @@ func (s *PlayService) MakeChoiceStream(
 	done := context.WithoutCancel(ctx)
 	// 扣平台额度：token 已经烧掉了，所以无论后续落库成功与否都要记账。
 	s.credit.ChargeAll(done, playerID, &session.StoryID, write, review, result.Usage)
-	return s.applyContinueResult(done, session, pathNodes, story, choice, result)
+	return s.applyContinueResult(done, session, pathNodes, story, choice, result, judgeCfg(write, review))
 }
 
 // tryMerge 在当前节点的已有直接子节点中，寻找与本次生成「state_delta 相同 + 语义等价」的一个复用。
 // 先按 delta 相等硬过滤（省掉 AI 调用），再对候选调 agent 判语义；命中返回该子节点，否则 (nil, nil)。
-func (s *PlayService) tryMerge(ctx context.Context, parentID uuid.UUID, choice string, result *AIResult) (*model.StoryNode, error) {
+func (s *PlayService) tryMerge(
+	ctx context.Context, parentID uuid.UUID, choice string, result *AIResult, judge *AgentLLMConfig,
+) (*model.StoryNode, error) {
 	children, err := s.nodes.FindChildren(ctx, parentID)
 	if err != nil {
 		return nil, err
@@ -558,9 +626,9 @@ func (s *PlayService) tryMerge(ctx context.Context, parentID uuid.UUID, choice s
 		return nil, nil
 	}
 
-	matched, err := s.ai.CheckMerge(ctx, choice, result.Content, candidates)
+	matched, err := s.ai.CheckMerge(ctx, choice, result.Content, candidates, judge)
 	if err != nil {
-		return nil, err // 判定失败：不合并，交由调用方走新建
+		return nil, err // 判定失败：调用方记日志后走新建
 	}
 	if matched < 0 {
 		return nil, nil

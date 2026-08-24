@@ -240,10 +240,15 @@ class MergeCandidate(NoneTolerantModel):
 
 
 class MergeCheckRequest(NoneTolerantModel):
-    """判定新选择是否与某个已有候选语义等价（候选已由 Go 侧按 state_delta 相等预筛）。"""
+    """判定新选择是否与某个已有候选语义等价（候选已由 Go 侧按 state_delta 相等预筛）。
+
+    llm 必填：agent 不持有任何默认凭据，缺配置 = 硬错误。Go 侧下发审校档连接
+    （没开审校则退到写作档），判定是个小任务，不值得单开一档配置。
+    """
     new_choice: str = ""
     new_content: str = ""
     candidates: list[MergeCandidate] = Field(default_factory=list)
+    llm: LLMConfig | None = None
 
 
 class MergeCheckResponse(BaseModel):

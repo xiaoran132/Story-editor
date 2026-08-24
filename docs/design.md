@@ -293,11 +293,27 @@ LIMIT 20;
 - 属性状态的**唯一事实来源是 `play_sessions.current_state`**；`state_delta` 是审计/回溯依据，`state_snapshot` 是回溯加速缓存。三者必须在同一事务写入，见本文「三份状态数据的一致性约定」一节。
 - 回溯：不删任何节点，以目标节点为新 `parent_id` 分叉；`current_state` 从目标节点 `state_snapshot` 恢复。
 
-### 节点语义合并与去重（`tryMerge`）
+### 分支复用与节点去重（两级）
 
 `service/agent_client.go` 是独立 HTTP 客户端，调 agent 的 `/generate`、`/continue`、`/merge-check`，不依赖 repository 层；`CheckMerge` 走通用的 `postInto`（`post` 是它针对 `AIResult` 的特化包装）。
 
-`tryMerge`（`play.go`，在 `applyContinueResult` 内）在续写流结束之后、建新节点之前去重：取当前节点的同层子节点（`FindChildren`），先按 `state_delta` 的规范化 JSON 相等做**硬过滤**（`deltaEqual`，省一次 AI 调用），再对剩下的候选调 `CheckMerge` 判断语义等价。命中就复用该子节点（只挪会话指针，`NodeCount` 不变），否则建新节点。**策略保守：agent 拿不准就不合并。**
+同一个父节点下的重复分支在**两个不同的时机**被拦，因为它们判的不是同一件事：
+
+| | 时机 | 判据 | 省下什么 |
+|---|---|---|---|
+| `reuseExistingChild` | 生成**之前**（`MakeChoiceStream` 内，早于 `resolvePlay`） | 选择文本 `TrimSpace` 后逐字相同 | 整次生成 + 整次扣费 |
+| `tryMerge` | 生成**之后**、建节点之前（`applyContinueResult` 内） | `state_delta` 规范化 JSON 相等的**硬过滤**（`deltaEqual`）+ `CheckMerge` 判语义等价 | 一个重复节点 |
+
+逐字相同的选择（回溯后重点同一个推荐选项）不需要任何模型就能认出来，所以没有理由先烧一次 token 再把结果丢掉——这是 `reuseExistingChild` 必须在 `resolvePlay` 之前的原因：重走一条已经生成过的路不花钱，没配模型不该成为拦路理由。近义选择（“冲进衣帽间”/“冲到衣帽间内”）则必须先有正文才判得了，只能事后去重。**策略保守：agent 拿不准就不合并。**
+
+两条路命中后都走 `adoptNode`：只挪会话指针（`current_node_id` / `current_state` / `revealed_attrs`），不建节点、`NodeCount` 不变。
+
+代价是明确的：**同一个选择不再重新掷骰**，回溯重选必定回到原分支；想要不同的结果就换一句选择文本（自由输入天然匹配不上，照常走生成）。
+
+两个约束容易被下一次改动破坏：
+
+- **`/merge-check` 必须带 `llm` 配置下发**（Go 侧 `judgeCfg`：优先审校档，没开审校退到写作档）。agent 不持有任何默认凭据，漏掉它会让该接口每次 502。
+- **`CheckMerge` 的 error 与「不合并」是两件事**。合二为一（早期的 `err == nil && merged != nil`）会让判定失败静默退化成「合并没生效」，外部无从发现——这正是该功能曾长期全线失效却无人察觉的原因。现在失败会打日志并回退到新建节点，玩家这一回合不受影响。
 
 ------
 

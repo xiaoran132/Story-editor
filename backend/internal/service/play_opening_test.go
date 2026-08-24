@@ -123,8 +123,30 @@ func (f *fakeNodes) FindBySessionID(_ context.Context, sessionID uuid.UUID) ([]m
 	return out, nil
 }
 
-func (f *fakeNodes) FindChildren(context.Context, uuid.UUID) ([]model.StoryNode, error) {
-	return nil, nil
+// FindChildren 按 parent_id 过滤，与真仓储一致。**不能返回 nil 了事**：
+// 生成前逐字复用与生成后语义去重都建立在这一次查询上，替身敷衍掉它，
+// 等于把这两条路径整个挡在测试之外。
+func (f *fakeNodes) FindChildren(_ context.Context, parentID uuid.UUID) ([]model.StoryNode, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []model.StoryNode
+	for i := range f.nodes {
+		if f.nodes[i].ParentID != nil && *f.nodes[i].ParentID == parentID {
+			out = append(out, f.nodes[i])
+		}
+	}
+	return out, nil
+}
+
+// add 往树上塞一个已存在的节点（测试用）。
+func (f *fakeNodes) add(n model.StoryNode) model.StoryNode {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if n.ID == uuid.Nil {
+		n.ID = uuid.New()
+	}
+	f.nodes = append(f.nodes, n)
+	return n
 }
 func (f *fakeNodes) FindPath(context.Context, uuid.UUID) ([]model.StoryNode, error) {
 	return nil, nil
@@ -137,6 +159,12 @@ type fakeAI struct {
 	gate    chan struct{} // 非 nil 时 StartStoryStream 先等它关闭，用来钉死时序
 	entered chan struct{} // 非 nil 时进入 StartStoryStream 立刻 close，让测试确知「已经进来了」
 	content string
+
+	contCalls  int32 // ContinueStream 被调次数
+	mergeCalls int32 // CheckMerge 被调次数
+	mergeMu    sync.Mutex
+	mergeJudge *AgentLLMConfig                     // 最近一次 CheckMerge 收到的下发配置
+	mergeFn    func([]MergeCandidate) (int, error) // 非 nil 时决定判定结果，否则一律 -1
 }
 
 func (f *fakeAI) StartStoryStream(
@@ -173,10 +201,19 @@ func (f *fakeAI) StartStoryStream(
 }
 
 func (f *fakeAI) ContinueStream(
-	context.Context, WorldConfig, []PathStep, map[string]any, string,
-	[]string, *AgentLLMConfig, *AgentLLMConfig, func(string), func(),
+	_ context.Context, _ WorldConfig, _ []PathStep, _ map[string]any, choice string,
+	_ []string, _, _ *AgentLLMConfig, onDelta func(string), _ func(),
 ) (*AIResult, error) {
-	return nil, errors.New("not used")
+	atomic.AddInt32(&f.contCalls, 1)
+	if onDelta != nil {
+		onDelta(f.content)
+	}
+	return &AIResult{
+		Content:    f.content,
+		Options:    []Option{{Text: "继续"}},
+		StateDelta: map[string]any{},
+		Summary:    "续写：" + choice,
+	}, nil
 }
 
 func (f *fakeAI) CompleteOpening(
@@ -185,8 +222,25 @@ func (f *fakeAI) CompleteOpening(
 	return nil, errors.New("not used")
 }
 
-func (f *fakeAI) CheckMerge(context.Context, string, string, []MergeCandidate) (int, error) {
+func (f *fakeAI) CheckMerge(
+	_ context.Context, _, _ string, candidates []MergeCandidate, judge *AgentLLMConfig,
+) (int, error) {
+	atomic.AddInt32(&f.mergeCalls, 1)
+	f.mergeMu.Lock()
+	f.mergeJudge = judge
+	fn := f.mergeFn
+	f.mergeMu.Unlock()
+	if fn != nil {
+		return fn(candidates)
+	}
 	return -1, nil
+}
+
+// lastJudge 取最近一次 CheckMerge 收到的下发配置（判定 agent 有没有拿到凭据）。
+func (f *fakeAI) lastJudge() *AgentLLMConfig {
+	f.mergeMu.Lock()
+	defer f.mergeMu.Unlock()
+	return f.mergeJudge
 }
 
 // fakeResolver 实现 playLLMResolver：永远解析得到一套平台档配置，审校关闭。
