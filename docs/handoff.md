@@ -15,12 +15,12 @@ Story Editor 的长期愿景是“AI 驱动的互动剧情共创社区”：用�
 
 | 域 | 已完成 | 未完成或限制 |
 |---|---|---|
-| 用户 | 后端注册/登录/JWT/资料、凭证分表；**前端登录接入完成**（游玩需登录，匿名与会话迁移已移除，见 §9.2）；**个人主页 `/me`（资料 + 编辑昵称/简介/头像 + BYOK 连接管理）**；**BYOK 已接入生成**（连接=账号级、模型=作品级，见 §12）；**注册赠 1 元平台额度 + 按 token 计费扣减**；头像上传 | OAuth/密码找回未做；**充值服务未做**（额度用尽只能自带 key）；单价需 admin 手填；旧 `User.LLMKeyCipher`（单 key）已废弃、列留孤儿 |
-| 作品 | Story CRUD（列表/详情 LEFT JOIN users 带出 `creator_name` 作者昵称，只读投影）、作品列表、世界观/初始状态 JSON；**创作编辑器(MVP)**：`world_config`/`opening_content` 可写入、运行时校验(`pkg.ValidateWorldConfig`，草稿宽松/发布严格)、发布态切换、我的作品列表、assist Go 转发；**文风档案与完整开场精品润色预览**；**封面上传（`/uploads/image` + `cover_url`，见 §14）** | `/assist/branches` 编辑内接入未做 |
+| 用户 | 后端注册/登录/JWT/资料、凭证分表；**前端登录接入完成**（游玩需登录，匿名与会话迁移已移除，见 §9.2）；**我的空间 `/mine`（空间/草稿箱/历史记录/消息/设置五页）**，设置页含资料 + 头像 + BYOK 连接管理；**BYOK 已接入生成**（连接=账号级、模型=作品级，见 §12）；**注册赠 1 元平台额度 + 按 token 计费扣减**；头像上传 | OAuth/密码找回未做；**充值服务未做**（额度用尽只能自带 key）；单价需 admin 手填；旧 `User.LLMKeyCipher`（单 key）已废弃、列留孤儿 |
+| 作品 | Story CRUD（列表/详情 LEFT JOIN users 带出 `creator_name` 作者昵称，只读投影）、作品列表、世界观/初始状态 JSON；**创作编辑器(MVP)**：`world_config`/`opening_content` 可写入、运行时校验(`pkg.ValidateWorldConfig`，草稿宽松/发布严格)、发布态切换、我的作品列表、assist Go 转发；**文风档案与完整开场精品润色预览**；**封面上传（`/uploads/image` + `cover_url`，见 §14）**；**`GET /stories` 参数化**（`sort`/`limit`/`offset`，见 §7.1）；**`play_count` 有写入路径了**（开场落库成功时经 `StoryCounter` 窄接口自增，见 §9.2） | `/assist/branches` 编辑内接入未做 |
 | 游玩 | 开局、续写、自由输入、回溯、读档、删档、剧情树、状态合并；质量审校可开关（默认关）；**全组需登录，草稿仅作者可玩**；**hidden/未揭示 reveal 的数值不外发**（§9.2） | **匿名不能玩**（额度挂账号，详情页拦截并引导登录）；真实环境下的多回合质量/延迟指标尚未沉淀 |
 | Agent | **流式生成(SSE)**、属性类型规整（含 hidden）、故事大纲导演、滚动摘要、审校分级 + 有记忆修订 + 超限降级交付 | RAG、多 Agent fan-out、独立 director/recall/write 子图未做 |
-| 前端 | **双态设计体系（`docs/design` 落地，见 §13）**：管理态（白底 Inter + 全局 `AppHeader`）发现书库(错落瀑布 + 题材/搜索前端过滤 + 三态)、我的创作、社区占位、登录页(`/login` 双栏)、个人主页、admin、创作编辑器；阅读态（暖深色 Noto Serif + `useReadingTheme` 整页换肤 + 遮罩浓度/昼夜可调）作品详情、游玩(三栏舞台 + 状态轨 + 选项坞 1/2/3 快捷键 + 星图抽屉)。正文逐字流式(无首字下沉)、属性揭示门控可见性(hidden 全程不露面)、进度条按 `max` 声明画、登录/会话迁移、按作品配模型、作品级 8 主题换肤 | 社区功能、移动端细节/自动化测试未做 |
-| 社区 | 无 | 路由**未注册**（访问 404）；浏览、详情、点赞、评论、搜索、排行榜均未实现 |
+| 前端 | **万象设计体系全量落地（见 §13）**，14 条路由全在新体系上：`/` 3D CSS 星系(四种排布 + 拖拽惯性 + 2.6s 开屏)、`/works` 作品馆、`/story/[id]`、`/play/[id]`(三栏舞台 + 状态轨 + 选项坞 1/2/3 快捷键 + 星图抽屉)、`/create`·`/edit/[id]` 六段式编辑器(天空即完成度)、`/login` 天空阶梯、`/mine` 五页、`/admin`、`not-found`，以及 `/community`·`/mine/inbox` 两个**零假数据**的开发中页。正文逐字流式(无首字下沉)、属性三态可见性(hidden 全程不露面)、进度条按 `max` 声明画、按作品配模型、每作品一个 `--hue` 染色 | 社区功能未做；**无前端自动化测试、无 CI**（`.github/` 只剩 ESLint），闸门是本地 lint/typecheck/build + 真机走查 |
+| 社区 | **点赞**（`POST/DELETE /stories/:id/like`，幂等，`story_likes` 唯一索引去重，与 `stories.like_count` 同事务） | `/community/*` 路由**未注册**（访问 404）；评论、收藏、关注、搜索、排行榜均未实现 |
 | 商业化 | SQL 蓝本中有概念 | 付费、打赏、分成、成就未做 |
 
 ### 2.1 实现矩阵：一个领域在四个地方各是什么状态
@@ -38,10 +38,11 @@ PRD 写愿景、`infa/sql` 写蓝图、GORM 建真表、API/UI 才是玩家摸�
 | 平台模型设置 | — | `llm.sql` ✅ | `PlatformLLMSetting` | `/admin/llm/platform` ✅（需 admin） | §12 |
 | 用量与额度 | §1.4 商业化 | `llm.sql` + `users.credit_micro_cny` ✅ | `LLMUsageLog` + `User.CreditMicroCNY` | 按 token 计费扣减 ✅；**充值未做** | §12 |
 | 上传素材 | §1.1 | **无表**（文件落磁盘） | 无 | `/uploads/image` ✅；孤儿文件无回收（§9.2） | §14 |
-| 社区（点赞/评论/收藏/关注） | §1.2 | `community.sql` **仅蓝图** | **无** | **路由未注册**，访问 404 | §9.2 |
+| 点赞 | §1.2 | `community.sql` 仅蓝图；实际表由 `AutoMigrate` 从 `StoryLike` 建 | `StoryLike` | `POST/DELETE /stories/:id/like` ✅（幂等，`AuthRequired`） | §7.1 |
+| 社区（评论/收藏/关注） | §1.2 | `community.sql` **仅蓝图** | **无** | **路由未注册**，访问 404 | §9.2 |
 | 付费 / 打赏 / 成就 | §1.4 | 仅 `stories.price_config` 字段 | 无 | 无 | `prd.md` §1.4 |
 
-**运行中的模型就是这 9 个**：`User`、`UserCredential`、`Story`、`StoryNode`、`PlaySession`、`LLMConnection`、`PlatformLLMSetting`、`UserStoryLLMConfig`、`LLMUsageLog`。`infa/sql/` 里其余表（community 全部、素材/关注等）**没有任何一张进入运行库**——该目录不参与建表，见其文件头声明。
+**运行中的模型就是这 10 个**：`User`、`UserCredential`、`Story`、`StoryLike`、`StoryNode`、`PlaySession`、`LLMConnection`、`PlatformLLMSetting`、`UserStoryLLMConfig`、`LLMUsageLog`。⚠️ `AutoMigrate` 之外还有一条**显式 DDL**：部分唯一索引 `uniq_root_per_session`（GORM 的模型标签表达不了 `WHERE parent_id IS NULL`），由 `main.go` 在 `AutoMigrate` 之后调 `EnsureRootIndex` 建，见 §9.2。`infa/sql/` 里其余表（community 全部、素材/关注等）**没有任何一张进入运行库**——该目录不参与建表，见其文件头声明。
 
 ## 3. 系统架构与职责
 
@@ -200,7 +201,7 @@ prepare
 | 域 | 接口 |
 |---|---|
 | 鉴权 | `POST /auth/register`、`POST /auth/login`、`GET/PUT /auth/profile`（登录签发的 JWT 现携带 `role` 快照） |
-| 作品 | `POST/GET /stories`、`GET/PUT/DELETE /stories/:id`（`GET` 挂 `AuthOptional`：作者可读自己的草稿，其他人只读 published、越权返 **404 不返 403**；非作者拿到脱敏 `world_config`）。**节点 CRUD 已整组下线**，见 §9.2 |
+| 作品 | `POST/GET /stories`（列表收 `sort=recent\|plays`、`limit`(默认 50，>100 夹到 100)、`offset`(默认 0) 三个查询参数；**非法值一律回落默认、不返 400**——展示参数不该让一个拼错的 query 打死首页，且负 `offset` 会让 Postgres 的 `OFFSET -1` 直接语法错变 500。排序带稳定次级键 `play_count DESC, created_at DESC, id`）、`GET/PUT/DELETE /stories/:id`（`GET` 挂 `AuthOptional`：作者可读自己的草稿，其他人只读 published、越权返 **404 不返 403**；非作者拿到脱敏 `world_config`）。`POST/DELETE /stories/:id/like` 点赞与取消（`AuthRequired`，两条都幂等，返回 `{liked, like_count}`；可见性同 `GET`，别人的草稿一律 404）。**节点 CRUD 已整组下线**，见 §9.2 |
 | 游玩（全组 AuthRequired） | `POST /play/sessions`（建空会话）、`POST /play/sessions/:id/opening/stream`（SSE 流式开局，幂等）、`GET /play/sessions`、`GET/DELETE /play/sessions/:id`、`POST /play/sessions/:id/choice/stream`（SSE 流式续写）、`POST /play/sessions/:id/backtrack`（**所有按 sessionID 访问的接口均校验 `session.PlayerID` 归属**） |
 | 图片上传（AuthRequired） | `POST /uploads/image`（multipart：`file` + `kind`∈{avatar,cover}，返回 `{url}`）；静态直出 `GET /uploads/*`（见 §14） |
 | `POST /assist/world`、`/opening`、`/polish`、`/branches` | 创作辅助；**经 Go `/api/v1/assist/*` 转发**给创作编辑器消费（agent 无鉴权/CORS，前端不直连；Go 侧用 180s `assistClient`）。四个成功响应均回传已知 `usage` 供 Go 统一计费 |
@@ -259,7 +260,19 @@ cd ..\agent
 
 ESLint 用 `next/core-web-vitals`，只关了 `@next/next/no-img-element` 一条（项目刻意用原生 `<img>`，理由见 `frontend/.eslintrc.json` 与 `components/ImageUpload.tsx`）。
 
-当前 Python 测试精简为十个关键回归：`test_stream.py` 覆盖正常流式回合、审校重写、耗尽降级和关闭审校，且在正常路径一并校验 reveal 门控与 usage 归属；`test_llm_parse_retry.py` 覆盖 JSON 重试和无默认凭据；`test_assist_polish.py` 覆盖润色闭环的未触发、采用、复审回退与预调用预算保护。Go 有 `play_merge_test.go`（节点语义合并契约）、`access_test.go` / `ownership_test.go`（可见性与归属）、`player_view_test.go`（玩家可见投影）、`llm_resolver_test.go`（BYOK 解析优先级）、`worldvalidate_test.go`（含 style_profile 发布校验）与 `crypto_test.go` / `upload_test.go`。
+当前 Python 测试精简为十个关键回归：`test_stream.py` 覆盖正常流式回合、审校重写、耗尽降级和关闭审校，且在正常路径一并校验 reveal 门控与 usage 归属；`test_llm_parse_retry.py` 覆盖 JSON 重试和无默认凭据；`test_assist_polish.py` 覆盖润色闭环的未触发、采用、复审回退与预调用预算保护。Go 有 `play_merge_test.go`（节点语义合并契约）、`access_test.go` / `ownership_test.go`（可见性与归属）、`player_view_test.go`（玩家可见投影）、`llm_resolver_test.go`（BYOK 解析优先级）、`worldvalidate_test.go`（含 style_profile 发布校验）、`crypto_test.go` / `upload_test.go`，以及 `play_opening_test.go`（开场并发：AI 只生成一次、只扣一次费、后到者复用而非报错；leader 重读；唯一冲突翻幂等；约束名判定）。
+
+**可选的一档**（默认不编译）：`play_opening_integration_test.go` 带 `//go:build integration`，测的是替身测不出来的 Postgres 特性——部分唯一索引真的拒绝第二个根节点、23505 翻成幂等成功、脏库上 `EnsureRootIndex` 必须报错。⚠️ 这是刻意隔离的：现有 `go test -race ./...` 不需要 PostgreSQL 就能跑，一刀切加 PG 集成测试会让没装 PG 的人连 `go test ./...` 都过不了。
+
+```powershell
+Push-Location backend
+# ⚠️ 只能指向可随意清空的隔离测试库：会建/删索引、制造唯一冲突、改 play_count
+$env:TEST_DB_DSN = "<isolated test database DSN>"
+go test -tags=integration ./internal/service/ -run 'Opening|RootIndex' -v
+Pop-Location
+```
+
+它自建自清（`TestMain` 只建连，schema 由用例自己 `AutoMigrate` + `EnsureRootIndex`，数据用 `t.Cleanup` 删干净）；未设 `TEST_DB_DSN` 时整组 skip，同包的纯 Go 用例照常跑。
 
 ### 8.3 必做的人工验收
 
@@ -354,15 +367,18 @@ cd agent
 - **作品下架后既有会话转只读（2026-08-11）**：作者取消发布，别人玩到一半的那一局**可以读完，但不能再推进**——这是「引用模式」的下架语义（PRD §5.4.8）。`PlayService.storyGate` 返回 `playable`，`GetSession` 据此置 `SessionResult.read_only`；写路径（续写 / 开场生成 / 回溯）一律被 `readOnlyErr` 拒绝，文案明确、不用 404：玩家早就玩过这部作品，藏它没有意义。**注意 SSE 路由的状态码仍是 200** —— `sseStart` 在调 service 前就提交了响应头，所以续写/开场是以 `event: error` 帧送出该文案（本项目所有流式错误都如此，前端读 `detail`）；只有 `backtrack` 这类普通 JSON 路由才真的返 403。读档列表的 `available=false` 是同一含义，卡片仍可点，状态照常脱敏后外发。
 - **玩家可见数据投影已完成（2026-08-11）**：`hidden` 属性与未揭示的 `reveal` 属性，其数值不再出现在任何游玩接口的 `current_state`/`state_snapshot`/`state_delta` 里（`service/player_view.go` 的 `attrView`）。节点按**自身** `revealed_snapshot` 过滤，所以时间线不会提前剧透、回溯到发现之前会重新隐藏；会话按 `revealed_attrs`。作者玩自己的作品不脱敏。读档列表取不到作品时整份状态置空（宁可多挡）。
 - 社区路由**未注册**（2026-08-11），访问一律 404。此前空壳 handler 返 `success:true`，会让调用方误判操作成功。
+- **开场并发有三层保护，各管各的（2026-08-21）**：① **进程内单飞**（`PlayService.flights sync.Map`，key 是 `sessionID`）——唯一能省掉重复生成与重复扣费的一层；leader 身份取 `LoadOrStore` 的第二个返回值（**不是 `singleflight.Shared`**，那个对所有调用方都为 true，照它判会让 leader 把正文播两遍），抢到之后**先重读会话**再决定生不生成，收尾三步「填结果 → `Delete` → `close`」且 `Delete` 必须在事务提交之后，`defer` 带 recover（leader panic 而没 close 会让 follower 永久挂起）；follower 不接自己的 `onDelta` 进共享工作，拿到结果用 `streamFixedText` 回放。② **部分唯一索引** `uniq_root_per_session`（`repository.RootIdxName`，`NodeRepository.EnsureRootIndex` 建，`main.go` 在 `AutoMigrate` 之后调、失败即 `log.Fatalf`）——跨实例、跨重启的兜底；撞上它翻成**幂等成功**（`adoptExistingOpening`）而不是 500。⚠️ 判定必须**连约束名一起判**，只看 SQLSTATE 23505 会把将来任何一条唯一冲突都吞成「根节点已存在」，把真实错误埋掉；也不能用 `gorm.ErrDuplicatedKey`——`main.go` 的 `gorm.Open` 没开 `TranslateError`，那个哨兵永远不会产生。③ **阅读量自增**放在事务提交之后，经 `StoryCounter` 窄接口走 SQL 表达式（`play_count = play_count + 1`，不读改写），失败只记日志不上抛——计数绝不能弄砸玩家这一回合。**⚠️ ② 挡不住那个请求已经花掉的生成与扣费，那是 ① 的职责，而 ① 只在单实例内有效**；多实例化时换成数据库层认领（给 `play_sessions` 加 `opening_claimed_at` + TTL）。
+- **`play_count` 的口径是「产生过开场」，不是「建过会话」**：计数点在 `StartOpeningStream` 根节点落库成功之后，`POST /play/sessions` 只插一行空会话不算。用计数器而非 `COUNT(play_sessions)` 派生：删存档不该抹掉「读过」这件事。老会话不追认，一次性手工回填（**别写进启动流程**，`seed()` 正是因为在生产库上跑启动期夹具代码才被整个删掉）：`UPDATE stories s SET play_count = (SELECT COUNT(*) FROM play_sessions WHERE story_id = s.id AND current_node_id IS NOT NULL);`
 - `AutoMigrate` 适合当前 demo，不等同于生产级迁移治理。
 - Go 侧的 context 透传、优雅关闭等工程化问题记在 [prd.md](prd.md) 开放问题里（seed 开关已不再是问题：整个 seed 于 2026-08-12 删除）。
 
 ### 9.3 建议的后续顺序
 
-1. **试玩与观测**：补 Agent/PlayService 回归测试、埋点或日志，跑真实多回合样本。
-2. ~~**创作前端**：消费 `/assist/*`，打通"创作 → 游玩"~~ ✅ 已完成(MVP)：`/create`·`/edit/:id`·`/mine`，AI 优先 + 结构化属性表；后端补 `world_config` 输入/校验/发布态/assist 转发。文风档案与 `/assist/polish` 的候选预览/显式采纳已接入；剩余打磨是 `/assist/branches` 编辑内接入。
-3. **Agent 阶段二**（**因备案冻结真机验证而暂缓**，待线上恢复后带真实数据做）：依据数据选择先拆 director、先补 recall/RAG；不要一次完成完整多 Agent。
-4. **社区 MVP**：发布、浏览、详情、点赞/评论；随后才考虑付费与成就。
+1. **试玩与观测**：跑真实多回合样本，攒够量后用 `tools/aggregate_log.py` 结账（埋点已就位，见 §9.1）。这仍是第一优先级——提示词质量只有真人多回合能量出来。
+2. ~~**创作前端**：消费 `/assist/*`，打通"创作 → 游玩"~~ ✅ 已完成(MVP)。剩余打磨是 `/assist/branches` 编辑内接入。
+3. ~~**前端重构**：万象设计体系落地~~ ✅ 已完成（14 条路由，见 §13）。剩余是**真机走查**：`/mine` 有作品时的作者天空、`/mine/history` 有存档时的行版式两处版式仍未用真数据验过（探针账号既无作品也无存档）。
+4. **Agent 阶段二**（**因备案冻结真机验证而暂缓**，待线上恢复后带真实数据做）：依据数据选择先拆 director、先补 recall/RAG；不要一次完成完整多 Agent。
+5. **社区 MVP**：评论、收藏、关注（点赞已落地）；随后才考虑付费与成就。⚠️ 衍生分叉（`derivation-graph`）需要 fork 模型 + 分支归属 + 分支计数，是独立于社区 MVP 的一整块，见 §13。
 
 ## 10. 文档维护规则
 
@@ -425,46 +441,54 @@ cd agent
 **下发链路**：Go 解析出 `AgentLLMConfig{provider,base_url,api_key,model}` → 塞进 agent 请求体（`llm_write`/`llm_review`/`llm`）→ agent `_build_ephemeral` 构造临时 ChatOpenAI。**agent 不碰库、也不持有任何默认凭据**：三个关键字段缺一即抛 `LLMConfigMissing`。key/额度/策略全在 Go。
 
 **admin 门槛（最小）**：JWT 携带 `role` 快照（`pkg.GenerateToken(userID, role, secret)`）；`middleware.RequireAdmin()` 校验；`/admin/llm/*` 挂 `AuthRequired+RequireAdmin`。
-- **产生第一个 admin**：手动改库 `UPDATE users SET role='admin' WHERE username='<你的用户名>';`，然后该用户**重新登录**（role 是 JWT 签发时快照，旧 token 不含新角色）。前端 `/admin` 与 `/me` 的「平台设置」入口按 `user.role==='admin'` 显示；后端才是硬防线。
+- **产生第一个 admin**：手动改库 `UPDATE users SET role='admin' WHERE username='<你的用户名>';`，然后该用户**重新登录**（role 是 JWT 签发时快照，旧 token 不含新角色）。前端 `/admin` 与 `/mine/settings` 的「平台设置」入口按 `user.role==='admin'` 显示；后端才是硬防线。
 
-## 13. 双态设计体系 + 作品级主题换肤
+## 13. 万象设计体系（深空 + 每作品一个色相）
 
-**双态（`docs/design` 落地）**：`app/globals.css` 分三层——① token 层：管理态浅色在 `:root`（`--bg/#fff`、`--fg`、`--accent/#1677ff`、`--shadow-card` 等），阅读态暖深色在 `.od-reading` 作用域（`--ink/--scrim/--scrim-alpha(下限 .52)/--accent-read/--glow-a/-b/--scene-*`）；② 管理态组件层（`.app-header/.work-card/.wall/.chip/.btn/.card/.field/三态`）；③ 阅读态组件层（`.od-bg/.od-grain/.od-vignette/.scrim/.od-stage/.od-rail/.reader/.dock/.choice/.od-drawer` + 星图树阅读配色）。字体：`layout.tsx` 经 `next/font` 注入 Inter(`--font-sans-inter`) + Noto Serif SC(`--font-serif-noto`)，`globals.css` 的 `--font-sans/--font-serif` 引用它们并接系统回退栈。**两边变量名必须错开**——同名时 `:root` 与 next/font 注入的 class 权重相同(0,1,0)，后加载的 `globals.css` 会覆盖掉真实字体名，webfont 白下载不生效（已踩过一次）。
+**深空墨底 + 纯黑剪影 + CSS/SVG 生成的天空**，每部作品一个 `--hue`(0–360) 驱动整套 `oklch()` 派生色。**没有模式切换这回事**——深色底是「每部作品的颜色能读成光」的物理前提。被它取代的那条旧方向（白底 + 管理态/阅读态双态）存档在 `docs/design/wanxiang-design-brief.md` §1，代码于 P4 删净。
 
-- **管理态**（默认）：发现书库、我的创作、社区、登录表单、个人主页、admin、创作编辑器。统一 `components/AppHeader.tsx`（sticky 毛玻璃 + 分支节点 glyph + 导航 + 搜索 + 创作 + 账户下拉 `AuthWidget`）。外壳恒中性，彩色只来自作品自身。
-- **阅读态**：作品详情、游玩、登录左氛围栏。整页暖深 + 分层 CSS 场景背景 + 半透明遮罩；正文衬线**无首字下沉**（按既定偏好，偏离原型这一处）。游玩页遮罩浓度滑块（`--scrim-alpha`，夹在 52–92）与昼/夜（`data-mode`）**两者同构**：都存 localStorage、都由 `useReadingTheme` 在挂载时套用、卸载时清除（inline 的 `--scrim-alpha` 必须 `removeProperty`，否则漏到外壳页并与控件 state 失同步）。
+**样式只有两个去处**：`app/globals.css`（全站唯一一份全局表，1081 行）+ 每页/每组件一份 CSS Module。全局表只放三类东西：① token（`:root` 全局 + `.world-scope` 角色 token + `@property --hue`）；② reset、`.sr-only`、减动效；③ 全站共享组件层（背景栈 / 天空 / 剪影 / 顶栏 / 二级导航 / 表单件 / 按钮 / 开关 / 对话框 / Toast + 五个 `wx-` 关键帧）。**token 的真源是 `docs/design/DESIGN.md` §3–§4，全局表是它的实现，不是第二份真源。**
 
-**作品级主题（8 套）**：主题 id 存 `world_config.theme`（缺省 `star`），**零后端改动**透传（后端固定 struct 反序列化忽略未知键）。`lib/types.ts` `THEMES` = star/ink/horror/sci/love/xian/heal/radio，每套 `swatch=[强调色,渐变起,渐变止]`（`themeAccent/themeGradient/themeLabel` 取用）。**仅阅读态换肤**：`lib/useReadingTheme.ts` hook 把 `od-reading` class + `data-work-theme` + `data-mode` + `--scrim-alpha` 挂到 `<html>`（CSS 变量只父→子继承，故挂 html 非 .wrap），卸载全部清除回管理态白底。`globals.css` 的 `.od-reading[data-work-theme="…"]` 各覆盖 `--glow-a/-b/--accent-read/--scene-*`（star 默认无需块）。消费者：详情页 `app/story/[storyId]/page.tsx`（读 `parseWorld().theme`）、游玩页 `app/play/[sessionId]/page.tsx`（读 `playStore.theme`，`load()` 复用已拉 `/stories/:id`，零额外请求）。管理态页不挂 → 恒白底中性。
+字体：`layout.tsx` 经 `next/font` 注入 Inter(`--font-sans-inter`) + Noto Serif SC(`--font-serif-noto`)，`globals.css` 的 `--font-ui`/`--font-display` 引用它们并接系统回退栈。**两边变量名必须错开**——同名时 `:root` 与 next/font 注入的 class 权重相同(0,1,0)，后加载的 `globals.css` 会覆盖掉真实字体名，webfont 白下载不生效（已踩过一次）。
 
-**入口/展示**：编辑器 `StoryEditor.tsx` 第 5 步「主题与生成」的色块选择器（读 `THEMES`），与封面上传并列；`editorStore.ts` `theme` round-trip。发现页封面卡 `StoryCard.tsx` 有封面图时用图 + 主题渐变半透明罩层，无图时用纯主题渐变（管理态外壳始终白），kicker/点缀用强调色。星图树/抽屉在阅读态自动取暖金配色。
+**作品级主题**存在 `world_config.theme`，**零后端改动**透传（后端固定 struct 忽略未知键）。**存的是值不是 id**：`{hue, figure}`——预设若只是前端常量，改动某个预设的色相会让所有用它的作品一起变色；值固化进作品后，颜色是作品身份的一部分。库里两种形态长期并存（实测 12 部里 7 部是老的字符串预设 id、5 部是对象），`lib/hue.ts` 的 `resolveTheme(worldConfig, storyId)` 三级解析全吃：对象 → 预设查表 → `storyId` 哈希兜底。15 套预设只服务编辑器段 5 的选色器。主题脱离作品获得独立身份是既定路线，架构见 [plan.md](plan.md) 附录 A；那一步加的是身份层不是替换存储层，本轮的读路径一行不作废。
 
-**边界（不做）**：玩家全局覆盖皮肤推迟。（`--reader-bg` 自主背景图替换点已由作品封面接上，见 §14。）
+主题**不是换肤而是染色**：一个 `--hue` 驱动 `.world-scope` 上整套 `oklch()` 角色 token（`--w-sky-*`／`--w-line`／`--w-ink`／`--w-plate` 等，L 与 C 写死、只有 H 跟着变）。⚠️ 挂载点必须是**消费它的那个元素**（由 `components/sky/WorldScope.tsx` 负责），放 `:root` 会把所有卡片锁成同一色相。消费者：星系卡、聚焦浮层与详情页（`WorkDetail`，浮层与整页同一份内容契约）、游玩页整页（`playStore.theme` 是 `{hue,figure}`，`load()` 复用已拉的 `/stories/:id`，零额外请求）、草稿箱与历史的缩略天空。
+
+**天空是全站复用最多的图元**，收敛在 `components/sky/`：`Sky`（分层 `sky-grad → halo → cloud → starfield → meteor → horizon → ground-glow → figure`，各页取子集）、`Figure`（六姿态剪影）、`Backdrop`（固定背景栈）、`WorldScope`（挂 `--hue` 的作用域容器）。星点撒布一律走 `lib/prng.ts` 的定种子线性同余，**全站禁 `Math.random()`**——服务端渲染与客户端水合必须产出同一串数。
+
+**顶栏分两态**（`components/wx/WxHeader.tsx` + `AccountMenu.tsx`）：主导航只放三项公共入口（星海 / 作品馆 / 社区），**不随登录态变形**；右侧账户区已登录是头像 → 下拉菜单（我的空间 / 草稿箱 / 历史记录 / 消息 / 设置，admin 另有平台设置，末尾退出登录），匿名是「登录 + 注册」。⚠️ 两个入口**永不同屏**——设计稿 §7.6 原写「顶栏不加登录入口」，理由只覆盖登录态，而产品里匿名访客可以浏览已发布作品，照原规格做他会看到一个没有任何登录入口的顶栏。**个人向的新页面一律加进 `AccountMenu` 的 `ITEMS`**，不要往主导航上挂。⚠️ 登录态判定要等 `authStore.hydrated`：服务端与客户端首帧都读不到 localStorage，按 `user===null` 直接画会让已登录的人先闪一下「登录 / 注册」；补水前两态都不渲染，标记一致故无 hydration mismatch。
+
+**入口/展示**：编辑器段 5「主题与天空」= 15 个预设色块 + 自由色相条 + 6 个姿态，`themePicked` 作段 5 的就绪判定（是编辑期足迹，**不进 `world_config`**）。作品卡无封面时渲染纯 CSS 天空——库里 12 部 `cover_url` 全空，**无图态是默认态、不是降级态**。
+
+**不落地的一页**：`docs/design/derivation-graph.html`（衍生星图）**没有路由，也不做占位**。它的前提是跨作者衍生分叉，而无 fork 模型、无分支归属、无 `copied_from`；作者侧 node CRUD 已于 2026-08-11 下线且明令不得复用 `StoryNode`（§9.2）。做一个「开发中」的星图页只会让人以为 `/play` 那个坏了。该原型已重做为 v4「缎带」画法（不画分支，画走过分支的人：支流宽度 = 人数，根占满画布、孩子在父亲宽度内按人数分段，因此**构造上不可能溢出**；标签只在河道够宽时才出现，重叠不可能发生）——⚠️ **这套画法降级不到 `/play` 的世界星图**：单人 session 树里每条支路的「人数」恒为 1，缎带会退化成等宽色带，核心信息量整个消失。它是后端具备 fork 与分支计数之后的目标形态，不是现在可搬的东西。`/play` 星图继续用「节点即星 / 连线即光 / 待揭示虚线环 / 确定性布局」那套。
+
+**边界（不做）**：玩家全局覆盖皮肤推迟。（`--reader-bg` 那个自主背景图替换点已随旧层删除；作品封面走的是 `cover_url`，见 §14。）
 
 ### 13.1 沉淀下来的硬约束
 
-原 13.1–13.6 是六段按日期堆的变更叙述（2026-08-10 的三个阶段）。**过程已在 git log 里**（`f167c29`、`a53097d`），这里只留改完之后仍然生效、且踩过坑才知道的约束。
+只留仍然生效、且踩过坑才知道的约束。
 
 **布局与卡片**
 - 书库作品墙是**等大网格**（`grid` + `repeat(auto-fill, minmax(260px,1fr))`），不是 `column-count` 瀑布——多列是竖向填充，阅读顺序会变成「第 1 列从上到下再第 2 列」，且 6 张卡会排成左重右轻。
 - 卡片等大靠：封面 `min-height: 210px` + 列向 flex，标题钳 2 行、摘要钳 3 行，CTA 用 `margin-top: auto` 顶到封面底部（标题长短不一时 CTA 仍在同一水平线）。**骨架卡必须同步等高**，否则加载态到落地会跳动。
-- kicker 用 `tags[0]`（真题材），不是 `themeLabel()`——`theme` 只决定配色，拿它当题材会让《孤岛探案》标成「恐怖 · 怪谈」。首页 chip 从**实际在架作品**的 `tags[0]` 聚合并计数，少于两类整条不出。
+- 题材角标用 `tags[0]`，**不是主题**——`theme` 只决定配色，拿它当题材会让《孤岛探案》标成「恐怖 · 怪谈」。`/works` 的题材筛选从**实际在架作品**的 `tags[0]` 派生，缺 `tags` 的那部要有兜底、不能渲染成空白角标。
 - 窄屏（≤1080px）**不隐藏属性轨**：属性是「选哪一项」的依据，藏了就没法决策。左轨改成正文上方可横滑的状态带，右轨收起。
 
 **组件**
 - **新组件必须在同一阶段就有真实消费者**，只建不接等于新造死代码。
-- `Dialog` 必须 **portal 到 `body`**：留在原组件树会被祖先的 transform/overflow 裁掉（`.scrim`、`.od-drawer` 都带 transform）。配套：焦点陷阱 + 焦点归还、Esc 关闭、滚动锁定。弹窗打开时错误提示要按开合分流，否则被遮罩挡住、用户只看到「保存」毫无反应。
+- `Dialog` 必须 **portal 到 `body`**：留在原组件树会被祖先的 transform / overflow / z-index 裁掉或压住。⚠️ 代价是它落在**任何页面容器之外**，所以它用到的 token 必须是全局的——迁移期 token 曾挂在页面根元素上，那阵子 BYOK 弹层一直取不到、掉回浅色。配套：焦点陷阱 + 焦点归还、Esc 关闭、滚动锁定。弹窗打开时错误提示要按开合分流，否则被遮罩挡住、用户只看到「保存」毫无反应。
 - **轻量破坏性动作用行内二次确认，不弹窗**（删作品/删连接是点两下）。
 - Toast 统一走 `useToast()`（统一时长、连续提示重新计时、卸载清 timer）。
 - **`components/editor/PublishCheck.tsx` 镜像 `pkg/worldvalidate.go` 的 strict 分支** —— ⚠️ 改后端 strict 规则必须同步改它，否则前端放行、后端拒。
 - 编辑器是**分步向导**（六步，同一时刻只渲染当前步），不是长表单：世界观那一段字段密集（标题/简介/背景/风格/题材/基调/规则/大纲/角色），和开场、属性表堆一页里作者不知道下一步干什么。完成态只由发布检查有检查项的步骤驱动——没有检查项的步骤不打勾，否则误导成「这步做完了」。
-- **保留的「暂时没人用」样式**（有明确后续消费者，删了要重写）：`.chapter`/`.reader h1`（阅读态章节标题）。
-- 氛围场景（`[data-scene]`）是**当下氛围、不持久化**，退出阅读态即清；昼夜与遮罩浓度才是长期偏好（localStorage + `PrefsBoot` 每次加载套回 `<html>`）。
+- 阅读偏好只剩两项，都在 `lib/readerPrefs.ts`：**减少动效**（写 `<html data-motion="off">`，`PrefsBoot` 每次加载套回）与**遮罩浓度**（游玩页与设置页共用同一个键，夹在 52–92 的百分比整数）。⚠️ 遮罩只写 localStorage、**不写 `<html>` 上的自定义属性**——它是某一页局部的效果（游玩页根元素上的 `--reader-veil`），挂到 `<html>` 会漏到每一页。氛围场景与昼/夜切换随旧体系一并删除。
 
-**token 合规的复查口径**（改完实测过一轮，回归时照这四条量）
-- 组件层硬编码色 ≤4（且全为永远深色的封面高光/文字投影这类装饰，已注释）；
-- 每屏可见 accent ≤2（`.eyebrow::before` 默认中性，只有每屏第一条挂 `.lead` 才用 accent）；
-- 无可访问名的输入 0；各路由 header/nav/main 各 1；
-- 新增变量**先回写 `docs/design/tokens.css`** 再落 `globals.css`，不两边各写一份。
+**token 合规的复查口径**（回归时照这四条量，前三条可脚本化）
+- **任何 `.css` 里零 hex**：`rg -n '#[0-9a-fA-F]{3,6}' frontend/app frontend/components -g '*.css'` 应无输出。派生色一律 `oklch()`——hex 表达不了「L/C 写死、只有 H 跟 `--hue`」这条规则；
+- **零 `Math.random()` 调用**（注释里的禁用说明除外）：星点、微偏移、光晕相位都必须刷新一致，否则回归截图每次都不同；
+- 每屏可见暖金 ≤2 处（焦点环是瞬时态，不计配额）；需要强调但不占配额的一律用中性亮态 `--bright`；
+- 无可访问名的输入 0；各路由 header/nav/main 各 1。
 
 **数据与后端**
 - **启动不再预置任何数据**（seed 于 2026-08-12 整个删除）：干净库起来后没有用户也没有作品，注册账号自行创作。原实现每次启动都在生产库上跑夹具代码的删除逻辑（重复项清理、硬删「迷雾古堡」），职责错位。现有库里的 `guest` 与那六部演示作品是历史遗留数据，不会被自动重建，也不会被自动删除。
@@ -497,7 +521,7 @@ cd agent
 **前端接入**
 - `lib/api.ts`：`api.upload(kind, file, name)` 是独立的 multipart 通道（**不设 `Content-Type`**，boundary 必须由浏览器带）；`assetUrl(u)` 把相对路径补上 dev 的后端源。
 - `components/ImageUpload.tsx`：通用控件（`kind` 决定圆形/矩形预览），真 `<button>` 触发隐藏 file input，上传中/空/失败三态齐全。
-- 消费点：`/me` 头像（保存时**手动双写 localStorage + `useAuthStore.setState`**，否则顶栏不刷新）、`AuthWidget`、`/mine` 资料头；封面在编辑器第 5 步「主题与生成」、`StoryCard`、`/mine` 作品卡、`SessionCard`、以及阅读态的 `--reader-bg`。
+- 消费点：`/mine/settings` 头像（保存时**手动双写 localStorage + `useAuthStore.setState`**，否则顶栏与账户菜单读的是旧那份 user，改完昵称/头像顶栏不刷新）、`/mine` 资料头；封面在编辑器段 5「主题与天空」、作品卡与草稿箱。⚠️ 12 部演示作品 `cover_url` 全空，所以**无封面是默认态**：卡片渲染纯 CSS 天空，不是灰占位框。
 - **无图时的渲染与改动前完全一致**：所有位置都回落原来的主题渐变 / 昵称首字母，不引入「默认灰头像」这种无信息占位。
 - **有图时仍叠一层主题渐变罩层**（`lib/types.ts` 的 `coverStyle`，用 `color-mix` 降透明度）：封面上压着白色标题/摘要/CTA，裸铺照片会让对比度跌破 4.5:1；罩层同时保住「彩色只来自作品主题色」这条铁律。有封面时不加 `.cover.alive`——那个 16s 漂移靠拉伸 `background-size`，用在照片上会变形。
 

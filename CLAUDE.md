@@ -7,6 +7,10 @@
 1. Reply in Chinese.
 2. After a task, sync affected docs — **by editing the lines that are now wrong**, never by appending a section or rewriting the file. Especially `docs/handoff.md`; don't only update the PRD.
 3. Demo stage, not launched, 0 users. Challenge the user's premises when you disagree — design, architecture, schema, scope. After finishing, ask whether it could be simpler. Proposing a rebuild of anything is fair game.
+4. **A grep is a lead, not a fact.** Before writing "X is only called by Y", narrow to the actual receiver or function body. Field names collide: `PlayService` and `LLMService` both have a field named `resolver`, so a package-wide `s.resolver.*` grep credits `LLMService`'s calls to `PlayService`. The same trap applies to file counts from a too-narrow `ls`. And when a script is written to do the verifying, verify the script first — a scan that reported `PlayService` and `FindByID` as absent from the repo was collecting into an empty set; one assertion on a known-present symbol would have caught it before its output was believed.
+5. **Before proposing where to intervene in a function, write out its side-effect order.** For `StartOpeningStream` that order is generate → charge → persist; a guard placed at the third step leaves the first two unprotected. Reading a function to locate one mechanism and stopping there is how a fix ends up aimed at the wrong step.
+6. **Close every edit with a global re-scan, and read back what was written.** grep the terms you just changed to find the old form surviving elsewhere — decisions changed in one section routinely survive in three others. When a file was edited programmatically, re-read the changed region and check bytes, not intent (an escape like backslash-f inside a Python string once wrote a literal form feed into a shell command).
+7. **A plan is a specification — audit it as one, not as a document.** Checking that paths and line numbers resolve only proves the prose isn't stale; it says nothing about whether following the plan produces code that compiles. Before handing a plan over, run three passes over it: **(a)** every type, method and signature the plan names gets checked against the actual declaration in the repo (`TestMain(m *testing.M)` has no `*testing.T`; `StoryReader` has exactly one method; `CREATE INDEX IF NOT EXISTS` is a silent no-op when the object exists); **(b)** every new capability gets its call site traced — "the executor adds `StoryCounter`; where does the call site obtain something with that method?" answers itself the moment it is asked; **(c)** every test design gets asked what state the database or process must be in for the assertion to be reachable — a setup step that creates the index makes "duplicate rows cause an error" unreachable. Plans assembled across several rounds of review are where this bites: each fragment is correct against the comment that prompted it, and nothing re-derives the whole mechanism.
 
 ## Docs
 
@@ -31,6 +35,7 @@ Docs are read every session; length is a real cost.
 - **Replace, don't append.** Rewrite the sentence that is now wrong. A dated "update" paragraph under a stale one is how a doc doubles in size while getting less trustworthy. Git is the changelog — a dated entry only when a *decision and its reason* must survive.
 - **Keep the reason, drop the narrative.** "X because Y" earns its place; how you got to X does not. A failed experiment compresses to one line naming what was ruled out.
 - **Prune while you're there.** Touching a stale section means deleting the dead part in the same pass.
+- **A review is not a changelog.** When someone corrects a document, fix the claim and delete the wrong one — do not record what it used to say, why it changed, or that it was once wrong. Under review the pull is to write for the reviewer; the document belongs to whoever executes it. Test each sentence: would a reader who never saw the review need this? "Why the code must be this way" stays; "why this document changed" goes.
 
 ## Overview & Run
 
@@ -82,7 +87,8 @@ The table is the whole rule for layers. The one that actually gets violated is t
 
 | Invariant | Why |
 |---|---|
-| `NewPlayService` takes story access as the **`StoryReader` interface**, not the concrete repo | it is the seam; a concrete repo welds play to story |
+| `NewPlayService` takes story access as **two narrow interfaces** — `StoryReader` (read) + `StoryCounter` (play-count write-back) | that pair is the seam; a concrete repo welds play to story. Keep them separate: `ports.go` calls `StoryReader` the module's *read-only* entry, and putting a write method on it makes that sentence a lie |
+| `PlayService`'s five same-module deps (`sessions`/`nodes`/`ai`/`resolver`/`credit`) are narrow interfaces in `service/play_deps.go`, **not** `ports.go` | `ports.go` is the *cross-module* seam; these are same-module test seams. Mixing them blurs what `ports.go` means. Without them `play_opening_test.go` cannot assert "AI called once, charged once" |
 | Play's cross-table writes go through `PlaySessionRepository.CreateNodeAndUpdateSession` / `DeleteSessionCascade` | node write + session update must be one transaction. The old `DB()` raw-connection escape hatch was removed on purpose — don't reintroduce one |
 
 ## Routes
@@ -176,11 +182,25 @@ Pipeline internals (writer beats, `<<<META>>>` JSON tail, tiered review, increme
 
 Read before adding or reshaping any frontend surface:
 
+The set was replaced wholesale in `6fb2c39`. The old files (`tokens.css`, a `prototypes/` subdir) are gone, and so is the direction they encoded — **anything describing a white background, `#1677ff`, or a 管理态/阅读态 dual mode is voided**. `frontend/app/globals.css` now implements the replacement and is the only stylesheet outside per-page CSS Modules.
+
 | File | Authority |
 |---|---|
-| `docs/design/DESIGN.md` | enforceable rules, the dual-mode decision (管理态 *management* / 阅读态 *reading*), component conventions, checklist for a new page |
-| `docs/design/tokens.css` | **the single source of truth for every design variable**. Reference variables only, never hardcode; a new variable goes into `tokens.css` first, then `globals.css`. Already merged into `frontend/app/globals.css` as three layers: `:root` (管理态), `.od-reading` (阅读态), `[data-work-theme]` (per-work colours) |
-| `docs/design/prototypes/*.html` | static high-fidelity references, one per screen — **visual targets, not code to copy**. Their fake data and timers demo the visuals only; behaviour always follows the backend contract |
+| `docs/design/DESIGN.md` | the enforceable spec: §3 global tokens · §4 hue system · §5 typography · §6 motion · §7 per-page delivery (7.1–7.13) · §8 data contract · §9 hard-constraint checklist · §10 delivery boundaries. Frontend implementation follows this file |
+| `docs/design/wanxiang-design-brief.md` | direction only — why the language is what it is, and which paths are already dead. To change direction, change it here first, then land the result in `DESIGN.md` |
+| `docs/design/brand-spec.md` | one-page token cheat-sheet. On conflict `DESIGN.md` wins and this gets backfilled |
+| `docs/design/*.html` (13 files, flat — **no `prototypes/` subdir**) | static high-fidelity references, one per screen — **visual targets, not code to copy**. Their demo data and timers show visuals only; behaviour always follows the backend contract. `derivation-graph.html` is the one with no route behind it — see `docs/handoff.md` §13 |
+| `docs/design/assets/works-data.js` | identity fields for the 12 demo works. Fake — a real surface reads `/api/v1/stories` |
+
+**There is no `tokens.css`.** Tokens live in `DESIGN.md` §3 (global `:root`) and §4 (`.world-scope` role tokens); `frontend/app/globals.css` is their implementation, not a second source. Page-specific geometry belongs in that page's CSS Module — only genuinely shared things (tokens, reset, backdrop/sky/figure, topbar, subnav, form controls, buttons, switch, dialog, toast, the five `wx-*` keyframes) go in the global sheet.
+
+| Invariant | Why |
+|---|---|
+| **Deep-space ink ground on every screen; a white background is a regression.** No mode split, no per-mode class on `<html>` | a dark ground is the physical precondition for per-work colour to read as light |
+| **One `--hue` per work; every `--w-*` role token hardcodes L and C and varies only H** | otherwise changing hue collapses the lightness/saturation hierarchy |
+| **`--w-*` must be declared on the element that consumes it, never `:root`** | `var()` substitutes at the declaration site — on `:root` every card locks to one hue |
+| **Derived colours are `oklch()`; no hex in any stylesheet** | hex can't express the fixed-L/C-varying-H rule above |
+| **Warm gold `--accent` ≤2 stable-state uses per screen, never hue-tinted** | focus rings are transient and exempt; anything else wanting emphasis uses neutral bright `oklch(0.88 0.008 265)` |
 
 ## Not in this file
 

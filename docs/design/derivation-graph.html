@@ -93,7 +93,9 @@
     transition:color .15s var(--ease),background .15s var(--ease)}
   .back:hover{color:var(--fg);background:oklch(1 0 0 / .07)}
   .ghead{margin-top:18px;max-width:65ch;padding-bottom:4px}
-  .ghead .eyebrow{font-size:11px;letter-spacing:.12em;color:oklch(0.72 0.020 265 / .86);font-weight:590;margin-bottom:12px}
+  /* 全页三处「眉标」(页头 / 面板天空 / 弹层)统一 .16em。
+     之前是 .12 / .18 / .24 三个值,同一个角色三种字距,读起来像三套系统。 */
+  .ghead .eyebrow{font-size:11px;letter-spacing:.16em;color:oklch(0.72 0.020 265 / .86);font-weight:590;margin-bottom:12px}
   .ghead h1{font-family:var(--font-display);font-weight:700;font-size:clamp(36px,4.5vw,54px);
     line-height:1.36;letter-spacing:0}
   .ghead .facts{margin-top:10px;font-size:12px;line-height:1.85;letter-spacing:.01em;
@@ -101,46 +103,110 @@
   .ghead .facts b{color:var(--fg);font-weight:590;font-variant-numeric:tabular-nums}
   .ghead .facts .sep{padding:0 9px;color:oklch(0.48 0.014 265)}
 
-  /* ================= 星图:直接落在深空上,没有盒子 ================= */
+  /* ================= 星图:「极光」—— 不画分支,画读者 =================
+     前三版都在画**线**,于是都撞上同一堵墙:线越多越乱,而线的多少由分支数决定。
+     v1 自上而下 tidy tree + 贝塞尔肘线:一张歪掉的组织架构图。
+     v2 极坐标径向星座:换了构图没换线,十几条自己拐自己的曲线糊成一团。
+     v3 xyflow getSmoothStepPath 正交折线:线终于干净了,可布局把**标签宽度**
+        打进了每个节点的横向地盘 —— 图宽 ≈ 叶子数 × 140px。50 条分支就是 7000px,
+        适配缩放掉到 0.14×,星成灰渣、名字糊成一片。**这是结构性的,不是调参能救的。**
+
+     v4 把因果整个倒过来。不画「分支」这个抽象物,画走过它的**人**:
+     · 一条支流的宽度 = 走过它的人数。根占满画布,孩子在父亲的宽度里按人数分段。
+       于是任意深度的总宽恒等于画布宽 —— **构造上不可能溢出**,分支再多也一样。
+     · 分支之间那道暗 = 在这里停下的人。数据里 Σ孩子.plays 一直小于父亲,
+       这个差额从来没被画出来过;现在它就是间隙本身。
+     · 标签只在自己那条支流够宽时才出现,写在河道内部 —— **重叠在结构上不可能发生**,
+       不需要任何避让逻辑。放大→河道变宽→名字渐次浮现,LOD 是连续的、免费的。
+     · 窄到画不成支流的,合并成一片带真实计数的星尘,可点开逐条查看。
+     旧版是「标签宽度决定图宽」,现在是「图宽决定哪些标签有资格出现」。 */
   .starmap{position:relative;margin-top:20px;height:min(68vh,640px);cursor:grab;touch-action:none;
     overflow:hidden;isolation:isolate}
-  .starmap::before{content:"";position:absolute;inset:3% 0 0;z-index:0;pointer-events:none;border-radius:50%;
-    background:radial-gradient(68% 52% at 42% 34%,var(--w-sky-md),transparent 70%);opacity:.52}
   .starmap.dragging{cursor:grabbing}
-  .starmap svg{position:relative;z-index:1;width:100%;height:100%;display:block}
+  /* ⚠️ viewBox 跟随容器像素(1 世界单位 = 1 CSS px),图的位置只由 #viewport 的
+     transform 决定 —— 取自 React Flow 的 pane 模型。
+     旧版让 viewBox 装下整张图、再靠 preserveAspectRatio 缩放,那是第二层看不见的
+     缩放:标签写 14px 实际只画出 9px,而缩放读数还理直气壮地显示 100%。 */
+  #svg{position:relative;z-index:1;width:100%;height:100%;display:block}
 
-  /* root 身后那片该世界的天空 —— 星图唯一的大面积色彩来源 */
+  /* ——— 底色层:root 身后那片属于这个世界的天空 ——— */
   #haloGrad .h0{stop-color:var(--w-halo);stop-opacity:.95}
-  #haloGrad .h1{stop-color:var(--w-halo);stop-opacity:.32}
+  #haloGrad .h1{stop-color:var(--w-halo);stop-opacity:.30}
   #haloGrad .h2{stop-color:var(--w-halo);stop-opacity:0}
-  #bloomGrad .b0{stop-color:var(--w-sky-hi);stop-opacity:.92}
-  #bloomGrad .b1{stop-color:var(--w-sky-hi);stop-opacity:.40}
+  #bloomGrad .b0{stop-color:var(--w-sky-hi);stop-opacity:.88}
+  #bloomGrad .b1{stop-color:var(--w-sky-hi);stop-opacity:.34}
   #bloomGrad .b2{stop-color:var(--w-sky-hi);stop-opacity:0}
+  #groundGrad .g0{stop-color:var(--w-sky-md);stop-opacity:.90}
+  #groundGrad .g1{stop-color:var(--w-sky-md);stop-opacity:0}
   .bloom{fill:url(#bloomGrad)}
-  /* pathLength=100 + dasharray100:静止态是实线,入场时才从 dashoffset 100 画出来。
-     所有入场动画一律 backwards 填充 —— 减动效下动画被禁用,元素落在「已完成」的静止态,
-     而不是卡在隐藏态。 */
-  /* ⚠️ 这里刻意不写 stroke。描边色由每条边自己的线性渐变给(见 paint() 的 edgeDefs),
-     光在源头亮、向末端衰减——「连线即光」靠的是这个,不是等亮度的描边。
-     CSS 的 stroke 会盖掉 path 上的 presentation attribute,写了渐变就不生效。 */
-  .edge{fill:none;stroke-linecap:round;
-    stroke-dasharray:100;stroke-dashoffset:0;
-    transition:opacity .24s var(--ease),stroke-width .24s var(--ease)}
-  .edge.main{opacity:1}
-  .egs-a{stop-color:var(--w-line);stop-opacity:1}
-  .egs-b{stop-color:var(--w-line);stop-opacity:.38}
-  .egm-a{stop-color:var(--w-kick);stop-opacity:1}
-  .egm-b{stop-color:var(--w-kick);stop-opacity:.60}
-  .edge.lit{opacity:1!important;filter:drop-shadow(0 0 5px var(--w-glow))}
+  .ground{fill:url(#groundGrad)}
 
-  /* ——— 入场:开场那颗星先亮,分叉逐层长出去 ——— */
+  /* ——— 左栏层号 ———
+     一截 20px 的刻线加一个两位数,停在图的左侧窄栏里,不横穿画面。
+     缎带本身已经是一层一层的横向结构,再铺一族满屏横线就会和它抢读法;
+     退到栏里之后,「最远抵达 N 层」照样数得出来,画面却干净一整层。 */
+  .tick{fill:none;stroke:oklch(1 0 0 / .16);stroke-width:1;vector-effect:non-scaling-stroke}
+  /* ⚠️ 9.5px / oklch(0.54) 在深空底上只有约 3.6:1,而它是承载信息的
+     (第几层),不是装饰。提到 11px / 0.68 之后约 6:1,过小字下限。
+     字号写在屏幕坐标里(data-cs 反补偿),所以 11px 是真的 11px。 */
+  .row-n{fill:oklch(0.68 0.014 265);font-family:var(--font-ui);font-size:11px;
+    letter-spacing:.14em;font-weight:510;font-variant-numeric:tabular-nums}
+  /* ——— 缎带:光,不是线 ———
+     宽度本身已经是人数,所以这里没有线粗、没有对数映射,只有一块按比例分到的面。
+     ⚠️ 刻意不写 fill。每条缎带的填充由它自己的线性渐变给(见 paint() 的 defs),
+     光在来处亮、向去处淡;CSS 的 fill 会盖掉 path 上的 presentation attribute。 */
+  .flow{opacity:var(--dim,1);transition:opacity .22s var(--ease)}
+  /* ⚠️ 枝一律**等宽细线**,主干与支线只差颜色,不差粗细。
+     走过三版有厚度的画法都不好看,而且那点信息面板里一行字就说清楚了。
+     ⚠️ non-scaling-stroke 必须加:线宽活在屏幕坐标里,放大到 2.5× 时线仍然是
+     1.35px 的细线,不会跟着涨成一根管子;缩小时也不会细到消失。 */
+  .flow .fb{fill:none;stroke:var(--w-line);stroke-width:1.35;stroke-linecap:round;
+    vector-effect:non-scaling-stroke;opacity:.46}
+  .flow.main .fb{stroke:var(--w-kick);opacity:.85}
+  /* 流光直接沿这条路径跑,枝本身不需要另一条中心线 */
+  .flow .fm{fill:none;stroke:none;opacity:1}
+  .flow.lit .fb{opacity:1;stroke:var(--w-star);filter:drop-shadow(0 0 5px var(--w-glow))}
+
+  /* ——— 星尘 ———
+     窄到画不成支流的那些,合并成一片带真实计数的暗区(G6 combo 折叠的做法:
+     可展开的实体,不是被悄悄丢掉的数据)。虚线边界是「这里还有东西」的信号。 */
+  /* ⚠️ 默认不描边。一圈虚线框会立刻把这块变成「图表里的一个区域」;
+     静止态只靠一层极淡的底 + 里面的微点说明「这里还有东西」,
+     悬停或聚焦时才浮出边界,那时它是可操作性的提示,不是装饰。 */
+  .dust .db{fill:none;stroke:oklch(1 0 0 / .16);stroke-width:1.35;stroke-linecap:round;
+    stroke-dasharray:3 5;vector-effect:non-scaling-stroke;transition:stroke .2s var(--ease)}
+  .dust .dd{fill:var(--w-star);opacity:.38;transition:opacity .2s var(--ease)}
+  .dust:hover .db,.dust:focus-visible .db{stroke:oklch(1 0 0 / .38)}
+  .dust:hover .dd,.dust:focus-visible .dd{opacity:.66}
+  .dust .tx{fill:oklch(0.74 0.016 265);font-family:var(--font-ui);font-weight:520;
+    font-size:11px;letter-spacing:.05em}
+
+  /* ——— 邻域聚焦(取 react-force-graph 的 highlight 示例) ———
+     悬停一颗星:它与它的上下游亮起来,其余整片退到背景里。
+     ⚠️ 退开的是别的,不是被悬停的那个 —— 被悬停元素只增亮,绝不压暗。 */
+  .starmap.focus .flow{opacity:.12}
+  .starmap.focus .node{opacity:.34}
+  .starmap.focus .flow.near{opacity:1}
+  .starmap.focus .node.near{opacity:1}
+  /* ⚠️ 光晕的 opacity 被 breathe 动画占用,类选择器压不过动画的层叠来源;
+     所以退开这件事落在 .halos 整组上 —— 组 opacity 与子元素动画相乘才生效。 */
+  .starmap.focus .halos{opacity:.28}
+  .node,.halos,.flow{transition:opacity .2s var(--ease)}
+
+  /* ——— 入场:光从地平线升起,逐层张开 ———
+     ⚠️ 一律 backwards 填充。减动效下动画被禁用,元素落在「已完成」的静止态,
+     而不是卡在隐藏态。
+     ⚠️ .flow 用 CSS transform 平移(SVG 用户单位),.node 只淡入 ——
+     节点上已经有 transform 属性,CSS transform 会把它整个盖掉。 */
   @keyframes bloomIn{from{opacity:0}to{opacity:.62}}
   @keyframes fadeIn{from{opacity:0}to{opacity:1}}
-  @keyframes draw{from{stroke-dashoffset:100}}
+  /* ⚠️ 只写 from,不写 to。写死 to{opacity:1} 会盖掉每条支流各自的 --dim,
+     动画一结束整片同时跳亮再落回去。省掉 to,终点就是元素自己的值。 */
+  @keyframes riseIn{from{opacity:0;transform:translate(0,18px)}}
   @keyframes starIn{from{opacity:0}}
   .grow .bloom-g{animation:bloomIn 1.5s var(--ease) backwards}
   .grow .halos{animation:fadeIn 1.2s .34s var(--ease) backwards}
-  .grow .edge{animation:draw .66s var(--ease) backwards}
+  .grow .flow{animation:riseIn .70s var(--ease) backwards}
   .grow .node{animation:starIn .54s var(--ease) backwards}
 
   /* ——— 光晕呼吸:相位与周期由 hue 和序号决定,不同步、不齐拍 ——— */
@@ -157,8 +223,9 @@
 
   /* ——— 选中路径的流光:一次性,从开场跑向选中的那颗星 ——— */
   @keyframes run{from{stroke-dashoffset:9}to{stroke-dashoffset:-100}}
-  .spark{fill:none;stroke:var(--w-star);stroke-linecap:round;
-    stroke-dasharray:9 100;stroke-dashoffset:9;
+  .spark{fill:none;stroke:var(--w-star);stroke-width:2.6;stroke-linecap:round;
+    vector-effect:non-scaling-stroke;
+    stroke-dasharray:9 100;stroke-dashoffset:9;opacity:.9;
     animation:run .56s var(--ease) forwards;animation-delay:var(--sd)}
 
   /* ——— 偶发流星:周期 11s / 14s,可见窗口只有 1s 左右 ——— */
@@ -173,51 +240,84 @@
     81%,100%{opacity:0;transform:translate3d(318px,146px,0) rotate(24deg)}
   }
 
-  /* ⚠️ 命中只允许落在节点上。
-     装饰层(root 柔光、光晕群、连线、标签牌、流光)全部不吃指针事件——
-     它们要么面积巨大(柔光椭圆 rx 500+),要么叠在星的上方(标签牌、流光),
-     只要能被命中就会把点击吞掉,表现就是「节点点不动」。 */
-  .bloom-g,.halos,.edges,.sparks,.tag{pointer-events:none}
+  /* ⚠️ 命中只允许落在节点上。装饰层(柔光、层号、光晕群、缎带、流光、标签)
+     全部不吃指针事件 —— 它们要么面积巨大,要么叠在节点上方,
+     只要能被命中就会把点击吞掉,表现就是「点不动」。 */
+  .bloom-g,.rows,.halos,.flows,.sparks,.tag{pointer-events:none}
   .node{cursor:pointer;pointer-events:auto}
-  /* fill:transparent 仍会参与命中(与 fill:none 不同),这是节点的实际点击区 */
+  /* fill:transparent 仍参与命中(与 fill:none 不同)。
+     ⚠️ 命中区是**整段河道**的矩形,不是星那个小圆点 —— 在这个构图里
+     「点中这条支流」远比「点中那颗 3px 的星」自然,也顺带把触摸目标做够。 */
   .node .hit{fill:transparent;pointer-events:all}
-  .node .ring{fill:none;stroke:var(--accent);stroke-width:2;opacity:0}
+  /* ⚠️ 环线一律 non-scaling-stroke:2px 的焦点环跟着视口缩就是焦点指示消失。 */
+  .node .ring{fill:none;stroke:var(--accent);stroke-width:2;opacity:0;vector-effect:non-scaling-stroke}
   .node:focus{outline:none}
   .node:focus-visible .ring{opacity:1}
-  .node .core{fill:var(--w-star);transition:r .2s var(--ease)}
-  .node .kick{fill:none;stroke:var(--w-kick);stroke-width:1.3;opacity:.62;
-    transition:opacity .2s var(--ease)}
-  /* 待揭示 = 还没被点亮的星:空心虚线,不发光,虚线环缓慢自转 */
+  /* ⚠️ 星的冷热由 --l(亮度)承担,不由半径承担。
+     半径已经被 pointFor() 钳过下限(stellarium 的 r_min 分支),
+     这里绝不能再叠一层缩放去表达冷热,否则冷门节点又会跌回亚像素。 */
+  .node .core{fill:var(--w-star);opacity:var(--l,1)}
+  .node .kick{fill:none;stroke:var(--w-kick);stroke-width:1.3;opacity:.60;
+    vector-effect:non-scaling-stroke;transition:opacity .2s var(--ease)}
   .node.wait .core{fill:none;stroke:var(--w-line);stroke-width:1.4;stroke-dasharray:2.6 3;
+    vector-effect:non-scaling-stroke;
     transform-box:fill-box;transform-origin:center;
     animation:wait 17s linear infinite}
-  .node.wait .halo{display:none}
 
+  /* ⚠️ 标签活在屏幕坐标里:每次缩放按 1/sc 反补偿(react-force-graph 的
+     1/globalScale)。字号是真的 13px,放大时也不会涨成大字报。
+     ⚠️ 出不出现由 .fits 决定 —— rescaleLabels() 每次缩放判一遍「这条支流在屏幕上
+     够不够宽装下自己的名字」。够就浮出来,不够就退回一颗无名的星。
+     于是 LOD 是连续的、免费的;更要紧的是,**重叠在结构上不可能发生** ——
+     每块标签都被关在自己的河道里。旧版靠把标签宽度打进布局来避让,
+     那正是分支一多就把整张图撑到 7000px 的原因。 */
   .tag{opacity:0;transition:opacity .22s var(--ease)}
-  .tag .bg{fill:oklch(0.085 0.016 265 / .82);stroke:oklch(1 0 0 / .13);stroke-width:1}
-  .tag .tx{fill:oklch(0.95 0.010 265);font-family:var(--font-display);font-weight:500;font-size:12px;
-    letter-spacing:.01em}
-  /* 只有开场节点默认完整可读；岔路像远处星名,靠近或选中才完全显露。 */
-  .node.branch .tag{opacity:.58}
-  .node.root .tag,.node.onpath .tag,.node:hover .tag,.node.sel .tag{opacity:1}
-  .node.root .tag .tx{font-weight:700;font-size:13.5px}
-  .node.root .tag .bg{fill:oklch(0.085 0.016 265 / .9)}
+  /* 不用底牌,用描边光晕(paint-order 让描边落在字下面):
+     深空底上比一块圆角牌子干净得多,也不会在缎带上切出一个洞。 */
+  .tag .tx{fill:oklch(0.96 0.010 265);font-family:var(--font-display);font-weight:500;
+    font-size:13px;letter-spacing:.01em;
+    paint-order:stroke;stroke:oklch(0.11 0.020 265);stroke-width:3.2;stroke-linejoin:round}
+  .node.fits .tag{opacity:.84}
+  .node.root .tag,.node.onpath .tag,.node:hover .tag,.node.sel .tag,
+  .node:focus-visible .tag{opacity:1}
+  .node.root .tag .tx{font-weight:700;font-size:15px}
   .node.branch .tag .tx{fill:var(--w-kick)}
   /* hover / 选中只加亮,前景绝不压暗 */
-  .node:hover .core,.node.sel .core{fill:oklch(1 0 0 / .96)}
-  /* 待揭示节点的 core 已被自转占用 transform,不参与这条缩放 */
+  .node:hover .core,.node.sel .core{fill:oklch(1 0 0 / .97);opacity:1}
   .node:not(.wait) .core{transform-box:fill-box;transform-origin:center;
     transition:transform .18s var(--ease)}
-  .node:not(.wait):hover .core,.node:not(.wait).sel .core{transform:scale(1.32)}
-  /* 主干只提高一点物理尺度,不额外堆新的说明。 */
-  .node.main:not(.wait) .core{transform:scale(1.11)}
-  .node.main:not(.wait):hover .core,.node.main:not(.wait).sel .core{transform:scale(1.38)}
+  .node:not(.wait):hover .core,.node:not(.wait).sel .core{transform:scale(1.35)}
   .node:hover .kick,.node.sel .kick{opacity:1}
-  .node.sel .tag .bg{fill:oklch(0.10 0.018 265 / .95);stroke:var(--w-line)}
+  /* 选中的那条支流:名字必然可见(见 markPath 给整条路径挂 .onpath) */
+  .node.sel .tag .tx{fill:oklch(1 0 0)}
+
+  /* ================= 缩略星图(取 React Flow 的 MiniMap) =================
+     放大之后,它是唯一能回答「现在看的是整片星空的哪一块」的东西。
+     它提供的两件事(回到全图、定位到某颗星)在缩放控件与键盘上都另有入口,
+     所以对读屏隐藏,不再重复播报一遍同样的结构。 */
+  .minimap{position:absolute;right:14px;bottom:14px;z-index:4;width:176px;height:114px;
+    border-radius:var(--r-md);overflow:hidden;cursor:pointer;touch-action:none;
+    border:1px solid var(--border);background:oklch(0.085 0.016 265 / .72);
+    backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+    transition:border-color .16s var(--ease),background .16s var(--ease)}
+  .minimap:hover{border-color:var(--border-2);background:oklch(0.115 0.020 265 / .84)}
+  .minimap svg{position:absolute;inset:0;width:100%;height:100%;display:block}
+  /* 缩略图里画的是同样的缎带:一片有宽窄的光缩到 0.18× 仍然是同一个形状,
+     而一族细线在那个尺度上只会糊成灰雾。 */
+  .mm-flow{fill:none;stroke:var(--w-line);stroke-width:1;stroke-linecap:round;
+    vector-effect:non-scaling-stroke;opacity:.5}
+  .mm-flow.main{stroke:var(--w-kick);opacity:.8}
+  .mm-node{fill:var(--w-star);opacity:.60}
+  .mm-node.b{fill:var(--w-kick);opacity:.92}
+  .mm-node.w{fill:none;stroke:var(--w-line);stroke-width:1.3;opacity:.72;vector-effect:non-scaling-stroke}
+  /* 视野之外压暗一层(evenodd 挖洞),视野框用中性亮描边——
+     暖金的两处配额已经给了品牌标记与面板主动作,这里不能再要一处。 */
+  .mm-mask{fill:oklch(0.055 0.014 265 / .60);fill-rule:evenodd}
+  .mm-frame{fill:none;stroke:oklch(1 0 0 / .55);stroke-width:1.5;vector-effect:non-scaling-stroke}
 
   /* ================= 星图下方的控制行 ================= */
   .maprow{margin-top:6px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
-  .hintline{max-width:52ch;font-size:11px;letter-spacing:.03em;color:oklch(0.58 0.015 265)}
+  .hintline{max-width:52ch;font-size:11px;letter-spacing:.03em;color:oklch(0.66 0.016 265)}
   .zoom{margin-left:auto;display:inline-flex;align-items:center;gap:4px}
   .zoom button{width:44px;height:44px;border-radius:50%;border:1px solid var(--border);background:transparent;
     display:grid;place-items:center;color:var(--muted);
@@ -230,15 +330,23 @@
   .zoom .reset{width:auto;height:44px;padding:0 16px;border-radius:var(--r-pill);font-size:12.5px;
     font-weight:510}
 
-  .legend{margin-top:18px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;
-    font-size:11px;letter-spacing:.035em;color:oklch(0.58 0.015 265)}
-  .legend span{display:inline-flex;align-items:center;gap:8px}
+  /* ⚠️ 颜色从 oklch(0.58) 提到 0.66:11px 是全页最小的正文级文字,
+     0.58 压在深空底最亮的那一带上只有约 3:1,达不到小字 4.5:1 的下限。
+     0.66 之后约 6:1,仍然明显退在正文之后,但不再是「勉强能看见」。 */
+  .legend{margin-top:18px;display:flex;align-items:center;gap:14px 18px;flex-wrap:wrap;
+    list-style:none;font-size:11px;letter-spacing:.03em;color:oklch(0.66 0.016 265)}
+  .legend li{display:inline-flex;align-items:center;gap:8px}
+  /* 两条纯文字说明退半档,和上面五条「图标 + 文字」区分开 */
+  .legend li.note{color:oklch(0.58 0.014 265)}
   .legend svg{flex:none;overflow:visible}
   .lg-core{fill:var(--w-star)}
   .lg-halo{fill:var(--w-halo)}
   .lg-dash{fill:none;stroke:var(--w-line)}
   .lg-ring{fill:none;stroke:var(--w-kick)}
-  .lg-line{stroke:var(--w-line)}
+  /* 图例里的枝要和图上一样是等宽描边,不是色块 —— 否则图例本身就在教错的读法 */
+  .lg-fb{fill:none;stroke:var(--w-line);stroke-linecap:round;opacity:.75}
+  .lg-mainb{fill:none;stroke:var(--w-kick);stroke-linecap:round;opacity:.85}
+  .lg-dot{fill:var(--w-star);opacity:.6}
 
   /* ================= 小屏:沿主干的一维列表 ================= */
   .listview{display:none;margin-top:10px}
@@ -255,11 +363,16 @@
     width:11px;height:11px}
   .nrow.branch .bead{box-shadow:0 0 0 3px oklch(0.86 0.090 var(--hue) / .28),0 0 10px 2px var(--w-glow)}
   .nrow .txt{min-width:0;overflow-wrap:anywhere}
-  .nrow .t1{font-family:var(--font-display);font-size:14px;line-height:1.5;font-weight:500}
+  /* 1.5 是拉丁行高。节点名在 360px 宽下会折行,中文折行后 1.5 会贴到一起 */
+  .nrow .t1{font-family:var(--font-display);font-size:14px;line-height:1.7;font-weight:500}
   .nrow.branch .t1{color:var(--w-kick)}
   .nrow .t2{margin-top:4px;font-size:11.5px;letter-spacing:.04em;color:oklch(0.66 0.018 265);
     font-variant-numeric:tabular-nums}
-  .nrow .bar{margin-left:auto;flex:none;height:4px;border-radius:99px;background:var(--w-line)}
+  /* 比例写成数字,不画长短条 —— 桌面版的图已经不编码人数了,
+     列表也不该另立一套编码。tabular-nums 让一列数字对得齐。 */
+  .nrow .pctv{margin-left:auto;flex:none;font-size:12px;font-weight:590;letter-spacing:.02em;
+    color:oklch(0.80 0.014 265);font-variant-numeric:tabular-nums}
+  .nrow.main .pctv{color:var(--w-kick)}
 
   /* ================= 节点面板:头部是真实的天空 + 剪影 ================= */
   .panel{position:fixed;top:0;right:0;bottom:0;width:min(432px,100vw);z-index:70;overflow:auto;
@@ -288,7 +401,7 @@
   .scene .figure svg{width:100%;height:100%;display:block}
   .scene .plate{position:absolute;left:0;right:0;bottom:0;padding:14px 92px 14px 22px;
     background:linear-gradient(180deg,transparent,var(--w-plate) 46%)}
-  .scene .kicker{display:block;font-size:10px;font-weight:590;letter-spacing:.18em;color:var(--w-kick);
+  .scene .kicker{display:block;font-size:10.5px;font-weight:590;letter-spacing:.16em;color:var(--w-kick);
     margin-bottom:6px}
   .scene .nname{display:block;font-family:var(--font-display);font-weight:700;font-size:19px;
     line-height:1.42;letter-spacing:0;color:var(--w-text)}
@@ -300,11 +413,16 @@
   .panel .close:hover{background:oklch(0.20 0.03 265 / .86);border-color:oklch(1 0 0 / .38)}
 
   .pbody{padding:24px 22px 26px}
-  .pathline{margin-top:18px;max-width:18ch;font-family:var(--font-display);font-size:18px;line-height:1.72;letter-spacing:0;color:var(--w-kick)}
+  /* ⚠️ 18ch 太窄:一行只放得下 18 个汉字,末行经常只剩一两个字成为孤字。
+     放到 26ch,并允许在标点处断行。 */
+  .pathline{margin-top:18px;max-width:26ch;font-family:var(--font-display);font-size:18px;
+    line-height:1.72;letter-spacing:0;color:var(--w-kick);text-wrap:pretty}
   .chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:18px}
   .chips span{font-size:11.5px;letter-spacing:.04em;padding:5px 11px;border-radius:var(--r-pill);
     border:1px solid var(--border);color:var(--muted);background:oklch(1 0 0 / .04)}
-  .excerpt{margin-top:18px;font-family:var(--font-display);font-size:15.5px;line-height:2.04;color:var(--fg)}
+  /* 中文正文行高 1.7–1.8 是舒适区;2.04 把段落拆成了互不相干的一行行。
+     1.86 仍然宽松(这是作品正文,该慢),但一段读起来是一段。 */
+  .excerpt{margin-top:18px;font-family:var(--font-display);font-size:15.5px;line-height:1.86;color:var(--fg)}
   .prow{margin-top:16px;padding-top:18px;border-top:1px solid var(--border);
     display:flex;flex-wrap:wrap;gap:8px 22px;font-size:12.5px;letter-spacing:.03em;
     color:oklch(0.66 0.018 265)}
@@ -359,7 +477,7 @@
       linear-gradient(180deg, oklch(0.26 0.062 var(--hue) / .32), transparent 44%),
       oklch(0.145 0.024 265 / .98);
     box-shadow:0 40px 96px -46px oklch(0.02 0 0 / .95)}
-  .modal-panel .peyebrow{font-size:10.5px;letter-spacing:.24em;font-weight:590;color:var(--w-kick)}
+  .modal-panel .peyebrow{font-size:10.5px;letter-spacing:.16em;font-weight:590;color:var(--w-kick)}
   .modal-panel h2{margin-top:12px;font-family:var(--font-display);font-weight:700;font-size:21px;
     line-height:1.42;letter-spacing:0}
   .modal-panel .sub{margin-top:10px;font-size:12.5px;line-height:1.85;color:var(--muted)}
@@ -399,6 +517,8 @@
   @media(max-width:1100px){
     .wrap{max-width:none}
     .starmap{height:min(64vh,560px)}
+    /* 画布只剩 560px 高时,缩略图会压掉一整层节点——宁可不要 */
+    .minimap{display:none}
   }
   @media(max-width:900px){
     /* 自由缩放画布在手机上不可用:降级为沿主干的一维列表 */
@@ -436,7 +556,7 @@
     /* 动画一律 backwards 填充,所以禁用后落在的就是最终静止态:
        连线实线、星点不透明、光晕停在 var(--o)、流星 opacity 0。
        只剩 hover 的缩放要单独按掉 —— 那是位移,不是配色反馈。 */
-    .node.main:not(.wait) .core,.node:not(.wait):hover .core,.node:not(.wait).sel .core{transform:none!important}
+    .node:not(.wait):hover .core,.node:not(.wait).sel .core{transform:none!important}
   }
 </style>
 </head>
@@ -468,7 +588,7 @@
   </nav>
 </header>
 
-<div class="wrap">
+<main class="wrap" data-od-id="graph-main">
   <a class="back" href="community.html" data-od-id="back-to-community">
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H6"/><path d="M11 6l-6 6 6 6"/></svg>
     社区广场
@@ -481,7 +601,7 @@
   </div>
 
   <!-- 桌面:星图 -->
-  <p class="sr-only" id="svg-help">这是一张可交互星图。用 Tab 进入后,方向键在树上移动:上键到父节点,下键到走过最多的子节点,左右键在兄弟节点之间切换,回车打开节点详情。小屏会自动改用下方的列表视图。</p>
+  <p class="sr-only" id="svg-help">这是一张可交互星图。用 Tab 进入后,方向键在树上移动:上键到父节点,下键到走过最多的子节点,左右键在兄弟节点之间切换,回车打开节点详情;移动到视野外的节点时,星图会自动跟着平移。加号、减号、数字 0 分别是放大、缩小与回到全图。小屏会自动改用下方的列表视图。</p>
   <div class="starmap world-scope" id="starmap" style="--hue:252" data-od-id="starmap">
     <svg id="svg" role="group" aria-labelledby="g-title" aria-describedby="svg-help">
       <defs>
@@ -498,14 +618,34 @@
           <stop class="b1" offset="44%" />
           <stop class="b2" offset="100%" />
         </radialGradient>
+        <!-- 地面辉光:开场那颗星脚下的一小片亮,让「站在地平线上」成立 -->
+        <radialGradient id="groundGrad">
+          <stop class="g0" offset="0" />
+          <stop class="g1" offset="100%" />
+        </radialGradient>
+        <!-- 支流的垂直衰减:底端(离开父亲处)最亮,一路向上散掉。
+             这道衰减是「行与行之间不再有平口接缝」的来源 —— 上一条淡到近无时,
+             下一条正从最亮处升起。
+             ⚠️ 改成向右生长的树之后,这两个渐变已经不再使用,保留说明是为了
+             记住那个陷阱:枝是描边,而 objectBoundingBox 的渐变在「笔直的横枝」
+             上 bbox 高度为 0,按 SVG 规范整根不渲染 —— 主干恰恰常常是笔直的。
+             现在枝用实色描边 + 每根自己的 --dim(按深度递减)表达同一件事。 -->
       </defs>
       <g id="viewport"></g>
     </svg>
     <span class="meteor" style="left:11%;top:9%;--md:11s;--mdl:2.4s" aria-hidden="true"></span>
     <span class="meteor" style="left:62%;top:27%;--md:14s;--mdl:8.6s" aria-hidden="true"></span>
+    <div class="minimap" id="minimap" aria-hidden="true" data-od-id="starmap-minimap">
+      <svg id="minimap-svg" preserveAspectRatio="xMidYMid meet">
+        <g id="minimap-edges"></g>
+        <g id="minimap-nodes"></g>
+        <path class="mm-mask" id="minimap-mask" d=""/>
+        <rect class="mm-frame" id="minimap-frame" x="0" y="0" width="0" height="0" rx="3"/>
+      </svg>
+    </div>
   </div>
   <div class="maprow" id="maprow">
-    <p class="hintline">按住空白处漫游 · 滚轮缩放 · 方向键选择星 · Enter 打开</p>
+    <p class="hintline">按住空白处漫游 · 滚轮或双指缩放,越放大越多名字浮出来 · 缩略图点哪去哪 · 方向键选星、Enter 打开 · + − 0 控制视野</p>
     <span class="zoom" role="group" aria-label="星图缩放">
       <button type="button" id="zoom-out" aria-label="缩小" data-od-id="zoom-out">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M6 12h12"/></svg>
@@ -519,25 +659,33 @@
     </span>
   </div>
 
-  <p class="legend world-scope" id="legend" style="--hue:252" data-od-id="graph-legend">
-    <span>
-      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle class="lg-halo" cx="7" cy="7" r="6.4" opacity=".34"/><circle class="lg-core" cx="7" cy="7" r="3.4"/></svg>
-      已揭示,越亮越多人走过
-    </span>
-    <span>
+  <!-- 图例是一组并列的条目,不是一段话:用 ul/li,屏幕阅读器才会逐条念,
+       而不是把七项连成一句。两条纯文字的说明统一挪到末尾,
+       前四条「图标 + 文字」保持整齐的节奏。 -->
+  <ul class="legend world-scope" id="legend" style="--hue:252" role="list" aria-label="星图图例" data-od-id="graph-legend">
+    <li>
+      <svg width="30" height="14" viewBox="0 0 30 14" aria-hidden="true"><circle class="lg-halo" cx="7" cy="7" r="6.2" opacity=".34"/><circle class="lg-core" cx="7" cy="7" r="3.2"/><circle class="lg-core" cx="19" cy="7" r="2.6" opacity=".5"/><circle class="lg-core" cx="27" cy="7" r="2.6" opacity=".22"/></svg>
+      星越亮 = 走过的人越多
+    </li>
+    <li>
+      <svg width="26" height="14" viewBox="0 0 26 14" aria-hidden="true"><path class="lg-mainb" d="M1 11C9 11 9 3 25 3" stroke-width="1.4"/><path class="lg-fb" d="M1 11C9 11 9 8 25 8" stroke-width="1.4" opacity=".45"/></svg>
+      暖金那根 = 走的人最多的主干
+    </li>
+    <li>
+      <svg width="26" height="14" viewBox="0 0 26 14" aria-hidden="true"><path class="lg-fb" d="M2 7h22" stroke-width="3" stroke-dasharray="3 5" opacity=".45"/><circle class="lg-dot" cx="7" cy="3.5" r="1"/><circle class="lg-dot" cx="15" cy="10.5" r="1"/><circle class="lg-dot" cx="21" cy="4" r="1"/><circle class="lg-dot" cx="11" cy="11" r="1"/></svg>
+      星尘 = 细到画不成一根枝的岔路,带真实条数
+    </li>
+    <li>
       <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle class="lg-dash" cx="7" cy="7" r="4.2" stroke-width="1.4" stroke-dasharray="2.6 3"/></svg>
       待揭示,剧情推进后才点亮
-    </span>
-    <span>
+    </li>
+    <li>
       <svg width="16" height="14" viewBox="0 0 16 14" aria-hidden="true"><circle class="lg-core" cx="8" cy="7" r="3.2"/><circle class="lg-ring" cx="8" cy="7" r="6.2" stroke-width="1.3"/></svg>
       他人的岔路
-    </span>
-    <span>
-      <svg width="30" height="14" viewBox="0 0 30 14" aria-hidden="true"><path class="lg-line" d="M1 10h28" stroke-width="5" stroke-linecap="round" opacity=".7"/><path class="lg-line" d="M1 3.5h28" stroke-width="1.4" stroke-linecap="round" opacity=".7"/></svg>
-      线粗 = 走过次数(对数)
-    </span>
-    <span>隐藏节点仅 AI 可见,不在此页展示</span>
-  </p>
+    </li>
+    <li class="note">人数与百分比在节点详情里,不画在图上</li>
+    <li class="note">隐藏节点仅 AI 可见,不在此页展示</li>
+  </ul>
 
   <!-- 小屏:一维缩进列表 -->
   <nav class="listview world-scope" id="listview" style="--hue:252" aria-labelledby="g-title" data-od-id="graph-list"></nav>
@@ -577,7 +725,7 @@
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h13"/><path d="M13 6l6 6-6 6"/></svg>
     </a>
   </div>
-</div>
+</main>
 
 <!-- ============ 节点面板 ============ -->
 <aside class="panel world-scope" id="panel" style="--hue:252" role="dialog" aria-modal="false"
@@ -744,7 +892,32 @@
   /* 社区页出现过、但还没有人岔开的世界 —— 选中走空态,不画假图 */
   var NO_GRAPH = (window.WANXIANG_WORKS || []).filter(function(work){ return !WORLDS[work.key]; });
 
-  var COL = 158, ROW = 122, PAD = 92;
+  /* ================= 「枝」常量(世界坐标 = 100% 缩放时的 CSS px) =================
+     **向右生长**:深度 = 横向的列,纵向的 H 是定值。
+     ⚠️ H 是定值,这是「分支再多也不会溢出」的**全部**来源。根占满 H;每个孩子
+     按人数占据父亲高度里的一段;孩子之间的空隙来自父亲自己的流失
+     (Σ孩子.plays < 父.plays,数据本身就是这样)。于是**任意一列的总高恒等于 H**
+     —— 不是靠调参保证的,是构造上不可能超。
+     为什么从「向上」改成「向右」:向上时每层只有 76px,枝还没岔开就到顶了,
+     读出来是一排并排的柱子。向右每列 180px,枝有足够长度真正分岔。
+     画布本来就是 2.35:1 的横幅,横向生长也不浪费画面。 */
+  var W = 1080, H = 560, PAD = 16, GUTTER = 34;
+  /* 一条河道窄于 MINH 就画不成一根枝了,并进「星尘」;
+     MINGAP 是同列两条河道之间至少要留出的暗带。
+     560 / (9 + 2.2) ≈ 50 —— 一列最多画几根的诚实上限,不是静默截断。 */
+  var MINH = 9, MINGAP = 2.2;
+  /* ⚠️ 枝一律**等宽细线**,不编码粗细。
+     试过三版有厚度的画法(缎带 / 三层内缩的面 / 变粗细的描边),没有一版好看:
+     有厚度就必然要处理锥度、河岸偏移、分叉处的汇合,而这些工夫换来的信息量,
+     面板里一行「占开场 91%」就说完了。
+     xyflow / react-force-graph / G6 的边也都是等宽细线 —— 它们从不编码粗细,
+     这不是偷懒,是对的。
+     人数现在只在两处出现:节点的亮度(星等,见 pointFor)与面板里的百分比。 */
+  var LW = 1.35;                 /* 枝的线宽(屏幕像素,non-scaling-stroke) */
+  /* 星点三段式,取自 stellarium-web-engine 的 core_get_point_for_mag。
+     见 pointFor():低于 R_SKIP 不画;在 R_SKIP 与 R_MIN 之间**钳住半径、改用亮度
+     承担差值**;顶端按 R_MAX 饱和。这条是「星永远不会缩成亚像素灰渣」的来源。 */
+  var R_SKIP = 1.0, R_MIN = 2.7, R_MAX = 7.6;
   var svg = document.getElementById('svg');
   var vp = document.getElementById('viewport');
   var starmap = document.getElementById('starmap');
@@ -816,7 +989,9 @@
       + '<h2 class="nname" id="p-name">'+node.t+'</h2></div>';
   }
 
-  /* ---------------- 稳定星图布局:主干稳定,支线有可重现的呼吸 ---------------- */
+  /* ---------------- 向右生长的有界树(bounded tree) ----------------
+     深度决定行,轮廓打包决定列;父节点对齐主干那一支,树从最下面那颗星长上去。
+     全程没有 Math.random、没有异步 tick —— 同一份数据每次得到同一棵树。 */
   function layout(nodes){
     var kids = {}, byId = {}, root = null;
     nodes.forEach(function(n){ byId[n.id] = n; kids[n.id] = []; });
@@ -824,40 +999,250 @@
       if(n.p === null || n.p === undefined) root = n.id;
       else if(kids[n.p]) kids[n.p].push(n.id);
     });
+    if(root === null) throw new Error('graph has no root');
     /* 同层按走过次数从多到少排,第一支是主干 */
     Object.keys(kids).forEach(function(k){
       kids[k].sort(function(a, b){ return byId[b].plays - byId[a].plays; });
     });
-    var slot = 0, pos = {}, maxDepth = 0;
-    function walk(id, depth){
-      maxDepth = Math.max(maxDepth, depth);
-      var ks = kids[id];
-      if(!ks.length){ pos[id] = {sx:slot++, d:depth}; return pos[id].sx; }
-      var xs = ks.map(function(k){ return walk(k, depth + 1); });
-      var sx = (xs[0] + xs[xs.length - 1]) / 2;
-      pos[id] = {sx:sx, d:depth};
-      return sx;
-    }
-    walk(root, 0);
+
+    /* 1. 深度、DFS 序,以及真正成树的子节点表。
+          环上那条回边直接丢掉、不进 tkids —— 下面的轮廓打包是递归,
+          靠这一步保证它一定会停。 */
+    var depth = {}, order = [], maxDepth = 0, seen = {}, tkids = {};
+    nodes.forEach(function(n){ tkids[n.id] = []; });
+    (function walk(id, d){
+      if(seen[id]) return;
+      seen[id] = 1; depth[id] = d; order.push(id);
+      if(d > maxDepth) maxDepth = d;
+      kids[id].forEach(function(k){
+        if(seen[k] || !byId[k]) return;
+        tkids[id].push(k);
+        walk(k, d + 1);
+      });
+    })(root, 0);
+
+    /* 2. 支流宽度分配(自根向下,前序)。
+          span[id] = 这条支流有多宽 = 走过它的人数占比 × 父亲的宽度。
+          x0[id]   = 它的左边界。
+          ⚠️ 这一步就是「不会溢出」的证明,不是调参调出来的:根占满 W;任何节点的
+          孩子们的宽度加上它们之间的空隙,恰好等于父亲的宽度。归纳下去,
+          **每一层的总宽恒等于 W**。分支从 18 条涨到 1800 条,变的只是每条有多细。 */
+    /* span[id] = 这条河道有多高(= 走过它的人数占比 × 父亲的高度)
+       x0[id]   = 它的上边界 */
+    var span = {}, x0 = {}, foot = {}, dust = {};
+    span[root] = H; x0[root] = 0;
+
+    order.forEach(function(id){
+      /* ⚠️ 自己已经被折进星尘的,整棵子树都不参与布局。
+         少这一句会出两件事:① 它的孩子拿不到 span,却仍被当成普通节点渲染,
+         于是全部堆在画布左边缘;② S 是 undefined,算出一串 NaN 宽度的星尘。
+         探针第一版就是被这两件事一起打出来的。 */
+      if(span[id] === undefined) return;
+      var ks = tkids[id];
+      if(!ks.length) return;
+      var S = span[id], P = Math.max(1, byId[id].plays || 0);
+
+      /* 2a. 期望宽度按人数比例。数据正常时 Σ孩子 < 父亲(有人读到这里就不再往前),
+             差出来的那块正是下面要用掉的空隙 —— **分支之间那道暗,就是流失的人**。
+             数据异常(孩子加起来比父亲还多)时整体归一到 94%,
+             不让某一条撑破父亲的河道。 */
+      var wantSum = 0, want = ks.map(function(k){
+        var v = S * Math.max(0, byId[k].plays || 0) / P;
+        wantSum += v; return v;
+      });
+      if(wantSum > S * 0.94){
+        var fix = S * 0.94 / wantSum;
+        for(var q = 0; q < want.length; q++) want[q] *= fix;
+        wantSum = S * 0.94;
+      }
+
+      /* 2b. 窄到画不成支流的并进「星尘」——取 G6 combo 折叠的做法:
+             它是一个可展开的实体并带真实计数,不是被悄悄丢掉的数据。
+             ⚠️ 星尘保留它们真实的宽度和,不虚增。真实宽度小到画不出来时,
+             渲染层退化成一个记号,而不是把河道撑宽去迁就它。 */
+      var keep = [], keepW = [], dustIds = [], dustW = 0, dustPlays = 0;
+      for(var i = 0; i < ks.length; i++){
+        if(want[i] >= MINH){ keep.push(ks[i]); keepW.push(want[i]); }
+        else { dustIds.push(ks[i]); dustW += want[i]; dustPlays += (byId[ks[i]].plays || 0); }
+      }
+      var cells = keep.length + (dustIds.length ? 1 : 0);
+      if(!cells) return;
+
+      /* 2c. 空隙 = 父亲宽度 - 所有支流宽度,均分给「格子数+1」个位置(两侧各一个,
+             相邻之间各一个)。空隙不够时按比例向支流收过路费,保证任意两条之间
+             至少有 MINGAP 的暗带 —— 否则一层挤三百条会糊成一整块,
+             看不出那是三百条。 */
+      var bodyW = dustW, j;
+      for(j = 0; j < keepW.length; j++) bodyW += keepW[j];
+      var slots = cells + 1, gap = (S - bodyW) / slots;
+      if(gap < MINGAP){
+        var room = Math.max(0, S - slots * MINGAP);
+        var tax = bodyW > 0 ? room / bodyW : 0;
+        for(j = 0; j < keepW.length; j++) keepW[j] *= tax;
+        dustW *= tax; gap = MINGAP; bodyW = room;
+      }
+
+      /* 2d. 次序:最宽的放中间,其余按宽度递减向两侧交替铺。主干因此天然落在
+             父亲正中,一路向上是一条几乎笔直的亮带;一顺排下去的话主干会贴着
+             左岸,整张图又变成一把梳子(上一版就是这么翻的车)。 */
+      var cell = [];
+      for(var a = 0; a < keep.length; a++) cell.push({id:keep[a], w:keepW[a], dust:0});
+      if(dustIds.length) cell.push({id:null, w:dustW, dust:dustIds.length, plays:dustPlays});
+      cell.sort(function(u, v){ return v.w - u.w; });
+      var seq = [], mainAt = 0;
+      for(var c = 0; c < cell.length; c++){
+        if(c === 0) seq.push(cell[0]);
+        else if(c % 2) seq.push(cell[c]);
+        else { seq.unshift(cell[c]); mainAt++; }
+      }
+
+      /* 2e. 落位:先整组居中,再整体平移让最宽那条的中心对上父亲的中心,
+             平移量夹在父亲河道内。这是主干笔直的来源。 */
+      var groupW = 0, s;
+      for(s = 0; s < seq.length; s++) groupW += seq[s].w;
+      groupW += gap * (seq.length - 1);
+      var left0 = x0[id] + (S - groupW) / 2, before = 0;
+      for(s = 0; s < mainAt; s++) before += seq[s].w + gap;
+      var mainMid = left0 + before + seq[mainAt].w / 2;
+      var room2 = Math.max(0, (S - groupW) / 2);
+      var shift = Math.max(-room2, Math.min(room2, (x0[id] + S / 2) - mainMid));
+      var cur = left0 + shift;
+
+      /* 2f. 「脚」= 这组孩子落在父亲那一行的位置,整体居中,次序与上面一致
+             (所以缎带永不交叉)。
+             ⚠️ 脚之间留 gap×0.45,不是贴死。贴死的话父亲那一行就是一整条被切成
+             几段的实心带 —— 那正是「看着像拼图」的来源。带一点缝,读出来才是
+             「光在这里分开」,而不是「一块东西被切开」。
+             0.45 而不是 1.0:脚仍然明显比顶端挨得紧,分岔的方向感还在。 */
+      var fgap = gap * 0.45, footW = 0;
+      for(s = 0; s < seq.length; s++) footW += seq[s].w;
+      footW += fgap * (seq.length - 1);
+      var fcur = x0[id] + (S - footW) / 2;
+
+      for(s = 0; s < seq.length; s++){
+        var it = seq[s];
+        if(it.id === null){
+          dust[id] = {n:it.dust, ids:dustIds, plays:it.plays,
+                      x0:cur, w:it.w, fx0:fcur, fw:it.w};
+        }else{
+          span[it.id] = it.w; x0[it.id] = cur;
+          foot[it.id] = {x0:fcur, w:it.w};
+        }
+        cur += it.w + gap;
+        fcur += it.w + fgap;
+      }
+    });
+
+    /* 3. 列宽。H 是定值,所以整张图的宽高比只由列宽决定。
+          浅的世界列拉宽、深的世界列收紧,任何深度都不会长出画布外面。
+          下限 110:再窄的话枝还没岔开就到下一列了,又变回并排的柱子。 */
+    var colW = maxDepth > 0
+      ? Math.max(110, Math.min(260, W / maxDepth)) : W;
+
+    /* 4. 落点。**x 由深度定(向右生长)**;y 是自己那条河道的中心。
+          河道的高度(_sp)只决定纵向间距与标签能否显示,不再决定枝的粗细 ——
+          枝一律等宽,人数只在面板里以百分比出现。 */
+    var dx = PAD + 26, dy = PAD + GUTTER;
     nodes.forEach(function(n){
-      var p = pos[n.id];
-      var sway = ((n.id * 17 + p.d * 11) % 17) - 8;
-      var spread = p.d === 0 ? 0 : sway * (p.d > 2 ? 1.45 : 1.1);
-      n._x = PAD + p.sx * COL + spread + (n.b ? 14 : 0);
-      n._y = PAD + p.d * ROW + (p.d % 2 ? 6 : -4);
-      n._d = p.d;
-      n._kids = kids[n.id];
+      /* 拿不到 span = 被折进了星尘。它不上图(但仍在列表视图里逐条都在),
+         renderer 与缩略图都据此跳过。 */
+      n._hidden = span[n.id] === undefined;
+      var sp = n._hidden ? MINH : span[n.id];
+      var ly = x0[n.id] === undefined ? 0 : x0[n.id];
+      n._sp   = sp;
+      n._d    = depth[n.id] === undefined ? 0 : depth[n.id];
+      n._y0   = dy + ly;
+      n._y    = dy + ly + sp / 2;
+      n._x    = dx + n._d * colW;
+      n._ft   = foot[n.id] ? {y0:dy + foot[n.id].x0, h:foot[n.id].w} : null;
+      n._kids = tkids[n.id];
       n._main = n.p === null || n.p === undefined || kids[n.p][0] === n.id;
     });
-    return {byId:byId, kids:kids, root:root, maxDepth:maxDepth,
-            w:PAD * 2 + Math.max(1, slot - 1) * COL + 68, h:PAD * 2 + maxDepth * ROW + 42};
+    Object.keys(dust).forEach(function(k){
+      var d = dust[k];
+      d.y0 = dy + d.x0; d.fy0 = dy + d.fx0;   /* 纵向:河道的上边界 */
+      d.h  = d.w;
+      d.x  = dx + (depth[k] + 1) * colW;      /* 横向:下一列 */
+      d.px = dx + depth[k] * colW;
+      /* n 是直接折叠的岔路条数;total 还要算上它们身后整棵子树 ——
+         报数要报全,不能只报看得见的那一层。 */
+      var seen2 = {}, stack = d.ids.slice(), tot = 0;
+      while(stack.length){
+        var cid = stack.pop();
+        if(seen2[cid]) continue;
+        seen2[cid] = 1; tot++;
+        (tkids[cid] || []).forEach(function(c){ stack.push(c); });
+      }
+      d.total = tot;
+    });
+
+    return {byId:byId, kids:tkids, root:root, maxDepth:maxDepth, depth:depth,
+            colW:colW, dust:dust, W:W, H:H,
+            colX:function(d){ return dx + d * colW; },
+            gy:PAD + 12,                          /* 顶栏层号的 y */
+            cx:byId[root]._x, cy:byId[root]._y,   /* 开场那颗星 */
+            /* 右侧多留 132:最深一列的名字写在节点右边,不能被画布切掉 */
+            w:dx + maxDepth * colW + 132 + PAD,
+            h:H + PAD * 2 + GUTTER};
   }
 
-  /* 线粗按对数映射:爆款分支不会把其他线压成头发丝 */
-  function weight(plays, min){
-    var w = 1 + Math.log(Math.max(plays, 1) / Math.max(min, 1)) / Math.log(2) * 0.9;
-    return Math.max(1, Math.min(6, w));
+  /* 一根枝:从父节点那一点横着长出去,落到子节点那一点。两个控制点都在
+     两点的水平中点上 —— 这是 xyflow `getBezierPath` 在 Left→Right 情形下的
+     同一族曲线(curvature 默认 0.5)。
+     ⚠️ 画成**描边**,不是填充的面。面会填满自己那条河道、与邻居贴边,
+     读出来是柱状图;描边只占河道的 42%,周围留出空气,那才是枝。
+     ⚠️ 同一个父节点的几根枝都从**同一点**出发,所以分叉处天然是一个叉口;
+     而且每根子枝都比父枝细,细掉的那部分正是在这里停下的人 ——
+     主干于是一路向右可见地变细,像真的树枝那样。 */
+  function branch(x0, y0, x1, y1){
+    var mx = (x0 + x1) / 2;
+    return 'M' + x0.toFixed(1) + ' ' + y0.toFixed(1)
+      + 'C' + mx.toFixed(1) + ' ' + y0.toFixed(1)
+        + ' ' + mx.toFixed(1) + ' ' + y1.toFixed(1)
+        + ' ' + x1.toFixed(1) + ' ' + y1.toFixed(1);
   }
+  /* 枝本身就是一条描边曲线,流光直接沿它跑,不必再单算一条中心线
+     (上一版的缎带是闭合的面,描轮廓会绕回来,才需要 ribbonMid)。 */
+
+  /* 星点:stellarium-web-engine 的 core_get_point_for_mag 三段式。
+     原函数解决「星等 → 屏幕上多大、多亮」,这里解决同一问题的另一面:
+     河道窄的时候星该多大。
+     ① 半径先按人数给,再被自己那条支流的宽度封顶(星不能比河道还宽);
+     ② 封顶后若掉到 R_MIN 以下,**把半径钳回 R_MIN、把差值转成亮度衰减**
+        (原式 ld *= ((r-skip)/(min-skip))²)。这一条是全部关键:
+        再冷门的节点也是「暗但看得见的一点」,而不是一粒亚像素灰渣;
+     ③ 低于 R_SKIP 才真的不画(返回 r=0,调用方据此计数并落进星尘);
+     ④ 顶端按 R_MAX 饱和,爆款节点不会长成一个球。 */
+  function pointFor(t, capW){
+    var tt = Math.max(0, Math.min(1, t));
+    var r = R_SKIP + Math.pow(tt, 0.62) * (R_MAX - R_SKIP);
+    var lum = 0.30 + 0.70 * tt;
+    var cap = capW * 0.42;
+    if(r > cap) r = cap;
+    if(r < R_SKIP) return {r:0, lum:0};
+    if(r < R_MIN){
+      var f = (r - R_SKIP) / (R_MIN - R_SKIP);
+      lum *= f * f;
+      r = R_MIN;
+    }
+    return {r:Math.min(r, R_MAX),
+            lum:Math.max(0.06, Math.min(1, Math.pow(lum, 1 / 1.5)))};
+  }
+
+  /* 走过次数 → 0..1。取对数:最热的节点是最冷的三十倍,线性映射会把其余全部压成
+     同一根头发丝。归一化到区间两端,而不是相对最小值累加 —— 后者在数据换成
+     更极端的分布时会跑出上界。 */
+
+  function norm(plays, min, max){
+    var lo = Math.log(Math.max(1, min)), hi = Math.log(Math.max(2, max));
+    if(hi <= lo) return 0.5;
+    return Math.max(0, Math.min(1, (Math.log(Math.max(1, plays)) - lo) / (hi - lo)));
+  }
+  /* ⚠️ 这里刻意没有「线粗」和「星半径」两个映射函数了。
+     人数只编码一次 —— 支流的宽度。星的大小交给 pointFor()(它解决的是
+     「河道窄时星该多大」,不是再编码一次人数),亮度也由它给。
+     旧版同时有 weight()(线粗∝对数)与 starR()(面积∝对数),
+     同一个变量画三遍,读者反而不知道该看哪个。 */
 
   /* ---------------- 四态:ready / loading / empty / error ---------------- */
   var STATES = {
@@ -954,98 +1339,165 @@
     var minPlays = world.nodes.reduce(function(m, n){ return Math.min(m, n.plays); }, Infinity);
     var maxPlays = world.nodes.reduce(function(m, n){ return Math.max(m, n.plays); }, 0);
     var branches = world.nodes.filter(function(n){ return n.b; }).length;
-    var total = world.nodes.reduce(function(m, n){ return m + n.plays; }, 0);
+    var root = g.byId[g.root];
+    /* 走到最深一层的还剩几个人 —— 这是整页最想说的那句话:
+       一个世界的深处永远比入口安静。 */
+    var deepest = world.nodes.reduce(function(m, n){
+      return n._d === g.maxDepth ? m + (n.plays || 0) : m;
+    }, 0);
 
     document.getElementById('g-title').textContent = '《' + world.n + '》';
     document.getElementById('g-facts').innerHTML =
         world.k
+      + SEP + '<b>' + num(root.plays) + '</b> 人推开过这扇门'
       + SEP + '已分成 <b>' + branches + '</b> 条岔路'
       + SEP + '最远抵达 <b>' + (g.maxDepth + 1) + '</b> 层'
-      + SEP + '<b>' + world.nodes.length + '</b> 颗已被点亮的星';
-    /* —— 星图 —— */
-    var root = g.byId[g.root];
-    var bloom = '<g class="bloom-g" aria-hidden="true">'
-      + '<ellipse class="bloom" cx="' + root._x + '" cy="' + (root._y + 40) + '" rx="'
-      + (g.w * 0.42).toFixed(0) + '" ry="260" opacity=".62"/></g>';
+      + SEP + '走到最深处的还剩 <b>' + num(deepest) + '</b> 人';
 
-    var halos = '', edges = '', stars = '', edgeDefs = '';
+    /* 1. 背景层:一片天空的辉光 + 地面 + 地平线。
+          地平线正好穿过开场那颗星 —— 人站在地上,光向天空升。 */
+    var bloom = '<g class="bloom-g" aria-hidden="true">'
+      + '<ellipse class="bloom" cx="' + (g.cx + g.w * 0.20).toFixed(0) + '" cy="' + g.cy.toFixed(0)
+      +   '" rx="' + (g.w * 0.58).toFixed(0) + '" ry="' + (g.h * 0.66).toFixed(0) + '" opacity=".58"/>'
+      /* 开场那颗星背后一小片属于这个世界的天空 —— 树从这里长出去 */
+      + '<ellipse class="ground" cx="' + g.cx.toFixed(0) + '" cy="' + g.cy.toFixed(0)
+      +   '" rx="132" ry="' + Math.min(g.h * 0.44, 230).toFixed(0) + '" opacity=".5"/></g>';
+
+    /* 2. 顶栏层号:每一列一个两位数,停在画面上沿,不横穿画面。 */
+    var rows = '';
+    for(var d = 0; d <= g.maxDepth; d++){
+      var cxx = g.colX(d);
+      rows += '<path class="tick" d="M' + cxx.toFixed(1) + ' ' + g.gy.toFixed(1) + 'v16"/>'
+        + '<text class="row-n" data-cs data-x="' + cxx.toFixed(1) + '" data-y="' + g.gy.toFixed(1)
+        + '" x="7" y="9">' + (d < 9 ? '0' + (d + 1) : (d + 1)) + '</text>';
+    }
+
+    /* 3. 每个节点的流量事实,以及 stellarium 三段式算出来的星点。
+          _cont = 从这里继续往前的人;_stop = 读到这里就停下的人 ——
+          后者就是这根枝在分叉处细掉的那一部分。 */
+    var halos = '', flows = '', stars = '', skipped = 0;
     world.nodes.forEach(function(n, i){
-      var w = weight(n.plays, minPlays);
-      n._r = 2.4 + w * 0.95 + (n._main ? (n._d === 0 ? 1.5 : 0.65) : 0); /* 主干略有尺度差 */
-      n._lum = Math.min(1, 0.30 + 0.70 * (n.plays / maxPlays) + (n._main ? 0.08 : 0));
+      var cont = 0;
+      (g.kids[n.id] || []).forEach(function(k){
+        var kn = g.byId[k]; if(kn) cont += (kn.plays || 0);
+      });
+      n._cont = cont;
+      n._stop = Math.max(0, (n.plays || 0) - cont);
+      /* ⚠️ 折进星尘的节点在这里就退出:_cont / _stop 仍要算(列表视图要用),
+         但它不上图 —— 否则它们会顶着默认坐标全部堆在画布角上。 */
+      if(n._hidden){ n._r = 0; n._lum = 0; return; }
+      /* 枝已经不编码人数了,星的上限就不再挂在枝上;给一个固定的天花板,
+         剩下的交给 pointFor 的星等曲线(半径 + 亮度)。 */
+      var pt = pointFor(norm(n.plays, minPlays, maxPlays), 22);
+      n._r = pt.r; n._lum = pt.lum;
+      if(!pt.r){ skipped++; return; }
       if(n.s !== 'wait'){
-        /* 呼吸的周期与相位由 hue 和序号决定:整片星空不会齐拍,也保证刷新一致 */
+        /* 呼吸的周期与相位由 hue 与序号决定:整片不会齐拍,而且刷新一致 */
         var dur = (4.4 + ((world.h * (i + 5)) % 26) / 10).toFixed(1);
         var dl  = (((world.h * (i + 3)) % 34) / 10).toFixed(1);
-        /* 渐变本身就带柔边,半径要比原先的模糊版更大才读得出光晕 */
-        halos += '<circle class="halo" cx="' + n._x + '" cy="' + n._y + '" r="'
-          + (n._r * 4.7).toFixed(1) + '" style="--o:' + (n._lum * 0.74).toFixed(2)
+        halos += '<circle class="halo" cx="' + n._x.toFixed(1) + '" cy="' + n._y.toFixed(1) + '" r="'
+          + (n._r * 4.2).toFixed(1) + '" style="--o:' + (n._lum * 0.55).toFixed(2)
           + ';--dur:' + dur + 's;--dl:' + dl + 's"/>';
       }
     });
+
+    /* 4. 枝。粗细就是走过的人数,所以这里没有第二套编码。
+          ⚠️ 同一个父节点的几根枝都从**同一点**出发 —— 分叉处因此天然是一个叉口,
+          而不是几根并排的柱子。每根子枝都比父枝细,细掉的部分就是在这里停下的人,
+          于是主干一路向右可见地变细,像真的树枝。 */
     world.nodes.forEach(function(n){
-      if(n.p === null || n.p === undefined) return;
+      if(n.p === null || n.p === undefined || n._hidden) return;
       var pn = g.byId[n.p];
-      var w = weight(n.plays, minPlays) + (n._main ? 0.78 : 0);
-      /* 断口随线宽退让:6px 的粗线若按固定 3px 留白,会直接怼进半径 8px 的星核。 */
-      var gap = 3 + w * 0.55;
-      var y1 = pn._y + pn._r + gap;
-      var y2 = n._y - n._r - gap;
-      var dx = n._x - pn._x;
-      /* ⚠️ 控制点沿 y 轴外推,横向引导不设上限。
-         旧版是 clamp(Δx×0.22, ±48) 且两个控制点都压在 midY:近垂直的边是直棍,
-         横跨大的边一到 48 就饱和、中段被拉成一段水平平肩,读起来是流程图的肘形连接线。
-         现在 k 取纵向跨度的一半、横向只给 0.25 的引导——没有饱和点,
-         整张图是同一族曲线;每条边的起飞角随自己的 Δx 变化,兄弟边在星旁自然分开。 */
-      var k = (y2 - y1) * 0.5;
-      /* 越深越暗,主干则作为一条温和的航迹 */
-      var op = n._main ? 0.96 : Math.max(0.20, 0.70 - n._d * 0.055);
-      var gid = 'eg' + n.id;
-      /* 渐变沿边的实际走向铺(userSpaceOnUse),不用 objectBoundingBox:
-         后者在 Δx 为 0 的竖直边上 bbox 宽度为 0,按规范整条边不渲染。 */
-      edgeDefs += '<linearGradient id="' + gid + '" gradientUnits="userSpaceOnUse"'
-        + ' x1="' + pn._x + '" y1="' + y1.toFixed(1)
-        + '" x2="' + n._x + '" y2="' + y2.toFixed(1) + '">'
-        + '<stop class="' + (n._main ? 'egm-a' : 'egs-a') + '" offset="0"/>'
-        + '<stop class="' + (n._main ? 'egm-b' : 'egs-b') + '" offset="1"/></linearGradient>';
-      edges += '<path class="edge' + (n._main ? ' main' : '') + '" data-edge="' + n.id + '" pathLength="100"'
-        + ' stroke="url(#' + gid + ')"'
-        + ' stroke-width="' + w.toFixed(2) + '" opacity="' + op.toFixed(2) + '"'
-        + ' style="animation-delay:' + (n._d * 132) + 'ms"'
-        + ' d="M' + pn._x + ' ' + y1.toFixed(1)
-        + ' C' + (pn._x + dx * 0.25).toFixed(1) + ' ' + (y1 + k).toFixed(1)
-        + ', ' + (n._x - dx * 0.25).toFixed(1) + ' ' + (y2 - k).toFixed(1)
-        + ', ' + n._x + ' ' + y2.toFixed(1) + '"/>';
+      if(!pn || pn._hidden) return;
+      /* 越往深处整体越暗:一个世界的深处永远比入口安静 */
+      var dim = n._main ? 1 : Math.max(0.34, 0.92 - n._d * 0.05);
+      var dd = branch(pn._x, pn._y, n._x, n._y);
+      flows += '<g class="flow' + (n._main ? ' main' : '') + '" data-edge="' + n.id + '"'
+        + ' style="animation-delay:' + (n._d * 118) + 'ms;--dim:' + dim.toFixed(2) + '">'
+        + '<path class="fb" d="' + dd + '"/>'
+        /* 流光直接沿枝跑,枝本身就是一条描边曲线 */
+        + '<path class="fm" data-mid="' + n.id + '" d="' + dd + '"/>'
+        + '</g>';
     });
-    world.nodes.forEach(function(n){
-      var isRoot = n.p === null || n.p === undefined;
-      /* 只有开场与岔路有标签;岔路默认压低,靠近或路径点亮时再完整显露。 */
-      var named = isRoot || n.b;
-      var cls = 'node' + (n.s === 'wait' ? ' wait' : '') + (n.b ? ' branch' : '')
-              + (n._main ? ' main' : '') + (isRoot ? ' root' : '') + (named ? ' named' : '');
-      var aria = (n.s === 'wait' ? '待揭示 · ' : '') + n.t
-        + (n.b ? ',' + n.a + ' 的岔路' : '') + ',走过 ' + num(n.plays) + ' 次';
-      var fs = isRoot ? 13.5 : 12;
-      var tw = Math.round(n.t.length * fs + 22);
-      stars += '<g class="' + cls + '" data-node="' + n.id + '" tabindex="-1" role="button"'
-        + ' aria-label="' + aria + '" transform="translate(' + n._x + ',' + n._y + ')"'
-        + ' style="animation-delay:' + (n._d * 132 + 130) + 'ms"'
-        + ' data-od-id="graph-node-' + n.id + '">'
-        + '<circle class="hit" r="' + Math.max(26, n._r * 3.4).toFixed(0) + '"/>'
-        + '<circle class="ring" r="' + (n._r + 10).toFixed(1) + '"/>'
-        + (n.b ? '<circle class="kick" r="' + (n._r + 5.4).toFixed(1) + '"/>' : '')
-        + '<circle class="core" r="' + (n.s === 'wait' ? 4.6 : n._r.toFixed(1)) + '"/>'
-        + '<g class="tag" transform="translate(0,' + (n._r + 14).toFixed(0) + ')">'
-        +   '<rect class="bg" x="' + (-tw / 2) + '" y="0" width="' + tw + '" height="24" rx="12"/>'
-        +   '<text class="tx" text-anchor="middle" y="16.4">' + n.t + '</text>'
+
+    /* 5. 星尘:细到画不成一根枝的那些,合并成一束带真实计数的虚影。
+          ⚠️ 散点用 R2 低差异序列(Roberts 2015),不用 Math.random ——
+          Fantasy-Map-Generator 靠 Poisson-disc 取蓝噪声,这里要同样「均匀但不成行」
+          的分布,又必须刷新一致,所以换成确定性的低差异序列。 */
+    var R2A = 0.7548776662466927, R2B = 0.5698402909980532;
+    Object.keys(g.dust).forEach(function(k){
+      var du = g.dust[k], pn = g.byId[k];
+      if(!pn || pn._hidden) return;
+      var mid = du.y0 + du.h / 2;
+      var dots = '';
+      var cnt = Math.max(8, Math.min(70, du.n * 3));
+      for(var q = 1; q <= cnt; q++){
+        var u = (0.5 + R2A * q) % 1, v = (0.5 + R2B * q) % 1;
+        dots += '<circle cx="' + (pn._x + (du.x - pn._x) * (0.30 + u * 0.74)).toFixed(1)
+          + '" cy="' + (du.y0 + v * du.h).toFixed(1)
+          + '" r="' + (0.7 + (q % 3) * 0.28).toFixed(2) + '"/>';
+      }
+      stars += '<g class="node dust" data-dust="' + k + '" tabindex="-1" role="button"'
+        + ' aria-label="这里折叠着 ' + du.n + ' 条更冷门的岔路(连同其后共 '
+        + du.total + ' 个节点),合计 ' + num(du.plays)
+        + ' 人走过,细到画不成一根枝;小屏的列表视图里逐条都在"'
+        + ' style="animation-delay:' + ((pn._d + 1) * 118 + 120) + 'ms"'
+        + ' data-sp="' + du.h.toFixed(1) + '" data-tw="60"'
+        + ' data-od-id="graph-dust-' + k + '">'
+        + '<path class="db" d="' + branch(pn._x, pn._y, du.x, mid) + '"/>'
+        + '<g class="dd">' + dots + '</g>'
+        + '<rect class="hit" x="' + (du.x - 34).toFixed(1) + '" y="' + (mid - 16).toFixed(1)
+        +   '" width="84" height="32" rx="4"/>'
+        + '<g class="tag" data-cs data-x="' + (du.x + 9).toFixed(1)
+        +   '" data-y="' + mid.toFixed(1) + '">'
+        +   '<text class="tx dt" text-anchor="start" x="0" y="4">+' + du.n + ' 条</text>'
         + '</g></g>';
     });
-    svg.setAttribute('viewBox', '0 0 ' + g.w + ' ' + (g.h + 60));
-    vp.innerHTML = '<defs>' + edgeDefs + '</defs>'
-      + bloom
+
+    /* 6. 节点。名字写在节点右边、与它齐平,躺在本列与下一列之间的空档里。
+          出不出现由 rescaleLabels() 判:这条河道在屏幕上够不够高、这一列够不够宽。
+          ⚠️ 命中区是节点周围的一块矩形,不是那颗 3px 的星 ——
+          高度取自己那条河道(不会碰到上下的邻居),宽度取列宽的 0.7。 */
+    world.nodes.forEach(function(n){
+      if(n._hidden) return;
+      var isRoot = n.p === null || n.p === undefined;
+      var cls = 'node' + (n.s === 'wait' ? ' wait' : '') + (n.b ? ' branch' : '')
+              + (n._main ? ' main' : '') + (isRoot ? ' root' : '');
+      var aria = (n.s === 'wait' ? '待揭示 · ' : '') + n.t
+        + (n.b ? ',' + n.a + ' 的岔路' : '')
+        + ',第 ' + (n._d + 1) + ' 层,走到这里 ' + num(n.plays) + ' 人'
+        + (n._cont ? ',其中 ' + num(n._cont) + ' 人继续往前' : '')
+        + (n._stop ? ',' + num(n._stop) + ' 人在这里停下' : '');
+      var fs = isRoot ? 15 : 13;
+      var tw = Math.round(n.t.length * fs * 1.03 + 16);
+      var core = n.s === 'wait' ? 4.2 : Math.max(1.7, n._r);
+      var hitH = Math.max(20, Math.min(n._sp, 46));
+      var hitW = Math.min(g.colW * 0.7, 104);
+      stars += '<g class="' + cls + '" data-node="' + n.id + '" tabindex="-1" role="button"'
+        + ' data-sp="' + n._sp.toFixed(1) + '" data-tw="' + tw + '"'
+        + ' aria-label="' + aria + '"'
+        + ' transform="translate(' + n._x.toFixed(1) + ',' + n._y.toFixed(1) + ')"'
+        + ' style="animation-delay:' + (n._d * 118 + 120) + 'ms"'
+        + ' data-od-id="graph-node-' + n.id + '">'
+        + '<rect class="hit" x="' + (-hitW * 0.28).toFixed(1) + '" y="' + (-hitH / 2).toFixed(1)
+        +   '" width="' + hitW.toFixed(1) + '" height="' + hitH.toFixed(1) + '" rx="4"/>'
+        + '<circle class="ring" r="' + (core + 8).toFixed(1) + '"/>'
+        + (n.b ? '<circle class="kick" r="' + (core + 4.6).toFixed(1) + '"/>' : '')
+        + '<circle class="core" r="' + core.toFixed(1)
+        +   '" style="--l:' + n._lum.toFixed(2) + '"/>'
+        + '<g class="tag" data-cs data-x="' + (core + 9).toFixed(1) + '" data-y="0">'
+        +   '<text class="tx" text-anchor="start" x="0" y="'
+        +     (fs * 0.36).toFixed(1) + '">' + n.t + '</text>'
+        + '</g></g>';
+    });
+    if(skipped) console.info('[星图] ' + skipped + ' 个节点低于可绘制下限,已并入星尘');
+
+    vp.innerHTML = bloom
+      + '<g class="rows" aria-hidden="true">' + rows + '</g>'
+      + '<g class="flows">' + flows + '</g>'
       + '<g class="halos" aria-hidden="true">' + halos + '</g>'
-      + '<g class="edges">' + edges + '</g>'
       + '<g class="stars">' + stars + '</g>';
+    rescaleLabels();
     /* 入场生长:重挂 class 以重启动画。结束后摘掉,免得长期占着合成层。 */
     if(!RM){
       starmap.classList.remove('grow');
@@ -1053,20 +1505,26 @@
       starmap.classList.add('grow');
       clearTimeout(growT);
       growT = setTimeout(function(){ starmap.classList.remove('grow'); },
-                         (g.maxDepth * 132) + 1700);
+                         (g.maxDepth * 118) + 1700);
     }
 
-    /* —— 一维缩进列表(小屏) —— */
+    /* —— 一维缩进列表(小屏)——
+          ⚠️ 这里也不画长短条。桌面版的图不编码人数,列表也不该另立一套编码;
+          比例直接写成数字,和详情面板同一个口径。 */
     function rowHTML(n, note){
-      var w = weight(n.plays, minPlays);
+      var share = root.plays > 0 ? (n.plays || 0) / root.plays * 100 : 0;
+      var pv = share >= 10 ? Math.round(share) : Math.round(share * 10) / 10;
       return '<button class="nrow' + (n.s === 'wait' ? ' wait' : '') + (n.b ? ' branch' : '')
+        + (n._main ? ' main' : '')
         + '" type="button" data-node="' + n.id + '" aria-current="false"'
         + ' data-od-id="graph-row-' + n.id + '">'
         + '<span class="bead" aria-hidden="true"></span>'
         + '<span class="txt"><span class="t1">' + n.t + '</span>'
-        + '<span class="t2">走过 ' + num(n.plays) + ' 次 · ' + n.a
+        + '<span class="t2">' + num(n.plays) + ' 人走到这里'
+        + (n._stop ? ' · ' + num(n._stop) + ' 人在此停下' : '')
+        + ' · ' + n.a
         + (note ? ' · ' + note : '') + (n.s === 'wait' ? ' · 待揭示' : '') + '</span></span>'
-        + '<span class="bar" style="width:' + (w * 9).toFixed(0) + 'px" aria-hidden="true"></span>'
+        + '<span class="pctv">' + pv + '%</span>'
         + '</button>';
     }
     function branchOf(id){
@@ -1078,73 +1536,189 @@
     listview.innerHTML = '<ul><li>' + rowHTML(root, '开场') + branchOf(g.root) + '</li></ul>';
 
     bindNodes();
-    resetView();
+    paintMinimap();
+    fitView(0);
     var first = vp.querySelector('[data-node="' + g.root + '"]');
     if(first) first.setAttribute('tabindex', '0');
     closePanel();
   }
 
-  /* ---------------- 漫游 / 缩放 ---------------- */
-  var ZMIN = 0.5, ZMAX = 2.5;
+  /* ================= 视口:像素 viewBox + 一层 transform =================
+     取 React Flow 的 pane 模型。svg 的 viewBox 恒等于容器的 CSS 像素尺寸,
+     所以 1 世界单位 = 1 CSS px、preserveAspectRatio 永远不介入;
+     图的位置只由 #viewport 的 transform 决定,拖拽 1px 就是 tx += 1,没有换算。
+     旧版让 viewBox 装下整张图,于是画面上叠着两层缩放:一层看得见(transform),
+     一层看不见(letterbox)。「100%」因此是假的,标签也因此小得读不动。 */
+  var vw = 0, vh = 0;
   var tx = 0, ty = 0, sc = 1;
+  var baseScale = 1;                 /* 适配全图时的缩放 —— 缩放读数以它为 100% */
+  var SMIN = 0.2, SMAX = 4;
+  var atFit = true;                  /* 还停在全图上吗?窗口变化时据此决定要不要重新适配 */
   var zIn = document.getElementById('zoom-in');
   var zOut = document.getElementById('zoom-out');
   var zLevel = document.getElementById('zoom-level');
   var zSay = document.getElementById('zoom-say');
   var armed = false, drag = false, lx = 0, ly = 0, ox = 0, oy = 0;
-  var vx = 0, vy = 0, glideFrame = 0;
+  var vx = 0, vy = 0, glideFrame = 0, animFrame = 0, lastK = -1;
+
+  function measure(){
+    var r = svg.getBoundingClientRect();
+    if(!r.width || !r.height) return false;
+    vw = r.width; vh = r.height;
+    svg.setAttribute('viewBox', '0 0 ' + vw.toFixed(1) + ' ' + vh.toFixed(1));
+    return true;
+  }
+  function toWorld(clientX, clientY){
+    var r = svg.getBoundingClientRect();
+    return {x:(clientX - r.left - tx) / sc, y:(clientY - r.top - ty) / sc};
+  }
+  /* 标签按 1/sc 反补偿。只在缩放真的变了时才遍历 —— 纯平移不必重排标签。
+     顺带判 .fits:**这条支流在屏幕上够不够宽装下自己的名字**。
+     这就是本页的 LOD —— 逐条判、连续生效,不是一个全局阈值一刀切;
+     而且因为标签只画在自己的河道里,判过之后就不可能与别人重叠。 */
+  function rescaleLabels(){
+    var k = (1 / sc).toFixed(4);
+    var els = vp.querySelectorAll('[data-cs]');
+    for(var i = 0; i < els.length; i++){
+      els[i].setAttribute('transform', 'translate(' + els[i].getAttribute('data-x')
+        + ',' + els[i].getAttribute('data-y') + ') scale(' + k + ')');
+    }
+    /* 名字要同时装得下两个方向:纵向不能挤到上下的邻居(河道高度),
+       横向不能越过下一列(列宽)。两个条件都在屏幕像素上判。 */
+    var cw = laidOut ? laidOut.colW : 1e9;
+    var ns = vp.querySelectorAll('.node[data-sp]');
+    for(var j = 0; j < ns.length; j++){
+      var sp = parseFloat(ns[j].getAttribute('data-sp')) || 0;
+      var tw = parseFloat(ns[j].getAttribute('data-tw')) || 0;
+      /* +16 而不是 +26:名字只要不盖住下一列的那颗星就行,不必整段留在本列内
+         —— 阈值收得太紧时,720px 宽的窗口下一个名字都浮不出来(探针实测 0/18)。
+         纵向 17:比一行 13px 的字略高一点,够了。 */
+      ns[j].classList.toggle('fits', sp * sc >= 17 && tw + 16 <= cw * sc);
+    }
+  }
+  function setView(t){
+    tx = t.tx; ty = t.ty; sc = t.sc;
+    vp.setAttribute('transform',
+      'translate(' + tx.toFixed(2) + ',' + ty.toFixed(2) + ') scale(' + sc.toFixed(4) + ')');
+    var k = Math.round(1e4 / sc);
+    if(k !== lastK){ lastK = k; rescaleLabels(); }
+    var rel = baseScale > 0 ? sc / baseScale : 1;
+    /* 这里不再有全局 LOD 开关。名字的显隐由 rescaleLabels() 按每条支流各自的
+       屏幕宽度判 —— 放大时是「一条一条浮出来」,不是到某个刻度整片同时炸开。 */
+    zLevel.textContent = Math.round(rel * 100) + '%';
+    zIn.disabled = sc >= SMAX - 1e-4;
+    zOut.disabled = sc <= SMIN + 1e-4;
+    syncMinimap();
+  }
+  /* 面板盖住画布右边多少像素。面板是 position:fixed 贴着窗口右沿,
+     而画布在居中的 .wrap 里,所以要换算成画布本地坐标才有意义。 */
+  function panelCover(){
+    if(!panel.classList.contains('on') || window.innerWidth <= 900) return 0;
+    var r = svg.getBoundingClientRect();
+    var edge = (window.innerWidth - Math.min(432, window.innerWidth)) - r.left;
+    return Math.max(0, r.width - edge);
+  }
+  /* 真 fitView(取 React Flow 的 getViewportForBounds):按内容包围盒 + 非对称留白
+     算出缩放与平移。旧版的「回到全图」只是 tx=ty=0、sc=1 —— 那不是适配,
+     那只是把 transform 清零,图在哪全看布局算出来多大。 */
+  function computeFit(){
+    if(!laidOut || !vw || !vh) return null;
+    var padL = 52, padT = 40, padB = 56;
+    var padR = Math.max(52, panelCover() + 24);
+    var aw = Math.max(60, vw - padL - padR), ah = Math.max(60, vh - padT - padB);
+    /* 上限 1.6:小图不该被放大到星比标签还大 */
+    var s = Math.min(1.6, Math.min(aw / laidOut.w, ah / laidOut.h));
+    return {sc:s,
+            tx:padL + (aw - laidOut.w * s) / 2,
+            ty:padT + (ah - laidOut.h * s) / 2};
+  }
+  /* 平移边界(取 React Flow 的 setViewportConstrained):
+     至少留一块内容在画面里。没有它,一次快拖就能把星图甩进虚空再也找不回来。 */
+  function clampView(t){
+    if(!laidOut || !vw) return t;
+    var cw = laidOut.w * t.sc, ch = laidOut.h * t.sc;
+    var kx = Math.min(180, cw * 0.6), ky = Math.min(140, ch * 0.6);
+    t.tx = Math.min(vw - kx, Math.max(kx - cw, t.tx));
+    t.ty = Math.min(vh - ky, Math.max(ky - ch, t.ty));
+    return t;
+  }
+  function easeInOut(p){ return p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2; }
+  function stopAnim(){ if(animFrame) cancelAnimationFrame(animFrame); animFrame = 0; }
+  function animateTo(t, ms){
+    stopGlide(); stopAnim();
+    if(RM || !ms){ setView(t); return; }
+    var a = {tx:tx, ty:ty, sc:sc}, t0 = 0;
+    animFrame = requestAnimationFrame(function step(now){
+      if(!t0) t0 = now;
+      var e = easeInOut(Math.min(1, (now - t0) / ms));
+      setView({tx:a.tx + (t.tx - a.tx) * e, ty:a.ty + (t.ty - a.ty) * e,
+               sc:a.sc + (t.sc - a.sc) * e});
+      if(e < 1) animFrame = requestAnimationFrame(step);
+      else animFrame = 0;
+    });
+  }
+  function fitView(ms){
+    if(!measure()) return;
+    var f = computeFit();
+    if(!f) return;
+    baseScale = f.sc;
+    /* 缩不过全图 —— 那正是「回到全图」这句话的意思,也省掉一个越缩越看不清的下限 */
+    SMIN = f.sc; SMAX = f.sc * 3.2;
+    atFit = true;
+    animateTo(f, ms);
+  }
+  function zoomAt(next, wx, wy, ms){
+    next = Math.max(SMIN, Math.min(SMAX, next));
+    if(Math.abs(next - sc) < 1e-5) return;
+    atFit = false;
+    var sx = wx * sc + tx, sy = wy * sc + ty;   /* 该世界点此刻的屏幕位置,缩放后要停在原处 */
+    animateTo(clampView({sc:next, tx:sx - wx * next, ty:sy - wy * next}), ms);
+  }
+  function zoomCenter(f){
+    zoomAt(sc * f, (vw / 2 - tx) / sc, (vh / 2 - ty) / sc, 240);
+  }
+  /* 只有按键操作才播报,滚轮缩放不刷屏。等过渡走完再念,免得念出中间值。 */
+  function sayZoom(){
+    setTimeout(function(){
+      zSay.textContent = '缩放 ' + Math.round(sc / baseScale * 100) + '%';
+    }, RM ? 0 : 420);
+  }
+  zIn.addEventListener('click', function(){ zoomCenter(1.28); sayZoom(); });
+  zOut.addEventListener('click', function(){ zoomCenter(1 / 1.28); sayZoom(); });
+  document.getElementById('zoom-reset').addEventListener('click', function(){ fitView(380); sayZoom(); });
+
+  starmap.addEventListener('wheel', function(e){
+    e.preventDefault();
+    /* 归一化(取 React Flow 的 wheelDelta):deltaMode 0=像素 / 1=行 / 2=页,
+       三者数量级差二十倍以上;ctrlKey 是 mac 触控板的捏合手势,系数再放大十倍。
+       旧版只看 deltaY 的正负,于是鼠标滚一格和触控板轻扫一次走同样的步长。 */
+    var d = -e.deltaY * (e.deltaMode === 1 ? 0.05 : e.deltaMode ? 1 : 0.002);
+    if(e.ctrlKey) d *= 10;
+    var p = toWorld(e.clientX, e.clientY);
+    zoomAt(sc * Math.pow(2, d), p.x, p.y, 0);
+  }, {passive:false});
+
   function stopGlide(){
     if(glideFrame) cancelAnimationFrame(glideFrame);
     glideFrame = 0; vx = 0; vy = 0;
   }
-  function apply(){
-    vp.setAttribute('transform', 'translate(' + tx.toFixed(1) + ',' + ty.toFixed(1) + ') scale(' + sc.toFixed(3) + ')');
-    zLevel.textContent = Math.round(sc * 100) + '%';
-    /* 到上下限就禁用,而不是留一个按了没反应的按钮 */
-    zIn.disabled = sc >= ZMAX - 1e-6;
-    zOut.disabled = sc <= ZMIN + 1e-6;
-  }
-  /* 只有按键操作才播报,滚轮缩放不刷屏 */
-  function sayZoom(){ zSay.textContent = '缩放 ' + Math.round(sc * 100) + '%'; }
-  function resetView(){ stopGlide(); tx = 0; ty = 0; sc = 1; apply(); }
-  function zoomBy(f, cx, cy){
-    stopGlide();
-    var next = Math.max(ZMIN, Math.min(ZMAX, sc * f));
-    if(next === sc) return;
-    if(cx !== undefined){
-      tx = cx - (cx - tx) * (next / sc);
-      ty = cy - (cy - ty) * (next / sc);
-    }
-    sc = next; apply();
-  }
-  function svgScale(){
-    var box = svg.getBoundingClientRect();
-    if(!box.width || !svg.viewBox.baseVal.width) return 1;
-    return svg.viewBox.baseVal.width / box.width;
-  }
-  zIn.addEventListener('click', function(){ zoomBy(1.16); sayZoom(); });
-  zOut.addEventListener('click', function(){ zoomBy(1 / 1.16); sayZoom(); });
-  document.getElementById('zoom-reset').addEventListener('click', function(){ resetView(); sayZoom(); });
-  starmap.addEventListener('wheel', function(e){
-    e.preventDefault();
-    var box = svg.getBoundingClientRect(), k = svgScale();
-    zoomBy(e.deltaY < 0 ? 1.07 : 1 / 1.07, (e.clientX - box.left) * k, (e.clientY - box.top) * k);
-  }, {passive:false});
   function startGlide(){
     if(RM || Math.abs(vx) + Math.abs(vy) < 0.16) return;
-    function glide(){
-      tx += vx; ty += vy;
+    glideFrame = requestAnimationFrame(function glide(){
+      var t = clampView({tx:tx + vx, ty:ty + vy, sc:sc});
+      /* 撞到边界就把那个方向的速度清掉,不然会沿着边一直蹭 */
+      if(t.tx === tx) vx = 0;
+      if(t.ty === ty) vy = 0;
+      setView(t);
       vx *= 0.88; vy *= 0.88;
-      apply();
       if(Math.abs(vx) + Math.abs(vy) >= 0.16) glideFrame = requestAnimationFrame(glide);
       else stopGlide();
-    }
-    glideFrame = requestAnimationFrame(glide);
+    });
   }
   starmap.addEventListener('pointerdown', function(e){
     if(e.pointerType === 'mouse' && e.button !== 0) return;   /* 只认主键 */
     if(e.target.closest('.node')) return;
-    stopGlide();
+    stopGlide(); stopAnim(); setNear(null);
     armed = true; drag = false;
     lx = ox = e.clientX; ly = oy = e.clientY;
     starmap.setPointerCapture(e.pointerId);
@@ -1157,13 +1731,13 @@
       drag = true;
       starmap.classList.add('dragging');
     }
-    var k = svgScale();
-    var dx = (e.clientX - lx) * k, dy = (e.clientY - ly) * k;
-    tx += dx; ty += dy;
+    /* viewBox ≡ 容器像素,所以指针位移就是 transform 位移,没有换算 */
+    var dx = e.clientX - lx, dy = e.clientY - ly;
+    atFit = false;
+    setView(clampView({tx:tx + dx, ty:ty + dy, sc:sc}));
     vx = Math.max(-32, Math.min(32, dx));
     vy = Math.max(-32, Math.min(32, dy));
     lx = e.clientX; ly = e.clientY;
-    apply();
   });
   function endDrag(shouldGlide){
     var wasDragging = drag;
@@ -1175,6 +1749,130 @@
   starmap.addEventListener('pointercancel', function(){ stopGlide(); endDrag(false); });
   /* 指针捕获意外丢失(切窗口、元素被重建、指针移出文档)也要复位。 */
   starmap.addEventListener('lostpointercapture', function(){ if(armed){ stopGlide(); endDrag(false); } });
+
+  /* 把某颗星带进可视区。右侧面板一开就是 432px,不这样做,刚点的那颗星
+     十有八九正好被自己打开的面板盖住。(取 React Flow 的 setCenter 思路) */
+  function ensureVisible(n){
+    if(!laidOut || !vw || window.innerWidth <= 900) return;
+    var pad = 78;
+    var right = vw - Math.max(pad, panelCover() + 24);
+    var sx = n._x * sc + tx, sy = n._y * sc + ty;
+    var t = {tx:tx, ty:ty, sc:sc}, need = false;
+    if(sx > right){ t.tx -= sx - right; need = true; }
+    else if(sx < pad){ t.tx += pad - sx; need = true; }
+    if(sy > vh - pad){ t.ty -= sy - (vh - pad); need = true; }
+    else if(sy < pad){ t.ty += pad - sy; need = true; }
+    if(!need) return;
+    atFit = false;
+    animateTo(clampView(t), 320);
+  }
+
+  /* ================= 缩略星图 =================
+     放大之后,它是唯一能回答「现在看的是整片星空的哪一块」的东西。 */
+  var mm = document.getElementById('minimap');
+  var mmSvg = document.getElementById('minimap-svg');
+  var mmEdges = document.getElementById('minimap-edges');
+  var mmNodes = document.getElementById('minimap-nodes');
+  var mmMask = document.getElementById('minimap-mask');
+  var mmFrame = document.getElementById('minimap-frame');
+  var mmBox = null, mmDrag = false;
+
+  function mmScale(){
+    var r = mmSvg.getBoundingClientRect();
+    var w = r.width || 176, h = r.height || 114;
+    return {k:Math.min(w / mmBox.w, h / mmBox.h), w:w, h:h, left:r.left, top:r.top};
+  }
+  function paintMinimap(){
+    if(!laidOut || !current){ mmEdges.innerHTML = ''; mmNodes.innerHTML = ''; mmBox = null; return; }
+    var m = 26;
+    mmBox = {x:-m, y:-m, w:laidOut.w + m * 2, h:laidOut.h + m * 2};
+    mmSvg.setAttribute('viewBox', mmBox.x + ' ' + mmBox.y + ' ' + mmBox.w + ' ' + mmBox.h);
+    /* ⚠️ 圆点半径写在世界坐标里,而缩略图把 ~950 个单位塞进 176px(≈0.18×)。
+       直接用星图的半径,画出来是 0.6px 的灰渣。所以按实际缩放反算回去。 */
+    var k = mmScale().k || 0.18;
+    var e = '', s = '';
+    current.nodes.forEach(function(n){
+      if(n.p === null || n.p === undefined || n._hidden) return;
+      var pn = laidOut.byId[n.p];
+      if(!pn) return;
+      /* 缩略图里画的是同样的缎带(填充,不是线):0.18× 之后一族细线会糊成灰雾,
+         而一片有宽窄的光缩小之后仍然是同一个形状,认得出来。 */
+      e += '<path class="mm-flow' + (n._main ? ' main' : '') + '" d="'
+        + branch(pn._x, pn._y, n._x, n._y) + '"/>';
+    });
+    current.nodes.forEach(function(n){
+      if(n._hidden) return;
+      s += '<circle class="mm-node' + (n.b ? ' b' : '') + (n.s === 'wait' ? ' w' : '')
+        + '" cx="' + n._x.toFixed(1) + '" cy="' + n._y.toFixed(1)
+        + '" r="' + ((1.9 + n._lum * 1.5) / k).toFixed(1) + '"/>';
+    });
+    mmEdges.innerHTML = e; mmNodes.innerHTML = s;
+  }
+  function syncMinimap(){
+    if(!mmBox) return;
+    var x = -tx / sc, y = -ty / sc, w = vw / sc, h = vh / sc;
+    mmFrame.setAttribute('x', x.toFixed(1));
+    mmFrame.setAttribute('y', y.toFixed(1));
+    mmFrame.setAttribute('width', Math.max(1, w).toFixed(1));
+    mmFrame.setAttribute('height', Math.max(1, h).toFixed(1));
+    /* evenodd 挖洞:外框一整块 + 视野一块,视野之外压暗一层 */
+    mmMask.setAttribute('d',
+      'M' + mmBox.x + ' ' + mmBox.y + 'h' + mmBox.w + 'v' + mmBox.h + 'h' + (-mmBox.w) + 'Z'
+    + 'M' + x.toFixed(1) + ' ' + y.toFixed(1) + 'h' + w.toFixed(1)
+      + 'v' + h.toFixed(1) + 'h' + (-w).toFixed(1) + 'Z');
+  }
+  function mmGoto(e){
+    if(!mmBox || !vw) return;
+    var m = mmScale();
+    /* preserveAspectRatio="xMidYMid meet":先求实际缩放,再把两侧留白折算掉 */
+    var offX = (m.w - mmBox.w * m.k) / 2, offY = (m.h - mmBox.h * m.k) / 2;
+    var wx = mmBox.x + (e.clientX - m.left - offX) / m.k;
+    var wy = mmBox.y + (e.clientY - m.top - offY) / m.k;
+    atFit = false;
+    animateTo(clampView({sc:sc, tx:vw / 2 - wx * sc, ty:vh / 2 - wy * sc}), 0);
+  }
+  /* stopPropagation:缩略图在 .starmap 内部,不拦住就会同时触发整张图的拖拽 */
+  mm.addEventListener('pointerdown', function(e){
+    e.stopPropagation(); e.preventDefault();
+    mmDrag = true; mm.setPointerCapture(e.pointerId); mmGoto(e);
+  });
+  mm.addEventListener('pointermove', function(e){ if(mmDrag){ e.stopPropagation(); mmGoto(e); } });
+  mm.addEventListener('pointerup', function(e){ e.stopPropagation(); mmDrag = false; });
+  mm.addEventListener('pointercancel', function(){ mmDrag = false; });
+
+  /* ================= 邻域聚焦 =================
+     悬停一颗星,它与父边、子边亮起来,其余退到背景里。
+     只在鼠标上启用:触摸没有 hover,粘住的高亮清不掉。 */
+  var hoverId = null;
+  function setNear(id){
+    if(hoverId === id) return;
+    hoverId = id;
+    var old = vp.querySelectorAll('.near');
+    for(var i = 0; i < old.length; i++) old[i].classList.remove('near');
+    var n = (id === null || !laidOut) ? null : laidOut.byId[id];
+    if(!n){ starmap.classList.remove('focus'); return; }
+    var ids = [id].concat(n._kids);
+    if(n.p !== null && n.p !== undefined) ids.push(n.p);
+    ids.forEach(function(x){
+      var g = vp.querySelector('.node[data-node="' + x + '"]');
+      if(g) g.classList.add('near');
+    });
+    /* 边以子节点 id 命名:自己通向父节点那条 + 每个子节点那条 */
+    [id].concat(n._kids).forEach(function(x){
+      var e = vp.querySelector('.flow[data-edge="' + x + '"]');
+      if(e) e.classList.add('near');
+    });
+    starmap.classList.add('focus');
+  }
+
+  /* 画布尺寸变了:还停在全图就重新适配,否则只把平移夹回边界内。 */
+  function onResize(){
+    if(!measure()) return;
+    if(atFit) fitView(0);
+    else setView(clampView({tx:tx, ty:ty, sc:sc}));
+  }
+  if(window.ResizeObserver) new ResizeObserver(onResize).observe(starmap);
+  else window.addEventListener('resize', onResize);
 
   /* ---------------- 选中与键盘导航 ---------------- */
   function clearSparks(){
@@ -1192,14 +1890,14 @@
     g.setAttribute('aria-hidden', 'true');
     /* chain 是 root → 选中节点;每条边对应它的子节点 id */
     chain.slice(1).forEach(function(id, i){
-      var src = vp.querySelector('.edge[data-edge="' + id + '"]');
+      /* ⚠️ 沿缎带的**中心线**跑,不是沿缎带本身 —— 缎带是个闭合的面,
+         描它的轮廓会从一边上去再从另一边绕回来。 */
+      var src = vp.querySelector('.fm[data-mid="' + id + '"]');
       if(!src) return;
       var p = document.createElementNS(ns, 'path');
       p.setAttribute('class', 'spark');
       p.setAttribute('d', src.getAttribute('d'));
       p.setAttribute('pathLength', '100');
-      p.setAttribute('stroke-width',
-        Math.max(1.4, parseFloat(src.getAttribute('stroke-width')) * 0.8).toFixed(2));
       p.style.setProperty('--sd', (i * 128) + 'ms');
       g.appendChild(p);
     });
@@ -1209,11 +1907,11 @@
   }
 
   function markPath(id){
-    vp.querySelectorAll('.edge').forEach(function(p){ p.classList.remove('lit'); });
+    vp.querySelectorAll('.flow').forEach(function(p){ p.classList.remove('lit'); });
     vp.querySelectorAll('.node').forEach(function(g){ g.classList.remove('onpath'); });
     var cur = id, chain = [];
     while(cur !== null && cur !== undefined && laidOut.byId[cur]){
-      var e = vp.querySelector('.edge[data-edge="' + cur + '"]');
+      var e = vp.querySelector('.flow[data-edge="' + cur + '"]');
       if(e) e.classList.add('lit');
       var g = vp.querySelector('.node[data-node="' + cur + '"]');
       if(g) g.classList.add('onpath');
@@ -1259,11 +1957,34 @@
       panelRead.href = window.WANXIANG_WORK_LINK(current);
       panelRead.setAttribute('aria-label', '从《' + current.n + '》这里开始读');
     }
+    /* ⚠️ 人数与比例只在这里出现,图上不编码粗细。
+       三个数是同一条路的三段:走到这里 → 继续往前 → 在此停下;
+       最后再把「从这里分出的每条各占多少」逐条列出来 ——
+       这正是图上没画、也不该画的那部分信息。 */
+    var rootNode = laidOut ? laidOut.byId[laidOut.root] : null;
+    var rootPlays = rootNode && rootNode.plays ? rootNode.plays : 0;
+    function pct(a, b){
+      if(!b) return '—';
+      var v = a / b * 100;
+      return (v >= 10 ? Math.round(v) : Math.round(v * 10) / 10) + '%';
+    }
     document.getElementById('p-row').innerHTML =
-        '<span>走过 <b>' + num(n.plays) + '</b> 次</span>'
-      + '<span>从这里岔开 <b>' + n._kids.length + '</b> 条</span>'
+        '<span>走到这里 <b>' + num(n.plays) + '</b> 人 · 占开场 <b>'
+      +   pct(n.plays, rootPlays) + '</b></span>'
+      + (n._kids.length
+          ? '<span>继续往前 <b>' + num(n._cont || 0) + '</b> 人 · <b>'
+            +   pct(n._cont || 0, n.plays) + '</b></span>'
+            + '<span>在这里停下 <b>' + num(n._stop || 0) + '</b> 人 · <b>'
+            +   pct(n._stop || 0, n.plays) + '</b></span>'
+            + '<span>从这里分出 <b>' + n._kids.map(function(k){
+                var kn = laidOut.byId[k];
+                return kn ? kn.t + ' ' + pct(kn.plays, n.plays) : '';
+              }).filter(Boolean).join(' · ') + '</b></span>'
+          : '<span>这是目前的尽头 · 走到这里的人都停在了此处</span>')
       + '<span>写下这段的人 <b>' + n.a + '</b></span>';
     panel.classList.add('on');
+    /* 面板先挂上,再算要不要挪 —— panelCover() 读的就是这个 class */
+    ensureVisible(n);
   }
   function closePanel(){
     stopGlide();
@@ -1271,7 +1992,7 @@
     selId = null;
     clearSparks();
     vp.querySelectorAll('.node').forEach(function(g){ g.classList.remove('sel', 'onpath'); });
-    vp.querySelectorAll('.edge').forEach(function(p){ p.classList.remove('lit'); });
+    vp.querySelectorAll('.flow').forEach(function(p){ p.classList.remove('lit'); });
     listview.querySelectorAll('.nrow').forEach(function(b){ b.setAttribute('aria-current', 'false'); });
   }
   function dismissPanel(){
@@ -1289,12 +2010,47 @@
   function siblings(id){
     var n = laidOut.byId[id];
     if(n.p === null || n.p === undefined) return [id];
-    return laidOut.kids[n.p];
+    /* ⚠️ 折进星尘的兄弟不在图上,左右键不能停到它们身上 —— 否则焦点会
+       落到一个查不到 DOM 的节点,表现是「按了一下什么都没发生」。 */
+    return laidOut.kids[n.p].filter(function(k){
+      var kn = laidOut.byId[k];
+      return kn && !kn._hidden;
+    });
   }
   function bindNodes(){
+    hoverId = null;
+    starmap.classList.remove('focus');
     vp.querySelectorAll('.node').forEach(function(g){
+      /* 星尘不是一个节点,是一组被折叠起来的节点。它同样可点、可 Tab、
+         有 aria-label,但没有 data-node —— 不加这道判的话 +undefined 会变成 NaN,
+         select(NaN) 走进一条谁也没测过的路。 */
+      if(g.dataset.dust !== undefined){
+        var pid = g.dataset.dust;
+        var tell = function(){
+          var du = laidOut && laidOut.dust ? laidOut.dust[pid] : null;
+          if(!du) return;
+          say('这里折叠着 ' + du.n + ' 条更冷门的岔路,连同其后共 ' + du.total
+            + ' 个节点,合计 ' + num(du.plays)
+            + ' 人走过 —— 窄到画不成支流。列表视图里逐条都在。');
+        };
+        g.addEventListener('click', tell);
+        g.addEventListener('keydown', function(e){
+          if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); tell(); }
+        });
+        return;
+      }
       var id = +g.dataset.node;
       g.addEventListener('click', function(){ panelReturn = g; select(id); });
+      /* 只认鼠标:触摸没有真正的 hover,粘住的高亮清不掉 */
+      g.addEventListener('pointerenter', function(e){
+        if(e.pointerType === 'mouse' && !drag) setNear(id);
+      });
+      g.addEventListener('pointerleave', function(e){
+        if(e.pointerType === 'mouse') setNear(null);
+      });
+      /* 键盘走到哪就亮到哪 —— 悬停能读到的连接关系,Tab 也要读得到 */
+      g.addEventListener('focus', function(){ setNear(id); });
+      g.addEventListener('blur', function(){ setNear(null); });
       g.addEventListener('keydown', function(e){
         var n = laidOut.byId[id], next = null;
         if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); panelReturn = g; select(id); return; }
@@ -1312,6 +2068,8 @@
         target.setAttribute('tabindex', '0');
         target.focus();
         panelReturn = target;
+        /* 走到视野外的星,画面跟着挪过去 —— 否则焦点在画布之外,看不见自己在哪 */
+        ensureVisible(laidOut.byId[next]);
         if(panel.classList.contains('on')) select(next);
         else markPath(next);
       });
