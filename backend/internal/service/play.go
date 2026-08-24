@@ -3,8 +3,12 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"sort"
+	"strings"
+	"sync"
 	"time"
 
 	"backend/internal/model"
@@ -12,29 +16,64 @@ import (
 	"backend/pkg"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // PlayService 编排「剧情游玩」核心链路：开局 → 选择 → 生成 → 更新属性 → 回溯。
 type PlayService struct {
-	sessions *repository.PlaySessionRepository
-	nodes    *repository.NodeRepository
+	// 五个同模块依赖都是窄接口（play_deps.go），不是具体仓储——否则
+	// play_opening_test.go 注入不了替身，「AI 只调一次、扣费只调一次」断言不出来。
+	sessions sessionStore
+	nodes    nodeStore
 	stories  StoryReader // 跨模块只读 story，经窄接口而非直接依赖 story repo（拆分接缝）
-	ai       *AgentClient
-	resolver *LLMResolver   // BYOK：按玩家 write/review 环节解析下发配置
-	credit   *CreditService // 平台额度扣费（只对走平台档的环节生效）
+	ai       storyAI
+	resolver playLLMResolver // BYOK：按玩家 write/review 环节解析下发配置
+	credit   creditCharger   // 平台额度扣费（只对走平台档的环节生效）
+	counter  StoryCounter    // 回写 story.play_count，经窄接口而非 story repo（拆分接缝）
+
+	// openingFlight 的注册表，key = sessionID。**进程内单飞**：并发的第二个开场请求
+	// 不进入生成，等第一个的结果并复用——这是唯一能省掉重复生成与重复扣费的一层
+	// （唯一索引只保护落库，拦不住已经花掉的 token）。
+	// ⚠️ key 必须是 sessionID，不是 playerID 也不是 storyID：同一个玩家在两部作品
+	// 各开一局是合法并发，不该互相阻塞。
+	// 零值可用，故不进构造函数，main.go 不用改。
+	flights sync.Map
+}
+
+// openingFlight 是一次开场生成的共享工作。
+// ⚠️ 共享的是 session/root/world/creatorID 这组**原始数据**，不是拼好的 SessionResult——
+// 后者经 newAttrView(world, isAuthor) 脱敏，是跟 playerID 走的，共享会串味。
+// creatorID 不能省：follower 加入 flight 前只查过 session，手里没有 story，
+// 而 newAttrView 的第二参正是 story.CreatorID == playerID。
+type openingFlight struct {
+	done      chan struct{}
+	session   *model.PlaySession
+	root      *model.StoryNode
+	world     WorldConfig
+	creatorID uuid.UUID
+	err       error
+}
+
+// finish 是 leader 的收尾。**三步顺序不能换**：填结果 → 从注册表摘除 → 关 done。
+// Delete 必须在事务提交之后（调用方保证）：提前删掉的话，新来的请求会创建新 flight
+// 当上新 leader，而此刻 current_node_id 还没写，它的幂等检查看不到，于是重新生成一遍。
+func (s *PlayService) finish(sessionID uuid.UUID, fl *openingFlight) {
+	s.flights.Delete(sessionID)
+	close(fl.done)
 }
 
 func NewPlayService(
-	sessions *repository.PlaySessionRepository,
-	nodes *repository.NodeRepository,
+	sessions sessionStore,
+	nodes nodeStore,
 	stories StoryReader,
-	ai *AgentClient,
-	resolver *LLMResolver,
-	credit *CreditService,
+	ai storyAI,
+	resolver playLLMResolver,
+	credit creditCharger,
+	counter StoryCounter,
 ) *PlayService {
 	return &PlayService{
 		sessions: sessions, nodes: nodes, stories: stories,
-		ai: ai, resolver: resolver, credit: credit,
+		ai: ai, resolver: resolver, credit: credit, counter: counter,
 	}
 }
 
@@ -129,12 +168,14 @@ func (s *PlayService) StartSession(ctx context.Context, playerID, storyID uuid.U
 
 // streamFixedText 把一段固定正文按小块 + 微延时逐块回调，模拟 LLM 逐字流式的观感。
 // 仅用于预设 opening_content（本无 token 流）；按 rune 切分避免截断多字节字符。
-func streamFixedText(text string, onDelta func(string)) {
+// ⚠️ 必须收 ctx：一段 300 字的正文要跑 3 秒，调用方中途关页面时，
+// 没有 ctx 检查的循环会把剩下的帧全部走完（连接早没了，纯属空转）。
+func streamFixedText(ctx context.Context, text string, onDelta func(string)) {
 	if onDelta == nil || text == "" {
 		return
 	}
-	const chunk = 3                        // 每帧字符数
-	const pace = 30 * time.Millisecond     // 每帧间隔
+	const chunk = 3                    // 每帧字符数
+	const pace = 30 * time.Millisecond // 每帧间隔
 	runes := []rune(text)
 	for i := 0; i < len(runes); i += chunk {
 		end := i + chunk
@@ -142,7 +183,11 @@ func streamFixedText(text string, onDelta func(string)) {
 			end = len(runes)
 		}
 		onDelta(string(runes[i:end]))
-		time.Sleep(pace)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(pace):
+		}
 	}
 }
 
@@ -165,18 +210,78 @@ func (s *PlayService) StartOpeningStream(
 		return s.GetSession(ctx, playerID, sessionID)
 	}
 
+	// ⚠️ 权限校验（上面那句 checkSessionOwner）必须在加入 flight **之前**，且每个请求
+	// 各做一次——它不能被搬进只执行一次的共享闭包，否则拿到别人 session UUID 的人
+	// 只要撞上生成窗口，就能直接复用 leader 的结果，绕过归属校验。
+	fl := &openingFlight{done: make(chan struct{})}
+	actual, loaded := s.flights.LoadOrStore(sessionID, fl)
+	if loaded {
+		// follower：**不把自己的 onDelta/onRevise 接进共享工作**（那些回调属于 leader
+		// 的连接）。等结果出来，再用 streamFixedText 把正文回放给自己——不这么做，
+		// follower 会盯着空白一直等到最后那帧 done。
+		f := actual.(*openingFlight)
+		select {
+		case <-f.done:
+		case <-ctx.Done():
+			return nil, ctx.Err() // 只放弃自己这条响应；共享工作的 ctx 已脱离，不受影响
+		}
+		if f.err != nil {
+			return nil, f.err
+		}
+		streamFixedText(ctx, f.root.Content, onDelta)
+		return newAttrView(f.world, f.creatorID == playerID).result(f.session, f.root), nil
+	}
+
+	return s.runOpening(ctx, fl, sessionID, playerID, onDelta, onRevise)
+}
+
+// runOpening 是 leader 那条路径。调用方已经做完 FindByID + checkSessionOwner + 抢到 flight。
+func (s *PlayService) runOpening(
+	ctx context.Context, fl *openingFlight, sessionID, playerID uuid.UUID,
+	onDelta func(string), onRevise func(),
+) (res *SessionResult, retErr error) {
+	// ⚠️ recover 不是防御性编程：leader panic 而没走 finish，所有 follower 会**永久挂起**。
+	defer func() {
+		if r := recover(); r != nil {
+			retErr = pkg.Internal(fmt.Sprintf("opening panic: %v", r))
+			fl.err = retErr
+		}
+		s.finish(sessionID, fl)
+	}()
+
+	// ⚠️ 抢到 leader 之后必须**重读一次会话**：调用方那次预检发生在 LoadOrStore 之前，
+	// 中间存在调度间隙——上一个 leader 可能已经生成完、提交、Delete 了，而我手里
+	// 还攥着那份陈旧的空会话。不重读就会又生成一次、又扣一次费，直到最后才被
+	// 唯一索引拦下（而索引拦不住已经花掉的 token）。
+	// 这个重读之所以可靠，正是因为 finish 里的 Delete 排在事务提交之后：
+	// 我能抢到 leader 说明上一个已 Delete，也就说明它早已提交，我必然看得见。
+	session, err := s.sessions.FindByID(ctx, sessionID)
+	if err != nil {
+		fl.err = err
+		return nil, err
+	}
+	if session == nil {
+		fl.err = pkg.NotFound("session not found")
+		return nil, fl.err
+	}
+	if session.CurrentNodeID != nil {
+		return s.adoptExistingOpening(ctx, fl, session, playerID)
+	}
+
 	story, err := s.stories.FindByID(ctx, session.StoryID)
 	if err != nil {
 		return nil, err
 	}
 	if canPlay(story, playerID) != nil {
-		return nil, readOnlyErr() // 建会话后作品被取消发布：开场也是生成，一并拦下
+		fl.err = readOnlyErr() // 建会话后作品被取消发布：开场也是生成，一并拦下
+		return nil, fl.err
 	}
 	world := parseWorld(story.WorldConfig)
 	initialState := parseState(session.CurrentState)
 	write, review, err := s.resolvePlay(ctx, playerID, session.StoryID)
 	if err != nil {
-		return nil, err // 没有可用模型：在开流生成之前就说清楚，别让玩家白等
+		fl.err = err // 没有可用模型：在开流生成之前就说清楚，别让玩家白等
+		return nil, err
 	}
 
 	// 生成开场：预设 opening_content 的作品正文固定（直接作为一帧 delta 外发，再补选项/摘要）；
@@ -185,7 +290,7 @@ func (s *PlayService) StartOpeningStream(
 	if story.OpeningContent != "" {
 		// 预设正文固定、无 LLM token 流：按小块 + 微延时模拟打字机，
 		// 给出与续写一致的逐字流式观感（否则整段瞬显，等于没流式）。
-		streamFixedText(story.OpeningContent, onDelta)
+		streamFixedText(ctx, story.OpeningContent, onDelta)
 		opening, err = s.ai.CompleteOpening(ctx, world, initialState, story.OpeningContent, write)
 		if err != nil {
 			opening = &AIResult{Content: story.OpeningContent, Options: []Option{}, StateDelta: map[string]any{}}
@@ -195,7 +300,8 @@ func (s *PlayService) StartOpeningStream(
 	} else {
 		opening, err = s.ai.StartStoryStream(ctx, world, initialState, parseStrList(session.RevealedAttrs), write, review, onDelta, onRevise)
 		if err != nil {
-			return nil, pkg.Internal("ai start story stream: " + err.Error())
+			fl.err = pkg.Internal("ai start story stream: " + err.Error())
+			return nil, fl.err
 		}
 	}
 
@@ -226,8 +332,60 @@ func (s *PlayService) StartOpeningStream(
 	session.LastPlayedAt = time.Now()
 	// 跨表事务下沉到仓储：Create(root) + 会话指向根节点（CurrentNodeID 由仓储回填后设置）。
 	if err := s.sessions.CreateNodeAndUpdateSession(done, root, session); err != nil {
+		// ⚠️ 撞上 uniq_root_per_session 不是错误，是**别的实例/进程已经建好了根节点**——
+		// 单飞只在进程内有效，跨实例、跨重启由这个索引兜底。翻成幂等成功而不是 500：
+		// 玩家看到的应该是开场，不是一句「内部错误」。
+		if isRootConflict(err) {
+			return s.adoptExistingOpening(done, fl, session, playerID)
+		}
+		fl.err = err
 		return nil, err
 	}
+
+	// 阅读量 +1。放在**事务提交之后**：计数失败不该让一局已经开成的游戏回滚。
+	// 经 StoryCounter 窄接口，不直接依赖 story 的 repository（模块接缝）。
+	if s.counter != nil {
+		if err := s.counter.IncrPlayCount(done, session.StoryID); err != nil {
+			log.Printf("play_count incr failed story=%s: %v", session.StoryID, err)
+		}
+	}
+
+	fl.session, fl.root, fl.world, fl.creatorID = session, root, world, story.CreatorID
+	return newAttrView(world, story.CreatorID == playerID).result(session, root), nil
+}
+
+// adoptExistingOpening：开场已经被别人做出来了（leader 重读命中，或落库撞唯一索引）。
+// 取回既有的根节点填进 flight，让等着的 follower 也能拿到——一次生成都不发起。
+func (s *PlayService) adoptExistingOpening(
+	ctx context.Context, fl *openingFlight, session *model.PlaySession, playerID uuid.UUID,
+) (*SessionResult, error) {
+	fresh, err := s.sessions.FindByID(ctx, session.ID)
+	if err == nil && fresh != nil {
+		session = fresh
+	}
+	nodes, err := s.nodes.FindBySessionID(ctx, session.ID)
+	if err != nil {
+		fl.err = err
+		return nil, err
+	}
+	var root *model.StoryNode
+	for i := range nodes {
+		if nodes[i].ParentID == nil {
+			root = &nodes[i]
+			break
+		}
+	}
+	if root == nil {
+		fl.err = pkg.Internal("opening claimed but root node missing")
+		return nil, fl.err
+	}
+	story, err := s.stories.FindByID(ctx, session.StoryID)
+	if err != nil || story == nil {
+		fl.err = pkg.Internal("story not found for existing opening")
+		return nil, fl.err
+	}
+	world := parseWorld(story.WorldConfig)
+	fl.session, fl.root, fl.world, fl.creatorID = session, root, world, story.CreatorID
 	return newAttrView(world, story.CreatorID == playerID).result(session, root), nil
 }
 
@@ -781,4 +939,28 @@ func toFloat(v any) (float64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+// isRootConflict 判断落库失败是不是撞上了「一个会话一个根节点」那条唯一索引，
+// 也就是「别人已经把开场生成好了」。
+//
+// ⚠️ **必须连约束名一起判，不能只看 23505。** 只匹配错误码的话，将来任何一条唯一约束
+// 冲突（新加的唯一索引、主键重复、撞上别的约束）都会被当成「根节点已存在」翻成幂等
+// 成功，把真实错误埋掉。约束名与索引名同一个常量，改一处不会漏另一处。
+//
+// ⚠️ 判据只能用 SQLSTATE，不能用 gorm.ErrDuplicatedKey：main.go 的 gorm.Open 没开
+// TranslateError，不开就永远不会产生那个哨兵错误；而为这一处去开全局 TranslateError
+// 会改变整个仓库的错误语义，代价远大于收益。
+func isRootConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "23505" && pgErr.ConstraintName == repository.RootIdxName
+	}
+	// 替身/包装层（测试里的假仓储、将来换驱动）拿不到 *pgconn.PgError，
+	// 回落到「错误文本里同时出现 23505 与索引名」——同样是两条都要命中，不放宽。
+	msg := err.Error()
+	return strings.Contains(msg, "23505") && strings.Contains(msg, repository.RootIdxName)
 }

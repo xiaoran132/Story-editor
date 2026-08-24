@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 
@@ -30,8 +31,15 @@ func main() {
 	// 先启用 pgcrypto 扩展
 	db.Exec("CREATE EXTENSION IF NOT EXISTS pgcrypto")
 
-	if err := db.AutoMigrate(&model.User{}, &model.UserCredential{}, &model.Story{}, &model.StoryNode{}, &model.PlaySession{}, &model.LLMConnection{}, &model.PlatformLLMSetting{}, &model.UserStoryLLMConfig{}, &model.LLMUsageLog{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.UserCredential{}, &model.Story{}, &model.StoryLike{}, &model.StoryNode{}, &model.PlaySession{}, &model.LLMConnection{}, &model.PlatformLLMSetting{}, &model.UserStoryLLMConfig{}, &model.LLMUsageLog{}); err != nil {
 		log.Fatalf("failed to migrate: %v", err)
+	}
+
+	// ⚠️ 部分唯一索引必须在 AutoMigrate **之后**显式建：GORM 的模型标签表达不了
+	// `WHERE parent_id IS NULL` 这个谓词。它是「一个会话只能有一个根节点」的跨实例兜底。
+	// 建不出来就 Fatal——少了它，重复开场只剩进程内单飞一层保护。
+	if err := repository.NewNodeRepository(db).EnsureRootIndex(context.Background()); err != nil {
+		log.Fatalf("failed to ensure uniq_root_per_session: %v", err)
 	}
 
 	// 不再 seed：demo 数据已在库中。原实现每次启动都会跑重复项清理与「迷雾古堡」硬删，
@@ -41,6 +49,7 @@ func main() {
 	// Repositories
 	userRepo := repository.NewUserRepository(db)
 	storyRepo := repository.NewStoryRepository(db)
+	storyLikeRepo := repository.NewStoryLikeRepository(db)
 	nodeRepo := repository.NewNodeRepository(db)
 	sessionRepo := repository.NewPlaySessionRepository(db)
 	llmRepo := repository.NewLLMRepository(db)
@@ -50,9 +59,9 @@ func main() {
 	llmResolver := service.NewLLMResolver(llmRepo, cfg.EncryptionKey) // BYOK：按环节解析下发配置
 	creditSvc := service.NewCreditService(llmRepo)                    // 平台额度（注册赠 1 元）扣费
 	userSvc := service.NewUserService(userRepo, cfg.JWTSecret, cfg.EncryptionKey)
-	storySvc := service.NewStoryService(storyRepo)
+	storySvc := service.NewStoryService(storyRepo, storyLikeRepo)
 	llmSvc := service.NewLLMService(llmRepo, agentClient, cfg.EncryptionKey, llmResolver)
-	playSvc := service.NewPlayService(sessionRepo, nodeRepo, storyRepo, agentClient, llmResolver, creditSvc)
+	playSvc := service.NewPlayService(sessionRepo, nodeRepo, storyRepo, agentClient, llmResolver, creditSvc, storyRepo)
 	uploadSvc := service.NewUploadService(cfg.UploadDir, cfg.UploadMaxBytes())
 
 	// Handlers
@@ -101,6 +110,9 @@ func main() {
 		stories.PUT("/:id", middleware.AuthRequired(cfg.JWTSecret), storyH.Update)
 		stories.PUT("/:id/status", middleware.AuthRequired(cfg.JWTSecret), storyH.SetStatus)
 		stories.DELETE("/:id", middleware.AuthRequired(cfg.JWTSecret), storyH.Delete)
+		// 点赞：AuthRequired，匿名没有身份可去重。两条都幂等。
+		stories.POST("/:id/like", middleware.AuthRequired(cfg.JWTSecret), storyH.Like)
+		stories.DELETE("/:id/like", middleware.AuthRequired(cfg.JWTSecret), storyH.Unlike)
 	}
 
 	// 游玩：一律需登录。匿名曾共用同一个 guest 身份，导致任意匿名者可读/删他人存档；

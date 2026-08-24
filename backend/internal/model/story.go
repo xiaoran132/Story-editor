@@ -58,6 +58,11 @@ type StoryResponse struct {
 	PublishedAt    *time.Time `json:"published_at"`
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
+
+	// Liked = 当前访问者赞过没有。**只有详情接口会填**：列表页要它就得对整页作品
+	// 再查一遍赞表，而列表是匿名可读的。未登录时恒 false。
+	// 不是 stories 的列，由 StoryService.Get 在 ToResponse 之后补。
+	Liked bool `json:"liked"`
 }
 
 func (s *Story) ToResponse() *StoryResponse {

@@ -15,3 +15,12 @@ import (
 type StoryReader interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*model.Story, error)
 }
+
+// StoryCounter 是 play 模块回写 story 计数的窄接口——与 StoryReader 同一条纪律：
+// 模块之间禁止直接依赖对方的 repository。*repository.StoryRepository 天然满足此签名。
+//
+// ⚠️ 自增走 SQL 表达式（play_count + 1），不是「读出来 +1 再写回」：后者在并发下会丢更新，
+// 而开局正是会并发的地方。
+type StoryCounter interface {
+	IncrPlayCount(ctx context.Context, storyID uuid.UUID) error
+}

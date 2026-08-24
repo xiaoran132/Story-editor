@@ -12,11 +12,12 @@ import (
 )
 
 type StoryService struct {
-	repo *repository.StoryRepository
+	repo  *repository.StoryRepository
+	likes *repository.StoryLikeRepository
 }
 
-func NewStoryService(repo *repository.StoryRepository) *StoryService {
-	return &StoryService{repo: repo}
+func NewStoryService(repo *repository.StoryRepository, likes *repository.StoryLikeRepository) *StoryService {
+	return &StoryService{repo: repo, likes: likes}
 }
 
 type StoryCreateInput struct {
@@ -82,7 +83,53 @@ func (s *StoryService) Get(storyID, viewerID uuid.UUID) (*model.StoryResponse, e
 		return nil, err
 	}
 
-	return storyViewFor(story, viewerID), nil
+	resp := storyViewFor(story, viewerID)
+	// liked 只在详情里给：列表页要它就得对整页作品再查一遍，而列表是匿名可读的。
+	// 未登录时恒 false —— 匿名没有身份，"我赞过没有" 这个问题对他不成立。
+	if viewerID != uuid.Nil {
+		liked, err := s.likes.Liked(ctx, storyID, viewerID)
+		if err != nil {
+			return nil, err
+		}
+		resp.Liked = liked
+	}
+	return resp, nil
+}
+
+// Like / Unlike 点赞与取消赞，两者都幂等（重复调用不报错、不重复计数，见 repository）。
+//
+// 可见性复用 canViewStory：别人的草稿一律 404，赞一部不该被你看见的作品等于确认它存在。
+// 作者赞自己的作品是允许的——为它单开一条规则，前端就要多维护一个"这按钮为什么是灰的"
+// 的状态，收益抵不上。
+func (s *StoryService) Like(storyID, userID uuid.UUID) (*model.LikeResult, error) {
+	return s.setLike(storyID, userID, true)
+}
+
+func (s *StoryService) Unlike(storyID, userID uuid.UUID) (*model.LikeResult, error) {
+	return s.setLike(storyID, userID, false)
+}
+
+func (s *StoryService) setLike(storyID, userID uuid.UUID, on bool) (*model.LikeResult, error) {
+	ctx := context.Background()
+
+	story, err := s.repo.FindByID(ctx, storyID)
+	if err != nil {
+		return nil, err
+	}
+	if err := canViewStory(story, userID); err != nil { // story == nil 也在这里转 404
+		return nil, err
+	}
+
+	var count int
+	if on {
+		count, err = s.likes.Like(ctx, storyID, userID)
+	} else {
+		count, err = s.likes.Unlike(ctx, storyID, userID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &model.LikeResult{Liked: on, LikeCount: count}, nil
 }
 
 func (s *StoryService) Update(storyID, userID uuid.UUID, input *StoryUpdateInput) (*model.StoryResponse, error) {
@@ -195,9 +242,15 @@ type StoryListResult struct {
 }
 
 // List 供首页/浏览用：只返回已发布作品（草稿不外露）。
-func (s *StoryService) List(offset, limit int) (*StoryListResult, error) {
+// List 列已发布作品。sort 只认 "plays"，其余一律按最新——**非法值回落而不是报错**：
+// 这些是展示参数，一个拼错的 query 不该打死首页。
+func (s *StoryService) List(offset, limit int, sort string) (*StoryListResult, error) {
 	ctx := context.Background()
-	stories, total, err := s.repo.ListPublished(ctx, offset, limit)
+	order := repository.OrderRecent
+	if sort == "plays" {
+		order = repository.OrderPlays
+	}
+	stories, total, err := s.repo.ListPublished(ctx, offset, limit, order)
 	if err != nil {
 		return nil, err
 	}

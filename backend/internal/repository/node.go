@@ -66,3 +66,23 @@ func (r *NodeRepository) Update(ctx context.Context, node *model.StoryNode) erro
 func (r *NodeRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	return r.db.WithContext(ctx).Delete(&model.StoryNode{}, "id = ?", id).Error
 }
+
+// RootIdxName 是「一个会话一个根节点」那条部分唯一索引的名字。
+//
+// ⚠️ **建索引与识别冲突必须用同一个常量。** 服务层把 23505 翻译成「开场已存在」的幂等
+// 成功时要连约束名一起判（service.isUniqueViolation）——只匹配错误码的话，将来任何一条
+// 唯一约束冲突都会被当成「根节点已存在」吞掉，把真实错误埋了。
+const RootIdxName = "uniq_root_per_session"
+
+// EnsureRootIndex 建「一个会话只能有一个根节点」的部分唯一索引。
+//
+// ⚠️ **这个索引不会由 AutoMigrate 产生**：GORM 的模型标签表达不了 `WHERE parent_id IS NULL`
+// 这个谓词，model/node.go 上的 index tag 只是普通索引。必须显式执行，且要在 AutoMigrate
+// **之后**（表得先存在）。
+//
+// 它是跨实例、跨重启的兜底——进程内单飞只在单实例内有效。
+func (r *NodeRepository) EnsureRootIndex(ctx context.Context) error {
+	return r.db.WithContext(ctx).Exec(
+		`CREATE UNIQUE INDEX IF NOT EXISTS ` + RootIdxName +
+			` ON story_nodes (session_id) WHERE parent_id IS NULL`).Error
+}
