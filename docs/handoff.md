@@ -436,7 +436,7 @@ cd agent
 
 **review（质量审校）改为作品级开关，默认关**
 - 关：不下发 `llm_review`，agent 整段跳过审校（省约一半 token），埋点打 `review=off`，不伪装成 `first_draft_pass=true`。
-- 开：`review` 环节**必须**选一条连接，否则保存被拒（不静默降级成"关掉"——那会让玩家以为审校在生效）。
+- 开：`review` 环节**必须解析得出配置**——绑一条自己的连接，或平台档该环节可用（`platform_llm_settings` 每环节一行，review 那行同样能配 key）；两者都没有则保存被拒（不静默降级成"关掉"——那会让玩家以为审校在生效）。
 - 默认关的代价：质量下限低于以前（以前人人都过审校，真实拒绝率约 18%）。权衡写在前端开关旁。
 
 **下发链路**：Go 解析出 `AgentLLMConfig{provider,base_url,api_key,model}` → 塞进 agent 请求体（`llm_write`/`llm_review`/`llm`）→ agent `_build_ephemeral` 构造临时 ChatOpenAI。**agent 不碰库、也不持有任何默认凭据**：三个关键字段缺一即抛 `LLMConfigMissing`。key/额度/策略全在 Go。

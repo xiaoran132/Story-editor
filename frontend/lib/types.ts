@@ -101,7 +101,15 @@ export interface StoryLLMConfig {
   ready: boolean;
   blocked?: string; // 不能开玩的原因，后端给的文案，直接展示
   credit_micro_cny: number; // 平台额度余额（微元，1e-6 元）；注册赠 1 元
-  platform_ready: boolean; // 「平台」这一档现在可不可选
+  // 平台档「按环节」的可用性与预设模型名。按环节分开是必须的：平台设置每环节一行，
+  // review 那行可能没配 key，借用 write 的可用性会把它显示成可选。
+  platform_stages: Partial<Record<"write" | "review", PlatformOption>>;
+}
+
+// 平台档在某环节的形态：能不能选 + 不选连接时会用到的预设模型。
+export interface PlatformOption {
+  ready: boolean;
+  model: string;
 }
 
 // 保存作品级配置的请求体。

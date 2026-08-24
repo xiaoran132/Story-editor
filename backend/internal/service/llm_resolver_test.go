@@ -228,3 +228,39 @@ func TestPlatformPriceRoundTrip(t *testing.T) {
 		t.Fatalf("序列化后缺少 price_in_per_mtok: %s", blob)
 	}
 }
+
+// TestPlatformOptionFor 守住两件事：平台档的可用性**按环节各算各的**，
+// 以及预设模型名在不可用时也要回得来（否则前端只能显示一个空的禁用框）。
+func TestPlatformOptionFor(t *testing.T) {
+	uid := uuid.New()
+	f := &fakeLLM{
+		platform: map[string]*model.PlatformLLMSetting{
+			// write 配了 key；review 只有行、没 key（admin 只配了一半）
+			StageWrite:  {Stage: StageWrite, Model: "write-model", APIKeyCipher: cipherOf(t, "plat-key")},
+			StageReview: {Stage: StageReview, Model: "review-model"},
+		},
+		credit: map[uuid.UUID]int64{uid: 1_000_000},
+	}
+	r := NewLLMResolver(f, testEncKey)
+
+	if got := r.PlatformOptionFor(context.Background(), uid, StageWrite); !got.Ready || got.Model != "write-model" {
+		t.Fatalf("write 档应可用且带模型名: %+v", got)
+	}
+	// review 没 key → 不可用，但模型名照回：玩家该看见自己错过的是什么。
+	got := r.PlatformOptionFor(context.Background(), uid, StageReview)
+	if got.Ready {
+		t.Fatalf("review 没配 key 却判为可用——可用性不能借用 write 的结论: %+v", got)
+	}
+	if got.Model != "review-model" {
+		t.Fatalf("不可用时也要回预设模型名: %+v", got)
+	}
+	// 额度耗尽 → 全环节都不可用，模型名仍在。
+	f.credit[uid] = 0
+	if got := r.PlatformOptionFor(context.Background(), uid, StageWrite); got.Ready || got.Model != "write-model" {
+		t.Fatalf("额度耗尽应不可用但保留模型名: %+v", got)
+	}
+	// 该环节压根没配 → 空壳，不是崩溃。
+	if got := r.PlatformOptionFor(context.Background(), uid, StageWorld); got.Ready || got.Model != "" {
+		t.Fatalf("未配置的环节应回空壳: %+v", got)
+	}
+}

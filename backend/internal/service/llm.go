@@ -195,8 +195,10 @@ type StoryLLMConfigResult struct {
 	Blocked       string        `json:"blocked,omitempty"` // 不能开玩的原因，前端直接展示
 	// CreditMicroCNY 是平台额度余额（微元）。注册赠 1 元，见 model.User.CreditMicroCNY。
 	CreditMicroCNY int64 `json:"credit_micro_cny"`
-	// PlatformReady 表示「平台」这一档现在可不可选（有额度 + admin 配了该环节的 key）。
-	PlatformReady bool `json:"platform_ready"`
+	// PlatformStages 按环节回平台档「可不可选 + 预设哪个模型」（key ∈ write/review）。
+	// 按环节分开是必须的：平台设置本来就每环节一行，合成一个布尔值会让 review
+	// 借用 write 的可用性；预设模型名也只有回来了，玩家才知道不选连接会用到什么。
+	PlatformStages map[string]PlatformOption `json:"platform_stages"`
 }
 
 // GetStoryConfig 返回某玩家在某作品的环节配置 + 能否开玩的判定。
@@ -224,8 +226,9 @@ func (s *LLMService) GetStoryConfig(userID, storyID uuid.UUID) (*StoryLLMConfigR
 		if write != nil {
 			out.Ready = true
 		}
-		if p := s.resolver.PlatformAvailable(ctx, userID, StageWrite); p {
-			out.PlatformReady = true
+		out.PlatformStages = map[string]PlatformOption{}
+		for stage := range PlayStages {
+			out.PlatformStages[stage] = s.resolver.PlatformOptionFor(ctx, userID, stage)
 		}
 	}
 	if !out.Ready {
@@ -265,10 +268,16 @@ func (s *LLMService) SetStoryConfig(userID, storyID uuid.UUID, in StoryLLMConfig
 		}
 		clean[stage] = StageBinding{Conn: b.Conn, Model: strings.TrimSpace(b.Model)}
 	}
-	// 开着审校却没给它选连接 = 配置错误，当场拒绝。
+	// 开着审校却**解析不出任何配置** = 配置错误，当场拒绝。
 	// 不静默降级成"关掉审校"：那会让玩家以为审校在生效，而它并没有。
+	//
+	// 判据是「这一环节能不能解析出配置」，不是「有没有绑用户连接」：平台设置每环节
+	// 一行、review 那行同样能配 key，解析链也确实会走它。要求必买自己的连接等于
+	// 把已经配好的平台预设模型锁死在选项里选不中。
 	if in.ReviewEnabled && clean[StageReview].Conn == "" {
-		return nil, pkg.BadRequest("开启质量审校需要为「审校」环节选择一条连接，或关闭该开关")
+		if s.resolver == nil || !s.resolver.PlatformAvailable(ctx, userID, StageReview) {
+			return nil, pkg.BadRequest("开启质量审校需要平台档在「审校」环节可用，或为它选择一条自己的连接")
+		}
 	}
 
 	raw, _ := json.Marshal(clean)

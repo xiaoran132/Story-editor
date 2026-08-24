@@ -205,3 +205,22 @@ func (r *LLMResolver) PlatformAvailable(ctx context.Context, userID uuid.UUID, s
 	cfg, err := r.platformIfCredit(ctx, userID, stage)
 	return err == nil && cfg != nil
 }
+
+// PlatformOption 是平台档在某环节的对外形态：能不能用 + 预设的是哪个模型。
+type PlatformOption struct {
+	Ready bool   `json:"ready"`
+	Model string `json:"model"`
+}
+
+// PlatformOptionFor 按环节回平台档的可用性与预设模型名。
+//
+// 可用性**按环节各算各的**：admin 的平台设置本来就是每环节一行，只算 write
+// 再套用到 review，会把「review 没配 key」显示成可选。
+// 模型名即便不可用也回：玩家该看见自己错过的是什么，而不是一个空白的禁用框。
+func (r *LLMResolver) PlatformOptionFor(ctx context.Context, userID uuid.UUID, stage string) PlatformOption {
+	ps, err := r.llm.FindPlatform(ctx, stage)
+	if err != nil || ps == nil {
+		return PlatformOption{}
+	}
+	return PlatformOption{Ready: r.PlatformAvailable(ctx, userID, stage), Model: ps.Model}
+}

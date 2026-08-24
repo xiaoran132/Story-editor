@@ -102,9 +102,11 @@ export default function StoryLLMConfigPanel({
 
   const hasRec = !!(recommended.write?.model || recommended.review?.model);
   const credit = cfg?.credit_micro_cny ?? 0;
-  const platformReady = !!cfg?.platform_ready;
-  // 开着审校却没给它选连接 → 后端会拒（不静默降级），这里先禁用保存并说明。
-  const reviewIncomplete = reviewOn && !draft.review?.conn;
+  // 平台档按环节各算各的：admin 的平台设置每环节一行，review 那行可能没配 key。
+  const platformFor = (stage: "write" | "review") =>
+    cfg?.platform_stages?.[stage] ?? { ready: false, model: "" };
+  // 开着审校却既没选连接、平台档也不可用 → 后端会拒（不静默降级），这里先禁用保存并说明。
+  const reviewIncomplete = reviewOn && !draft.review?.conn && !platformFor("review").ready;
 
   return (
     <div className={styles.settings}>
@@ -153,6 +155,7 @@ export default function StoryLLMConfigPanel({
                 if (st.key === "review" && !reviewOn) return null; // 关掉就整行不出现，比禁用更清楚
                 const b = draft[st.key] || { conn: "", model: "" };
                 const models = b.conn ? modelsByConn[b.conn] || [] : [];
+                const plat = platformFor(st.key);
                 const listId = `models-${st.key}`;
                 const connId = `conn-${st.key}`;
                 const modelId = `model-${st.key}`;
@@ -161,20 +164,23 @@ export default function StoryLLMConfigPanel({
                     {/* 环节名作组标题，两个控件各自再给 aria-label 区分连接/模型 */}
                     <label htmlFor={connId}>
                       {st.label}
-                      {st.key === "review" && <span className={styles.req}>（已开启审校，必选）</span>}
+                      {/* 只有平台档也兜不住时才是「必选」——平台 review 配好了就不必买自己的连接 */}
+                      {st.key === "review" && !plat.ready && (
+                        <span className={styles.req}>（已开启审校，需选一条连接）</span>
+                      )}
                     </label>
                     <div className={styles.row}>
                       <select id={connId} className={styles.sel} value={b.conn}
                         aria-label={`${st.label} · 连接`}
                         onChange={(e) => setStage(st.key, { conn: e.target.value, model: "" })}>
-                        {/* 「平台」独立成组：让玩家看见这条路存在，也看见它现在通不通 */}
+                        {/* 「平台」独立成组：让玩家看见这条路存在、用的是哪个模型，也看见它现在通不通 */}
                         <optgroup label="平台">
-                          <option value="" disabled={!platformReady}>
-                            {platformReady
-                              ? `平台额度（剩余 ${formatCredit(credit)}）`
+                          <option value="" disabled={!plat.ready}>
+                            {plat.ready
+                              ? `平台预设${plat.model ? ` · ${plat.model}` : ""}（剩余 ${formatCredit(credit)}）`
                               : credit > 0
-                                ? "平台额度（该环节未开放）"
-                                : "平台额度（已用尽）"}
+                                ? "平台预设（该环节未开放）"
+                                : "平台预设（额度已用尽）"}
                           </option>
                         </optgroup>
                         {conns.length > 0 && (
@@ -185,9 +191,15 @@ export default function StoryLLMConfigPanel({
                           </optgroup>
                         )}
                       </select>
-                      <input id={modelId} className={styles.inp} value={b.model} list={listId} disabled={!b.conn}
+                      {/* 平台档的模型由 admin 统一指定、玩家改不了，但必须**看得见**：
+                          此前这里是个禁用的空框，等于把已配好的预设模型藏了起来。
+                          用 readOnly 而非 disabled——文本仍可读可选中，不是一片灰。 */}
+                      <input id={modelId} className={styles.inp} list={b.conn ? listId : undefined}
+                        value={b.conn ? b.model : plat.model}
+                        readOnly={!b.conn}
                         aria-label={`${st.label} · 模型`}
-                        placeholder={b.conn ? "选择或手填模型" : "用平台默认模型"}
+                        title={b.conn ? undefined : "平台预设模型，由平台统一指定"}
+                        placeholder={b.conn ? "选择或手填模型" : "该环节平台未配置模型"}
                         onChange={(e) => setStage(st.key, { model: e.target.value })} />
                       <datalist id={listId}>
                         {models.map((m) => (
@@ -213,7 +225,7 @@ export default function StoryLLMConfigPanel({
 
               {reviewIncomplete && (
                 <p className={`${styles.note} ${styles.err}`} role="alert">
-                  开启了审校但没为它选连接。请选一条，或关掉这个开关。
+                  开启了审校，但平台档在该环节不可用。请为它选一条自己的连接，或关掉这个开关。
                 </p>
               )}
 

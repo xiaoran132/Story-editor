@@ -111,7 +111,7 @@ func (s *PlayService) resolvePlay(ctx context.Context, playerID, storyID uuid.UU
 	}
 	if review == nil {
 		return nil, nil, pkg.NewBusinessErrorWithMessage(pkg.CodeNoLLMConfig,
-			"你为本作品开启了质量审校，但没有为它选择模型连接。请在作品详情页的「生成设置」里补上，或关闭审校。")
+			"你为本作品开启了质量审校，但该环节现在解析不出模型：平台额度已用尽或未开放，也没绑自己的连接。请在作品详情页的「生成设置」里补上，或关闭审校。")
 	}
 	return write, review, nil
 }
