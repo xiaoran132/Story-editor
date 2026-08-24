@@ -143,13 +143,23 @@ func (s *StoryService) Update(storyID, userID uuid.UUID, input *StoryUpdateInput
 		return nil, nil // 未找到或非属主，handler 统一转 404（不泄露作品是否存在）
 	}
 
+	// 已发布作品的更新走**严格校验**，与发布同一把尺子。
+	// 草稿宽松是对的——写到一半本来就不完整；但发布之后还宽松，就等于开了一条
+	// 绕过发布闸门的路：改一次就能把线上作品改成连发布都过不了的状态，玩家那边直接坏掉。
+	// 编辑器的 save() 是整篇一次性 PUT（不是分段自动保存），所以收紧不会打断编辑流程。
+	strict := story.Status == statusPublished
+
 	if input.WorldConfig != nil {
-		if err := pkg.ValidateWorldConfig([]byte(*input.WorldConfig), false); err != nil {
+		if err := pkg.ValidateWorldConfig([]byte(*input.WorldConfig), strict); err != nil {
 			return nil, err
 		}
 		story.WorldConfig = *input.WorldConfig
 	}
 	if input.Title != nil {
+		// 与 SetStatus 同理：world_config 校验管不到标题，已发布作品不能被改成空标题。
+		if strict && strings.TrimSpace(*input.Title) == "" {
+			return nil, pkg.BadRequest("已发布作品不能没有标题")
+		}
 		story.Title = *input.Title
 	}
 	if input.Description != nil {

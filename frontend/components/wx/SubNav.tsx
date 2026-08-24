@@ -4,8 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 // 我的空间的二级导航，/mine/* 五页共用。
-// 原型里这条 .subnav 是 空间/草稿箱/消息/设置 四项，这里多一项「历史记录」——
-// 它从顶栏一级入口降下来（见 WxHeader）。
+// 原型里这条 .subnav 是 空间/草稿箱/消息/设置 四项。这里两处不同：多一项「历史记录」
+// （从顶栏一级入口降下来，见 WxHeader）；「草稿箱」改为「我的作品」——草稿与已发布
+// 合成一页，两类共用编辑与试玩，见 app/mine/works/page.tsx。
 //
 // ⚠️ 与 WxHeader 同理，P0 只新建、不挂载。
 //
@@ -14,7 +15,7 @@ import { usePathname } from "next/navigation";
 
 const ITEMS = [
   { href: "/mine", label: "空间" },
-  { href: "/mine/drafts", label: "草稿箱" },
+  { href: "/mine/works", label: "我的作品" },
   { href: "/mine/history", label: "历史记录" },
   { href: "/mine/inbox", label: "消息" },
   { href: "/mine/settings", label: "设置" },

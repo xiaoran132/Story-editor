@@ -43,7 +43,8 @@ export default function MinePage() {
     ])
       .then(([p, list]) => {
         setProfile(p);
-        // 这一栏只放**已发布**的原创作品；草稿有它自己的地方（/mine/drafts）
+        // 只留**已发布**的：这一页用它们叠作者天空、算三个计数器。
+        // 作品列表本身已整块搬去 /mine/works（与草稿箱合并），这里不再重复列一遍。
         setWorks((list ?? []).filter((s) => s.status === "published"));
         setStatus(p ? "ok" : "error");
       })
@@ -118,8 +119,8 @@ export default function MinePage() {
           </dl>
         )}
 
-        <p className={styles.sectionTitle}>我的作品</p>
-
+        {/* 作品列表整块搬去 /mine/works（与草稿箱合并）。这里只留一个入口——
+            同一份列表在两个页面各画一遍，改一处就会漏另一处。 */}
         {status === "error" && !user ? (
           <div className={styles.state}>
             <p className={styles.stateTitle}>先登录</p>
@@ -137,31 +138,15 @@ export default function MinePage() {
           </div>
         ) : status === "loading" ? (
           <p className={styles.state}>正在整理…</p>
-        ) : works.length === 0 ? (
-          <div className={styles.state}>
-            <p className={styles.stateTitle}>还没有发布过作品</p>
-            <p>写完的世界会出现在这里，也会出现在星海里。</p>
-            <Link className={styles.btn} href="/create">
-              写一个世界
-            </Link>
-          </div>
         ) : (
-          <div className={styles.grid}>
-            {works.map((s) => {
-              const { hue } = resolveTheme(s.world_config, s.id);
-              return (
-                <WorldScope
-                  key={s.id}
-                  as={Link}
-                  hue={hue}
-                  className={styles.card}
-                  href={`/story/${s.id}`}
-                  aria-label={`打开作品：${s.title}`}
-                >
-                  <WorkFace story={s} />
-                </WorldScope>
-              );
-            })}
+          <div className={styles.state}>
+            <p className={styles.stateTitle}>
+              {works.length === 0 ? "还没有发布过作品" : `已发布 ${works.length} 部`}
+            </p>
+            <p>草稿与已发布都在「我的作品」里，两类都能编辑、都能试玩。</p>
+            <Link className={styles.btn} href="/mine/works">
+              {works.length === 0 ? "去写一个世界" : "打开我的作品"}
+            </Link>
           </div>
         )}
       </main>

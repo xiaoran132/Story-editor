@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/store/authStore";
@@ -139,6 +140,9 @@ export default function WorkDetail({ story, variant, open, onBack }: WorkDetailP
   // 能不能开玩：必须登录（额度挂账号）且后端判定 ready。cfg 未到达时按不可玩处理——
   // 宁可让按钮晚亮一瞬，也不要点下去才发现没模型。
   const canPlay = !!user && !!cfg?.ready;
+  // 作者本人：发布之后同样要能改。后端 StoryService.Update 只校验属主、不看状态,
+  // 一直支持已发布作品的编辑;缺的只是入口。
+  const isAuthor = !!user && user.id === story.creator_id;
 
   const start = async () => {
     if (starting) return;
@@ -347,6 +351,12 @@ export default function WorkDetail({ story, variant, open, onBack }: WorkDetailP
               继续上次
               <small>第 {Math.max(0, lastSession.node_count - 1)} 步</small>
             </button>
+          )}
+
+          {isAuthor && (
+            <Link className={styles.btnGhost} href={`/edit/${story.id}`}>
+              编辑这部作品
+            </Link>
           )}
 
           {!isPage && onBack && (

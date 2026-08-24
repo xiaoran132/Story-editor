@@ -466,7 +466,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         id = created.id;
         set({ storyId: id });
       }
-      set({ saving: false, toast: "已保存草稿" });
+      // 已发布的作品保存的是**线上正在被玩的那一份**,不能再说"已保存草稿"。
+      set({
+        saving: false,
+        toast: f.status === "published" ? "已保存，线上作品已更新" : "已保存草稿",
+      });
       return id;
     } catch (e) {
       set({ saving: false, error: (e as Error).message });

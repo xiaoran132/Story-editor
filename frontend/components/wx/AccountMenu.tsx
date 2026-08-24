@@ -23,7 +23,7 @@ type Item = { href: string; label: string; hint?: string };
 
 const ITEMS: Item[] = [
   { href: "/mine", label: "我的空间", hint: "作品与数据" },
-  { href: "/mine/drafts", label: "草稿箱" },
+  { href: "/mine/works", label: "我的作品" },
   { href: "/mine/history", label: "历史记录" },
   { href: "/mine/inbox", label: "消息" },
   { href: "/mine/settings", label: "设置", hint: "资料 · AI 连接 · 阅读偏好" },

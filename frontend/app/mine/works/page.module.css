@@ -122,6 +122,8 @@
   gap: 8px;
   margin-top: auto;
   padding-top: 8px;
+  /* 已发布的卡片有四个动作（编辑/试玩/作品页/删除），窄栏放不下要换行而不是溢出 */
+  flex-wrap: wrap;
 }
 
 .btn {
@@ -188,4 +190,76 @@
   .draft {
     grid-template-columns: 110px minmax(0, 1fr);
   }
+}
+
+/* ---- 合并「草稿箱 + 我的作品」之后新增的三组 ---- */
+
+/* 状态筛选：全部 / 已发布 / 草稿。与 /mine/history 的筛选条同形，两页看起来是一套东西。 */
+.filters {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 20px;
+  flex-wrap: wrap;
+}
+
+.chip {
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid oklch(1 0 0 / 0.14);
+  background: oklch(1 0 0 / 0.03);
+  color: oklch(0.74 0.016 265);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s var(--ease), color 0.2s var(--ease), border-color 0.2s var(--ease);
+}
+
+.chip:hover {
+  background: oklch(1 0 0 / 0.07);
+  color: var(--fg);
+}
+
+.chip[aria-selected="true"] {
+  background: oklch(1 0 0 / 0.1);
+  border-color: oklch(0.88 0.008 265 / 0.5);
+  color: var(--fg);
+  font-weight: 590;
+}
+
+/* 状态角标：压在缩略天空右上角。已发布用作品自己的 hue，草稿用中性灰——
+   一眼能分出「在星海里」和「还没出门」，而不用去读文字。 */
+.badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-family: var(--font-ui);
+  font-size: 11.5px;
+  line-height: 1.5;
+  backdrop-filter: blur(6px);
+  border: 1px solid oklch(1 0 0 / 0.16);
+}
+
+.badgePub {
+  background: oklch(0.3 0.06 var(--hue) / 0.72);
+  color: oklch(0.93 0.02 var(--hue));
+}
+
+.badgeDraft {
+  background: oklch(0.2 0.008 265 / 0.72);
+  color: oklch(0.76 0.012 265);
+}
+
+/* 试玩开局失败（多半是没配模型）：就近说明，不弹窗 */
+.err:empty {
+  display: none;
+}
+
+.err {
+  margin: 0 0 16px;
+  color: oklch(0.72 0.14 25);
+  font-family: var(--font-ui);
+  font-size: 13px;
 }

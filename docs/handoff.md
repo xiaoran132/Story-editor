@@ -15,8 +15,8 @@ Story Editor 的长期愿景是“AI 驱动的互动剧情共创社区”：用�
 
 | 域 | 已完成 | 未完成或限制 |
 |---|---|---|
-| 用户 | 后端注册/登录/JWT/资料、凭证分表；**前端登录接入完成**（游玩需登录，匿名与会话迁移已移除，见 §9.2）；**我的空间 `/mine`（空间/草稿箱/历史记录/消息/设置五页）**，设置页含资料 + 头像 + BYOK 连接管理；**BYOK 已接入生成**（连接=账号级、模型=作品级，见 §12）；**注册赠 1 元平台额度 + 按 token 计费扣减**；头像上传 | OAuth/密码找回未做；**充值服务未做**（额度用尽只能自带 key）；单价需 admin 手填；旧 `User.LLMKeyCipher`（单 key）已废弃、列留孤儿 |
-| 作品 | Story CRUD（列表/详情 LEFT JOIN users 带出 `creator_name` 作者昵称，只读投影）、作品列表、世界观/初始状态 JSON；**创作编辑器(MVP)**：`world_config`/`opening_content` 可写入、运行时校验(`pkg.ValidateWorldConfig`，草稿宽松/发布严格)、发布态切换、我的作品列表、assist Go 转发；**文风档案与完整开场精品润色预览**；**封面上传（`/uploads/image` + `cover_url`，见 §14）**；**`GET /stories` 参数化**（`sort`/`limit`/`offset`，见 §7.1）；**`play_count` 有写入路径了**（开场落库成功时经 `StoryCounter` 窄接口自增，见 §9.2） | `/assist/branches` 编辑内接入未做 |
+| 用户 | 后端注册/登录/JWT/资料、凭证分表；**前端登录接入完成**（游玩需登录，匿名与会话迁移已移除，见 §9.2）；**我的空间 `/mine`（空间/我的作品/历史记录/消息/设置五页）**，设置页含资料 + 头像 + BYOK 连接管理；**BYOK 已接入生成**（连接=账号级、模型=作品级，见 §12）；**注册赠 1 元平台额度 + 按 token 计费扣减**；头像上传 | OAuth/密码找回未做；**充值服务未做**（额度用尽只能自带 key）；单价需 admin 手填；旧 `User.LLMKeyCipher`（单 key）已废弃、列留孤儿 |
+| 作品 | Story CRUD（列表/详情 LEFT JOIN users 带出 `creator_name` 作者昵称，只读投影）、作品列表、世界观/初始状态 JSON；**创作编辑器(MVP)**：`world_config`/`opening_content` 可写入、运行时校验(`pkg.ValidateWorldConfig`，**草稿宽松、已发布严格**——发布时校验，且**更新已发布作品走同一把尺子**，否则改一次就能把线上作品改成连发布都过不了的状态)、发布态切换、我的作品列表、assist Go 转发；**文风档案与完整开场精品润色预览**；**封面上传（`/uploads/image` + `cover_url`，见 §14）**；**`GET /stories` 参数化**（`sort`/`limit`/`offset`，见 §7.1）；**`play_count` 有写入路径了**（开场落库成功时经 `StoryCounter` 窄接口自增，见 §9.2） | `/assist/branches` 编辑内接入未做 |
 | 游玩 | 开局、续写、自由输入、回溯、读档、删档、剧情树、状态合并；质量审校可开关（默认关）；**全组需登录，草稿仅作者可玩**；**hidden/未揭示 reveal 的数值不外发**（§9.2） | **匿名不能玩**（额度挂账号，详情页拦截并引导登录）；真实环境下的多回合质量/延迟指标尚未沉淀 |
 | Agent | **流式生成(SSE)**、属性类型规整（含 hidden）、故事大纲导演、滚动摘要、审校分级 + 有记忆修订 + 超限降级交付 | RAG、多 Agent fan-out、独立 director/recall/write 子图未做 |
 | 前端 | **万象设计体系全量落地（见 §13）**，14 条路由全在新体系上：`/` 3D CSS 星系(四种排布 + 拖拽惯性 + 2.6s 开屏)、`/works` 作品馆、`/story/[id]`、`/play/[id]`(三栏舞台 + 状态轨 + 选项坞 1/2/3 快捷键 + 星图抽屉)、`/create`·`/edit/[id]` 六段式编辑器(天空即完成度)、`/login` 天空阶梯、`/mine` 五页、`/admin`、`not-found`，以及 `/community`·`/mine/inbox` 两个**零假数据**的开发中页。正文逐字流式(无首字下沉)、属性三态可见性(hidden 全程不露面)、进度条按 `max` 声明画、按作品配模型、每作品一个 `--hue` 染色 | 社区功能未做；**无前端自动化测试、无 CI**（`.github/` 只剩 ESLint），闸门是本地 lint/typecheck/build + 真机走查 |
@@ -454,11 +454,11 @@ cd agent
 
 **作品级主题**存在 `world_config.theme`，**零后端改动**透传（后端固定 struct 忽略未知键）。**存的是值不是 id**：`{hue, figure}`——预设若只是前端常量，改动某个预设的色相会让所有用它的作品一起变色；值固化进作品后，颜色是作品身份的一部分。库里两种形态长期并存（实测 12 部里 7 部是老的字符串预设 id、5 部是对象），`lib/hue.ts` 的 `resolveTheme(worldConfig, storyId)` 三级解析全吃：对象 → 预设查表 → `storyId` 哈希兜底。15 套预设只服务编辑器段 5 的选色器。主题脱离作品获得独立身份是既定路线，架构见 [plan.md](plan.md) 附录 A；那一步加的是身份层不是替换存储层，本轮的读路径一行不作废。
 
-主题**不是换肤而是染色**：一个 `--hue` 驱动 `.world-scope` 上整套 `oklch()` 角色 token（`--w-sky-*`／`--w-line`／`--w-ink`／`--w-plate` 等，L 与 C 写死、只有 H 跟着变）。⚠️ 挂载点必须是**消费它的那个元素**（由 `components/sky/WorldScope.tsx` 负责），放 `:root` 会把所有卡片锁成同一色相。消费者：星系卡、聚焦浮层与详情页（`WorkDetail`，浮层与整页同一份内容契约）、游玩页整页（`playStore.theme` 是 `{hue,figure}`，`load()` 复用已拉的 `/stories/:id`，零额外请求）、草稿箱与历史的缩略天空。
+主题**不是换肤而是染色**：一个 `--hue` 驱动 `.world-scope` 上整套 `oklch()` 角色 token（`--w-sky-*`／`--w-line`／`--w-ink`／`--w-plate` 等，L 与 C 写死、只有 H 跟着变）。⚠️ 挂载点必须是**消费它的那个元素**（由 `components/sky/WorldScope.tsx` 负责），放 `:root` 会把所有卡片锁成同一色相。消费者：星系卡、聚焦浮层与详情页（`WorkDetail`，浮层与整页同一份内容契约）、游玩页整页（`playStore.theme` 是 `{hue,figure}`，`load()` 复用已拉的 `/stories/:id`，零额外请求）、我的作品页与历史的缩略天空。
 
 **天空是全站复用最多的图元**，收敛在 `components/sky/`：`Sky`（分层 `sky-grad → halo → cloud → starfield → meteor → horizon → ground-glow → figure`，各页取子集）、`Figure`（六姿态剪影）、`Backdrop`（固定背景栈）、`WorldScope`（挂 `--hue` 的作用域容器）。星点撒布一律走 `lib/prng.ts` 的定种子线性同余，**全站禁 `Math.random()`**——服务端渲染与客户端水合必须产出同一串数。
 
-**顶栏分两态**（`components/wx/WxHeader.tsx` + `AccountMenu.tsx`）：主导航只放三项公共入口（星海 / 作品馆 / 社区），**不随登录态变形**；右侧账户区已登录是头像 → 下拉菜单（我的空间 / 草稿箱 / 历史记录 / 消息 / 设置，admin 另有平台设置，末尾退出登录），匿名是「登录 + 注册」。⚠️ 两个入口**永不同屏**——设计稿 §7.6 原写「顶栏不加登录入口」，理由只覆盖登录态，而产品里匿名访客可以浏览已发布作品，照原规格做他会看到一个没有任何登录入口的顶栏。**个人向的新页面一律加进 `AccountMenu` 的 `ITEMS`**，不要往主导航上挂。⚠️ 登录态判定要等 `authStore.hydrated`：服务端与客户端首帧都读不到 localStorage，按 `user===null` 直接画会让已登录的人先闪一下「登录 / 注册」；补水前两态都不渲染，标记一致故无 hydration mismatch。
+**顶栏分两态**（`components/wx/WxHeader.tsx` + `AccountMenu.tsx`）：主导航只放三项公共入口（星海 / 作品馆 / 社区），**不随登录态变形**；右侧账户区已登录是头像 → 下拉菜单（我的空间 / 我的作品 / 历史记录 / 消息 / 设置，admin 另有平台设置，末尾退出登录），匿名是「登录 + 注册」。⚠️ 两个入口**永不同屏**——设计稿 §7.6 原写「顶栏不加登录入口」，理由只覆盖登录态，而产品里匿名访客可以浏览已发布作品，照原规格做他会看到一个没有任何登录入口的顶栏。**个人向的新页面一律加进 `AccountMenu` 的 `ITEMS`**，不要往主导航上挂。⚠️ 登录态判定要等 `authStore.hydrated`：服务端与客户端首帧都读不到 localStorage，按 `user===null` 直接画会让已登录的人先闪一下「登录 / 注册」；补水前两态都不渲染，标记一致故无 hydration mismatch。
 
 **入口/展示**：编辑器段 5「主题与天空」= 15 个预设色块 + 自由色相条 + 6 个姿态，`themePicked` 作段 5 的就绪判定（是编辑期足迹，**不进 `world_config`**）。作品卡无封面时渲染纯 CSS 天空——库里 12 部 `cover_url` 全空，**无图态是默认态、不是降级态**。
 
@@ -522,7 +522,7 @@ cd agent
 **前端接入**
 - `lib/api.ts`：`api.upload(kind, file, name)` 是独立的 multipart 通道（**不设 `Content-Type`**，boundary 必须由浏览器带）；`assetUrl(u)` 把相对路径补上 dev 的后端源。
 - `components/ImageUpload.tsx`：通用控件（`kind` 决定圆形/矩形预览），真 `<button>` 触发隐藏 file input，上传中/空/失败三态齐全。
-- 消费点：`/mine/settings` 头像（保存时**手动双写 localStorage + `useAuthStore.setState`**，否则顶栏与账户菜单读的是旧那份 user，改完昵称/头像顶栏不刷新）、`/mine` 资料头；封面在编辑器段 5「主题与天空」、作品卡与草稿箱。⚠️ 12 部演示作品 `cover_url` 全空，所以**无封面是默认态**：卡片渲染纯 CSS 天空，不是灰占位框。
+- 消费点：`/mine/settings` 头像（保存时**手动双写 localStorage + `useAuthStore.setState`**，否则顶栏与账户菜单读的是旧那份 user，改完昵称/头像顶栏不刷新）、`/mine` 资料头；封面在编辑器段 5「主题与天空」、作品卡与我的作品页。⚠️ 12 部演示作品 `cover_url` 全空，所以**无封面是默认态**：卡片渲染纯 CSS 天空，不是灰占位框。
 - **无图时的渲染与改动前完全一致**：所有位置都回落原来的主题渐变 / 昵称首字母，不引入「默认灰头像」这种无信息占位。
 - **有图时仍叠一层主题渐变罩层**（`lib/types.ts` 的 `coverStyle`，用 `color-mix` 降透明度）：封面上压着白色标题/摘要/CTA，裸铺照片会让对比度跌破 4.5:1；罩层同时保住「彩色只来自作品主题色」这条铁律。有封面时不加 `.cover.alive`——那个 16s 漂移靠拉伸 `background-size`，用在照片上会变形。
 
