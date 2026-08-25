@@ -991,9 +991,12 @@ select {
 }
 
 /* 原生下拉面板在深空底上默认是浅色的。color-scheme 管住了控件本身，
-   选项列表还得自己上色，否则展开那一下整块白闪。 */
-.wx-select option,
-.wx-select optgroup {
+   选项列表还得自己上色，否则展开那一下整块白闪。
+   ⚠️ 按元素而非按类：这条规则曾经在四个文件里各抄一份（.wx-select / .sel /
+   .select / .rowInput），没被列进去的 select 就一直裸着。选项配色对每个下拉
+   都一样，没有按类分家的理由。 */
+option,
+optgroup {
   background: var(--bg);
   color: var(--fg);
 }

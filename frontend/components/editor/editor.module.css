@@ -494,12 +494,6 @@
   color: oklch(0.6 0.015 265);
 }
 
-.select option,
-.select optgroup {
-  background: var(--bg);
-  color: var(--fg);
-}
-
 /* 题材 chip */
 .chips {
   display: flex;
@@ -604,12 +598,6 @@
 
 .rowInput::placeholder {
   color: oklch(0.58 0.015 265);
-}
-
-.rowInput option,
-.rowInput optgroup {
-  background: var(--bg);
-  color: var(--fg);
 }
 
 .cell {
