@@ -52,6 +52,7 @@ interface EditorState extends EditorForm {
   error: string | null;
   toast: string | null;
   connectionId: string; // BYOK：编辑器选用的连接 id（覆盖 world 环节绑定）；空=按绑定/平台
+  connectionModel: string; // 与 connectionId 成对：用该连接的哪个模型。连接没有默认模型，缺它解析不出配置
   polishInstruction: string;
   polishSourceText: string | null;
   polishDraft: string | null;
@@ -59,7 +60,7 @@ interface EditorState extends EditorForm {
   polishApplied: boolean;
 
   reset: () => void;
-  setConnectionId: (id: string) => void;
+  setConnectionPick: (id: string, model: string) => void;
   loadStory: (id: string) => Promise<void>;
   setField: <K extends keyof EditorForm>(key: K, value: EditorForm[K]) => void;
   // 角色
@@ -245,6 +246,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   error: null,
   toast: null,
   connectionId: "",
+  connectionModel: "",
   polishInstruction: "",
   polishSourceText: null,
   polishDraft: null,
@@ -262,6 +264,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       error: null,
       toast: null,
       connectionId: "",
+      connectionModel: "",
       polishInstruction: "",
       polishSourceText: null,
       polishDraft: null,
@@ -269,7 +272,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       polishApplied: false,
     }),
 
-  setConnectionId: (id) => set({ connectionId: id }),
+  setConnectionPick: (id, model) => set({ connectionId: id, connectionModel: model }),
 
   loadStory: async (id) => {
     set({ loading: true, error: null });
@@ -364,6 +367,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         idea: idea.trim(),
         style: style.trim(),
         connection_id: get().connectionId || undefined,
+        model: get().connectionModel || undefined,
       });
       set({
         background: d.background || "",
@@ -386,6 +390,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const d = await api.post<OpeningDraft>("/assist/opening", {
         world: worldObject(get()),
         connection_id: get().connectionId || undefined,
+        model: get().connectionModel || undefined,
       });
       set({
         openingContent: d.content || "",
@@ -418,6 +423,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         instruction: get().polishInstruction.trim(),
         world: worldObject(get()),
         connection_id: get().connectionId || undefined,
+        model: get().connectionModel || undefined,
       });
       set({
         aiBusy: null,

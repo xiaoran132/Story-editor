@@ -27,11 +27,12 @@ func NewAssistHandler(agent *service.AgentClient, resolver *service.LLMResolver,
 }
 
 // resolveWorld 沿用创作侧的模型解析顺序：编辑器连接覆盖、平台 world、无模型错误。
-func (h *AssistHandler) resolveWorld(c *gin.Context, connOverride *uuid.UUID) (*service.AgentLLMConfig, error) {
+// connOverride 与 model 成对来自编辑器那个「连接 → 模型」的分层下拉。
+func (h *AssistHandler) resolveWorld(c *gin.Context, connOverride *uuid.UUID, model string) (*service.AgentLLMConfig, error) {
 	if h.resolver == nil {
 		return nil, noModelErr()
 	}
-	cfg, err := h.resolver.ResolveForAssist(c.Request.Context(), middleware.GetUserID(c), connOverride)
+	cfg, err := h.resolver.ResolveForAssist(c.Request.Context(), middleware.GetUserID(c), connOverride, model)
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +71,7 @@ func (h *AssistHandler) World(c *gin.Context) {
 		pkg.Error(c, pkg.BadRequest("idea 不能为空"))
 		return
 	}
-	cfg, cfgErr := h.resolveWorld(c, req.ConnectionID)
+	cfg, cfgErr := h.resolveWorld(c, req.ConnectionID, req.Model)
 	if cfgErr != nil {
 		pkg.Error(c, cfgErr)
 		return
@@ -92,7 +93,7 @@ func (h *AssistHandler) Opening(c *gin.Context) {
 		pkg.Error(c, pkg.BadRequest(err.Error()))
 		return
 	}
-	cfg, cfgErr := h.resolveWorld(c, req.ConnectionID)
+	cfg, cfgErr := h.resolveWorld(c, req.ConnectionID, req.Model)
 	if cfgErr != nil {
 		pkg.Error(c, cfgErr)
 		return
@@ -120,7 +121,7 @@ func (h *AssistHandler) Polish(c *gin.Context) {
 		pkg.Error(c, pkg.BadRequest("text 不能为空"))
 		return
 	}
-	cfg, cfgErr := h.resolveWorld(c, req.ConnectionID)
+	cfg, cfgErr := h.resolveWorld(c, req.ConnectionID, req.Model)
 	if cfgErr != nil {
 		pkg.Error(c, cfgErr)
 		return
@@ -146,7 +147,7 @@ func (h *AssistHandler) Branches(c *gin.Context) {
 		pkg.Error(c, pkg.BadRequest("content 不能为空"))
 		return
 	}
-	cfg, cfgErr := h.resolveWorld(c, req.ConnectionID)
+	cfg, cfgErr := h.resolveWorld(c, req.ConnectionID, req.Model)
 	if cfgErr != nil {
 		pkg.Error(c, cfgErr)
 		return

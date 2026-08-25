@@ -31,6 +31,11 @@ func main() {
 	// 先启用 pgcrypto 扩展
 	db.Exec("CREATE EXTENSION IF NOT EXISTS pgcrypto")
 
+	// llm_connections.default_model 已废弃（连接改为持有一组可选模型，没有「默认模型」）。
+	// 字段从 struct 移除后 INSERT 不再带这列，而旧库里它是 NOT NULL 且无默认值——
+	// 不先松开约束，新建连接会直接失败。新库上 IF EXISTS 是空操作。GORM 不删列，留孤儿。
+	db.Exec("ALTER TABLE IF EXISTS llm_connections ALTER COLUMN default_model DROP NOT NULL")
+
 	if err := db.AutoMigrate(&model.User{}, &model.UserCredential{}, &model.Story{}, &model.StoryLike{}, &model.StoryNode{}, &model.PlaySession{}, &model.LLMConnection{}, &model.PlatformLLMSetting{}, &model.UserStoryLLMConfig{}, &model.LLMUsageLog{}); err != nil {
 		log.Fatalf("failed to migrate: %v", err)
 	}
@@ -41,6 +46,12 @@ func main() {
 	if err := repository.NewNodeRepository(db).EnsureRootIndex(context.Background()); err != nil {
 		log.Fatalf("failed to ensure uniq_root_per_session: %v", err)
 	}
+
+	// 一次性回填：把旧的单个 default_model 迁进新的 models 列表，免得存量连接在
+	// 分层下拉里变成一个空组。条件同时兜住 '' 与 NULL（不假定 GORM 的 default 标签
+	// 真落到了 ADD COLUMN 上），也让这条语句幂等。
+	db.Exec(`UPDATE llm_connections SET models = to_jsonb(ARRAY[default_model])::text
+	         WHERE coalesce(models, '') IN ('', '[]') AND coalesce(default_model, '') <> ''`)
 
 	// 不再 seed：demo 数据已在库中。原实现每次启动都会跑重复项清理与「迷雾古堡」硬删，
 	// 等于在生产库上执行夹具代码的删除逻辑，职责错位。
@@ -145,7 +156,8 @@ func main() {
 		llm.PUT("/connections/:id", llmH.UpdateConnection)
 		llm.DELETE("/connections/:id", llmH.DeleteConnection)
 		llm.POST("/connections/test", llmH.TestConnection)
-		llm.GET("/connections/:id/models", llmH.ListModels)    // 拉取该连接可用模型
+		llm.POST("/connections/models", llmH.ProbeModels)      // 用表单现填的 key 拉模型（连接尚未保存）
+		llm.GET("/connections/:id/models", llmH.ListModels)    // 用存量 key 重拉某条已存连接的模型
 		llm.GET("/story-config/:storyId", llmH.GetStoryConfig) // 玩家在某作品的模型配置
 		llm.PUT("/story-config/:storyId", llmH.SetStoryConfig)
 	}

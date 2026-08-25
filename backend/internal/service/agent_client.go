@@ -413,13 +413,14 @@ func (c *AgentClient) postIntoWith(ctx context.Context, client *http.Client, pat
 // 请求/响应字段对齐 agent/app/schemas.py（snake_case），复用 WorldConfig / Option。
 
 // 说明：assist 请求结构既承接前端入参、又是发往 agent 的请求体。
-// ConnectionID 是前端可选的「编辑器覆盖连接」(json:connection_id)，由 handler 读取用于解析、
+// ConnectionID + Model 是前端可选的「编辑器覆盖连接与模型」(json:connection_id / model)，由 handler 读取用于解析、
 // agent 端 pydantic 无此字段会自动忽略；LLM/LLMWrite/LLMReview 由 handler **服务端**填充
 // （客户端即便传入也被覆盖，杜绝客户端注入 key）。
 type AssistWorldRequest struct {
 	Idea         string          `json:"idea"`
 	Style        string          `json:"style,omitempty"`
 	ConnectionID *uuid.UUID      `json:"connection_id,omitempty"` // 前端覆盖连接（world 环节）
+	Model        string          `json:"model,omitempty"`         // 与 ConnectionID 成对：用该连接的哪个模型
 	LLM          *AgentLLMConfig `json:"llm,omitempty"`           // 服务端填充
 }
 
@@ -438,6 +439,7 @@ type WorldDraft struct {
 type AssistOpeningRequest struct {
 	World        WorldConfig     `json:"world"`
 	ConnectionID *uuid.UUID      `json:"connection_id,omitempty"` // 前端覆盖连接（开场走 write+review）
+	Model        string          `json:"model,omitempty"`         // 与 ConnectionID 成对：用该连接的哪个模型
 	LLMWrite     *AgentLLMConfig `json:"llm_write,omitempty"`     // 服务端填充
 	LLMReview    *AgentLLMConfig `json:"llm_review,omitempty"`    // 服务端填充
 }
@@ -454,6 +456,7 @@ type AssistPolishRequest struct {
 	Instruction  string          `json:"instruction,omitempty"`
 	World        WorldConfig     `json:"world"`
 	ConnectionID *uuid.UUID      `json:"connection_id,omitempty"`
+	Model        string          `json:"model,omitempty"`
 	LLM          *AgentLLMConfig `json:"llm,omitempty"`
 }
 
@@ -475,6 +478,7 @@ type AssistBranchesRequest struct {
 	Content      string          `json:"content"`
 	Count        int             `json:"count,omitempty"`
 	ConnectionID *uuid.UUID      `json:"connection_id,omitempty"`
+	Model        string          `json:"model,omitempty"`
 	LLM          *AgentLLMConfig `json:"llm,omitempty"`
 }
 

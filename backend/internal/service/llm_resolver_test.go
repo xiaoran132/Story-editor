@@ -45,7 +45,7 @@ func cipherOf(t *testing.T, plain string) string {
 	return c
 }
 
-// TestResolveForPlay 覆盖作品级优先级：作品配置 > 平台 > nil，及模型回退/连接失效。
+// TestResolveForPlay 覆盖作品级优先级：作品配置 > 平台 > nil，及连接失效。
 func TestResolveForPlay(t *testing.T) {
 	uid := uuid.New()
 	sid := uuid.New()
@@ -53,7 +53,7 @@ func TestResolveForPlay(t *testing.T) {
 
 	f := &fakeLLM{
 		conns: map[uuid.UUID]*model.LLMConnection{
-			connA: {ID: connA, UserID: uid, Provider: "deepseek", BaseURL: "https://u", DefaultModel: "model-default", APIKeyCipher: cipherOf(t, "user-key")},
+			connA: {ID: connA, UserID: uid, Provider: "deepseek", BaseURL: "https://u", Models: `["model-A"]`, APIKeyCipher: cipherOf(t, "user-key")},
 		},
 		platform: map[string]*model.PlatformLLMSetting{
 			StageReview: {Stage: StageReview, Provider: "plat", BaseURL: "https://p", Model: "plat-model", APIKeyCipher: cipherOf(t, "plat-key")},
@@ -95,21 +95,34 @@ func TestResolveForPlay(t *testing.T) {
 	}
 }
 
-// TestResolveForPlayModelFallback 校验作品配置未指定 model 时回退连接 DefaultModel。
-func TestResolveForPlayModelFallback(t *testing.T) {
+// TestResolveForPlayNeedsExplicitModel 锁住「没有默认模型」这条：连接不再持有
+// default_model，绑定里 model 为空就是解析不出东西，必须回落下一档而不是硬猜一个。
+func TestResolveForPlayNeedsExplicitModel(t *testing.T) {
 	uid, sid, connA := uuid.New(), uuid.New(), uuid.New()
-	f := &fakeLLM{
-		conns: map[uuid.UUID]*model.LLMConnection{
-			connA: {ID: connA, UserID: uid, DefaultModel: "conn-default", APIKeyCipher: cipherOf(t, "k")},
-		},
-		platform: map[string]*model.PlatformLLMSetting{},
-		story: map[string]*model.UserStoryLLMConfig{
-			uid.String() + "|" + sid.String(): {Bindings: `{"write":{"conn":"` + connA.String() + `"}}`},
-		},
+	newFake := func() *fakeLLM {
+		return &fakeLLM{
+			conns: map[uuid.UUID]*model.LLMConnection{
+				connA: {ID: connA, UserID: uid, BaseURL: "https://u", Models: `["m1","m2"]`, APIKeyCipher: cipherOf(t, "k")},
+			},
+			platform: map[string]*model.PlatformLLMSetting{},
+			story: map[string]*model.UserStoryLLMConfig{
+				uid.String() + "|" + sid.String(): {Bindings: `{"write":{"conn":"` + connA.String() + `"}}`},
+			},
+			credit: map[uuid.UUID]int64{uid: MicroPerCNY},
+		}
 	}
-	r := NewLLMResolver(f, testEncKey)
-	if cfg, _ := r.ResolveForPlay(context.Background(), uid, sid, StageWrite); cfg == nil || cfg.Model != "conn-default" {
-		t.Fatalf("未指定 model 应回退连接 DefaultModel: %+v", cfg)
+	ctx := context.Background()
+
+	// 1) 平台也没配 → 整条链路 nil（调用方据此明确报错）。
+	//    绝不能因为连接的 models 里有 m1 就拿它顶上——那就是把默认模型换个地方复活。
+	if cfg, _ := NewLLMResolver(newFake(), testEncKey).ResolveForPlay(ctx, uid, sid, StageWrite); cfg != nil {
+		t.Fatalf("绑定缺 model 时不得擅自取用连接的任一模型: %+v", cfg)
+	}
+	// 2) 平台配了 → 回落平台档，而不是停在这条残缺的绑定上。
+	f := newFake()
+	f.platform[StageWrite] = &model.PlatformLLMSetting{Stage: StageWrite, BaseURL: "https://p", Model: "plat-model", APIKeyCipher: cipherOf(t, "plat-key")}
+	if cfg, _ := NewLLMResolver(f, testEncKey).ResolveForPlay(ctx, uid, sid, StageWrite); cfg == nil || cfg.Model != "plat-model" {
+		t.Fatalf("绑定缺 model 应回落平台档: %+v", cfg)
 	}
 }
 
@@ -118,7 +131,7 @@ func TestResolveForAssist(t *testing.T) {
 	uid, connO := uuid.New(), uuid.New()
 	f := &fakeLLM{
 		conns: map[uuid.UUID]*model.LLMConnection{
-			connO: {ID: connO, UserID: uid, Provider: "openai", BaseURL: "https://o", DefaultModel: "gpt-x", APIKeyCipher: cipherOf(t, "ovr-key")},
+			connO: {ID: connO, UserID: uid, Provider: "openai", BaseURL: "https://o", Models: `["gpt-x"]`, APIKeyCipher: cipherOf(t, "ovr-key")},
 		},
 		platform: map[string]*model.PlatformLLMSetting{
 			StageWorld: {Stage: StageWorld, BaseURL: "https://p", Model: "plat-world", APIKeyCipher: cipherOf(t, "plat-key")},
@@ -129,12 +142,16 @@ func TestResolveForAssist(t *testing.T) {
 	r := NewLLMResolver(f, testEncKey)
 	ctx := context.Background()
 
-	// 1) 编辑器覆盖连接优先
-	if cfg, _ := r.ResolveForAssist(ctx, uid, &connO); cfg == nil || cfg.APIKey != "ovr-key" || cfg.Model != "gpt-x" {
+	// 1) 编辑器覆盖连接优先，且用的是下拉里选中的那个模型
+	if cfg, _ := r.ResolveForAssist(ctx, uid, &connO, "gpt-x"); cfg == nil || cfg.APIKey != "ovr-key" || cfg.Model != "gpt-x" {
 		t.Fatalf("override 未生效: %+v", cfg)
 	}
-	// 2) 无覆盖 → 回退平台 world
-	if cfg, _ := r.ResolveForAssist(ctx, uid, nil); cfg == nil || cfg.APIKey != "plat-key" || cfg.Model != "plat-world" {
+	// 2) 选了连接却没给模型 → 这条覆盖作废，回落平台 world（不擅自取连接里的某个模型）
+	if cfg, _ := r.ResolveForAssist(ctx, uid, &connO, ""); cfg == nil || cfg.APIKey != "plat-key" {
+		t.Fatalf("缺 model 的覆盖应回落平台: %+v", cfg)
+	}
+	// 3) 无覆盖 → 回退平台 world
+	if cfg, _ := r.ResolveForAssist(ctx, uid, nil, ""); cfg == nil || cfg.APIKey != "plat-key" || cfg.Model != "plat-world" {
 		t.Fatalf("应回退平台 world: %+v", cfg)
 	}
 }

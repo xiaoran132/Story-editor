@@ -7,6 +7,7 @@ import {
   formatCredit,
   type LLMConnection,
   type RecommendedModels,
+  type StageBinding,
   type StageBindings,
   type StoryLLMConfig,
 } from "@/lib/types";
@@ -37,18 +38,9 @@ export default function StoryLLMConfigPanel({
   const [loading, setLoading] = useState(true); // 在途时别劝用户去添加其实已存在的连接
   const [draft, setDraft] = useState<StageBindings>({});
   const [reviewOn, setReviewOn] = useState(false);
-  const [modelsByConn, setModelsByConn] = useState<Record<string, string[]>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { show: flash, node: toastNode } = useToast();
-
-  const fetchModels = (connId: string) => {
-    if (!connId || modelsByConn[connId]) return;
-    api
-      .get<{ models: string[] }>(`/llm/connections/${connId}/models`)
-      .then((r) => setModelsByConn((m) => ({ ...m, [connId]: r.models || [] })))
-      .catch(() => setModelsByConn((m) => ({ ...m, [connId]: [] }))); // 拉不到→空，仍可手填
-  };
 
   useEffect(() => {
     if (!loggedIn) {
@@ -63,20 +55,19 @@ export default function StoryLLMConfigPanel({
   }, [loggedIn]);
 
   // 服务端配置到达/变化后同步进本地草稿（详情页负责拉取，这里只编辑）。
+  // 模型列表随连接一起来（GET /llm/connections 的 models 字段），不必再逐条去拉。
   useEffect(() => {
     if (!cfg) return;
     setDraft(cfg.bindings || {});
     setReviewOn(cfg.review_enabled);
-    (["write", "review"] as const).forEach((st) => {
-      const id = cfg.bindings?.[st]?.conn;
-      if (id) fetchModels(id);
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cfg]);
 
-  const setStage = (stage: "write" | "review", patch: Partial<{ conn: string; model: string }>) => {
-    setDraft((d) => ({ ...d, [stage]: { conn: "", model: "", ...d[stage], ...patch } }));
-    if (patch.conn) fetchModels(patch.conn);
+  // 一个下拉同时决定连接与模型，所以 option 的 value 把两者编在一起。
+  // uuid 不含 ":"，按**首个** "::" 切一刀即可，模型名里有冒号也不会切错。
+  const packPick = (b: StageBinding) => (b.conn ? `${b.conn}::${b.model}` : "");
+  const unpackPick = (v: string): StageBinding => {
+    const i = v.indexOf("::");
+    return i < 0 ? { conn: "", model: "" } : { conn: v.slice(0, i), model: v.slice(i + 2) };
   };
 
   const save = async () => {
@@ -85,6 +76,8 @@ export default function StoryLLMConfigPanel({
     try {
       const bindings: StageBindings = {};
       (["write", "review"] as const).forEach((st) => {
+        // conn 为空 = 走平台档，不写绑定。后端要求 conn 非空时 model 必填，
+        // 而下拉里每个连接项都自带模型，凑不出「有连接没模型」的组合。
         if (draft[st]?.conn) bindings[st] = draft[st]!;
       });
       const saved = await api.put<StoryLLMConfig>(`/llm/story-config/${storyId}`, {
@@ -153,16 +146,18 @@ export default function StoryLLMConfigPanel({
 
               {PLAY_STAGES.map((st) => {
                 if (st.key === "review" && !reviewOn) return null; // 关掉就整行不出现，比禁用更清楚
-                const b = draft[st.key] || { conn: "", model: "" };
-                const models = b.conn ? modelsByConn[b.conn] || [] : [];
+                const b: StageBinding = draft[st.key] || { conn: "", model: "" };
                 const plat = platformFor(st.key);
-                const listId = `models-${st.key}`;
-                const connId = `conn-${st.key}`;
-                const modelId = `model-${st.key}`;
+                const pickId = `pick-${st.key}`;
+                // 绑定指向的模型可能已被用户从连接里移除。补一条 option，
+                // 否则 <select> 的当前值无对应项，浏览器会静默显示成第一项，
+                // 看起来像「配置被改掉了」。
+                const bound = conns.find((c) => c.id === b.conn);
+                const orphan = !!b.conn && !!bound && !(bound.models || []).includes(b.model);
                 return (
                   <div className={styles.fld} key={st.key}>
                     {/* 环节名作组标题，两个控件各自再给 aria-label 区分连接/模型 */}
-                    <label htmlFor={connId}>
+                    <label htmlFor={pickId}>
                       {st.label}
                       {/* 只有平台档也兜不住时才是「必选」——平台 review 配好了就不必买自己的连接 */}
                       {st.key === "review" && !plat.ready && (
@@ -170,42 +165,44 @@ export default function StoryLLMConfigPanel({
                       )}
                     </label>
                     <div className={styles.row}>
-                      <select id={connId} className={styles.sel} value={b.conn}
-                        aria-label={`${st.label} · 连接`}
-                        onChange={(e) => setStage(st.key, { conn: e.target.value, model: "" })}>
-                        {/* 「平台」独立成组：让玩家看见这条路存在、用的是哪个模型，也看见它现在通不通 */}
+                      <select id={pickId} className={styles.sel} value={packPick(b)}
+                        aria-label={`${st.label} · 模型`}
+                        onChange={(e) =>
+                          setDraft((d) => ({ ...d, [st.key]: unpackPick(e.target.value) }))
+                        }>
+                        {/* 「平台」独立成组，且**永不禁用**：不绑连接本来就是合法的默认状态，
+                            平台预设模型该一直摆在那儿。此前按 ready 禁用它有两个坏处——
+                            它是默认选中项，禁用态的灰字在深底上直接看不见；后端一时回不出
+                            可用性（比如旧进程没有 platform_stages）就等于把默认档锁死。
+                            能不能真的开玩由下方拦截横幅按后端 ready 说话，不靠禁用这个选项表达。 */}
                         <optgroup label="平台">
-                          <option value="" disabled={!plat.ready}>
-                            {plat.ready
-                              ? `平台预设${plat.model ? ` · ${plat.model}` : ""}（剩余 ${formatCredit(credit)}）`
-                              : credit > 0
-                                ? "平台预设（该环节未开放）"
-                                : "平台预设（额度已用尽）"}
+                          <option value="">
+                            {`平台预设${plat.model ? ` · ${plat.model}` : ""}${
+                              plat.ready
+                                ? `（剩余 ${formatCredit(credit)}）`
+                                : credit > 0
+                                  ? "（该环节未配置）"
+                                  : "（额度已用尽）"
+                            }`}
                           </option>
                         </optgroup>
-                        {conns.length > 0 && (
-                          <optgroup label="我的连接（不花额度）">
-                            {conns.map((c) => (
-                              <option key={c.id} value={c.id}>{c.name}</option>
-                            ))}
-                          </optgroup>
-                        )}
+                        {/* 每条连接一组，组名是它的备注，组下是这条连接可用的模型。
+                            连接本身不再是可选项——选的始终是「哪条连接的哪个模型」。 */}
+                        {conns.map((c) => {
+                          const ms = c.models || [];
+                          if (ms.length === 0 && !(orphan && c.id === b.conn)) return null;
+                          return (
+                            <optgroup key={c.id} label={c.name}>
+                              {orphan && c.id === b.conn && (
+                                <option value={packPick(b)}>{b.model}（已移出列表）</option>
+                              )}
+                              {ms.map((m) => (
+                                <option key={m} value={`${c.id}::${m}`}>{m}</option>
+                              ))}
+                            </optgroup>
+                          );
+                        })}
                       </select>
-                      {/* 平台档的模型由 admin 统一指定、玩家改不了，但必须**看得见**：
-                          此前这里是个禁用的空框，等于把已配好的预设模型藏了起来。
-                          用 readOnly 而非 disabled——文本仍可读可选中，不是一片灰。 */}
-                      <input id={modelId} className={styles.inp} list={b.conn ? listId : undefined}
-                        value={b.conn ? b.model : plat.model}
-                        readOnly={!b.conn}
-                        aria-label={`${st.label} · 模型`}
-                        title={b.conn ? undefined : "平台预设模型，由平台统一指定"}
-                        placeholder={b.conn ? "选择或手填模型" : "该环节平台未配置模型"}
-                        onChange={(e) => setStage(st.key, { model: e.target.value })} />
-                      <datalist id={listId}>
-                        {models.map((m) => (
-                          <option key={m} value={m} />
-                        ))}
-                      </datalist>
                     </div>
                   </div>
                 );

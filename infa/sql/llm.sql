@@ -27,7 +27,7 @@ CREATE TABLE llm_connections (
     provider        VARCHAR(20)  NOT NULL,          -- 标签：deepseek/openai/moonshot/custom
     base_url        VARCHAR(200) NOT NULL,          -- OpenAI 兼容端点
     api_key_cipher  TEXT,                           -- AES-256-GCM 密文（base64）
-    default_model   VARCHAR(80)  NOT NULL,          -- 该连接默认模型
+    models          TEXT         NOT NULL DEFAULT '[]',  -- 该连接可选模型 id 的 JSON 数组（无"默认模型"概念）
 
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -42,7 +42,7 @@ CREATE TABLE user_story_llm_configs (
     user_id     UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     story_id    UUID        NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
     -- bindings：{"write":{"conn":"<uuid>","model":"deepseek-reasoner"},"review":{...}}
-    --   model 为空 → 回退所引用连接的 default_model；连接被删/非本人 → 回退平台。
+    --   conn 非空时 model 必填（连接无默认模型）；model 为空/连接被删/非本人 → 回退平台。
     --   仅 write/review（world 属创作侧、走编辑器临时连接，不入此表）。
     --   用 TEXT 而非 JSONB（无需 JSON 查询，整行取用；规避 jsonb 拒绝空串）。
     bindings    TEXT        NOT NULL DEFAULT '{}',

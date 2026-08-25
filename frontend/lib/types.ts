@@ -75,20 +75,21 @@ export const TONES = [
 ] as const;
 
 // GET /llm/connections 列表项：绝不含 key，只回是否已配置 + 打码提示。
+// **没有默认模型**：连接只声明「这套凭据下有哪些模型可选」，选哪个是用的时候的事。
 export interface LLMConnection {
   id: string;
   name: string;
   provider: string;
   base_url: string;
-  default_model: string;
+  models: string[];
   has_key: boolean;
   key_hint: string;
   created_at: string;
 }
 
 export interface StageBinding {
-  conn: string; // 连接 id；空=未绑定
-  model: string; // 可空→回退连接 default_model
+  conn: string; // 连接 id；空=走平台档
+  model: string; // conn 非空时必填——连接没有默认模型可回退
 }
 export type StageBindings = Partial<Record<"write" | "review", StageBinding>>;
 

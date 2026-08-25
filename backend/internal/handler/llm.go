@@ -92,6 +92,22 @@ func (h *LLMHandler) TestConnection(c *gin.Context) {
 
 // ----- 模型列表 -----
 
+// ProbeModels 用表单里现填的 base_url/api_key 问端点有哪些模型——**连接还没存**时唯一的路。
+// 已存连接可只传 connection_id 复用存量 key（key 不回显，编辑时用户通常不重填）。
+func (h *LLMHandler) ProbeModels(c *gin.Context) {
+	var in service.ProbeModelsInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		pkg.Error(c, pkg.BadRequest(err.Error()))
+		return
+	}
+	models, err := h.svc.ProbeModels(middleware.GetUserID(c), &in)
+	if err != nil {
+		pkg.Error(c, err)
+		return
+	}
+	pkg.Success(c, gin.H{"models": models})
+}
+
 // ListModels 拉取某连接端点的可用模型 id 列表（下拉用；拉不到前端回退手填）。
 func (h *LLMHandler) ListModels(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))

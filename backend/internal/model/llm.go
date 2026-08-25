@@ -7,8 +7,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// LLMConnection 是用户配置的一条「LLM 连接」：一个 OpenAI 兼容端点 + 凭据 + 默认模型。
+// LLMConnection 是用户配置的一条「LLM 连接」：备注 + 一个 OpenAI 兼容端点 + 凭据 + 一组已选模型。
 // 每用户可多条（如 DeepSeek、OpenAI、Moonshot…）。api_key 以 AES-256-GCM 密文落库（pkg.Encrypt）。
+//
+// **没有「默认模型」这一说**：模型是在用哪个环节/哪部作品时当场选的，连接只负责
+// 「这套凭据下有哪些模型可选」。旧的单个 default_model 列已废弃，留作孤儿（GORM 不删列）。
 type LLMConnection struct {
 	ID           uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
 	UserID       uuid.UUID `gorm:"type:uuid;not null;index" json:"user_id"`
@@ -16,9 +19,11 @@ type LLMConnection struct {
 	Provider     string    `gorm:"size:20;not null" json:"provider"` // 标签：deepseek/openai/moonshot/custom
 	BaseURL      string    `gorm:"size:200;not null" json:"base_url"`
 	APIKeyCipher string    `gorm:"type:text" json:"-"` // AES-GCM 密文（base64）；绝不外泄明文
-	DefaultModel string    `gorm:"size:80;not null" json:"default_model"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	// Models 是用户从端点 /models 拉取后勾选（或手填补充）的模型 id 列表，存 JSON 数组。
+	// 整体读写，没有单查一个模型的需求，因此不另立一张表。
+	Models    string    `gorm:"type:text;not null;default:'[]'" json:"-"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 func (c *LLMConnection) BeforeCreate(tx *gorm.DB) error {
@@ -30,14 +35,14 @@ func (c *LLMConnection) BeforeCreate(tx *gorm.DB) error {
 
 // LLMConnectionResponse 是连接的外发 DTO：绝不含明文/密文 key，只回是否已配置 + 打码提示。
 type LLMConnectionResponse struct {
-	ID           uuid.UUID `json:"id"`
-	Name         string    `json:"name"`
-	Provider     string    `json:"provider"`
-	BaseURL      string    `json:"base_url"`
-	DefaultModel string    `json:"default_model"`
-	HasKey       bool      `json:"has_key"`
-	KeyHint      string    `json:"key_hint"` // 形如 sk-••••后4位（由 service 用 encKey 解密后打码）
-	CreatedAt    time.Time `json:"created_at"`
+	ID        uuid.UUID `json:"id"`
+	Name      string    `json:"name"`
+	Provider  string    `json:"provider"`
+	BaseURL   string    `json:"base_url"`
+	Models    []string  `json:"models"` // 可选模型列表（由 Models JSON 解析而来）
+	HasKey    bool      `json:"has_key"`
+	KeyHint   string    `json:"key_hint"` // 形如 sk-••••后4位（由 service 用 encKey 解密后打码）
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // UserStoryLLMConfig 是「某玩家在某作品」下的 LLM 配置：每环节选自己的哪条连接 + 哪个模型。

@@ -206,7 +206,7 @@ prepare
 | 游玩（全组 AuthRequired） | `POST /play/sessions`（建空会话）、`POST /play/sessions/:id/opening/stream`（SSE 流式开局，幂等）、`GET /play/sessions`、`GET/DELETE /play/sessions/:id`、`POST /play/sessions/:id/choice/stream`（SSE 流式续写）、`POST /play/sessions/:id/backtrack`（**所有按 sessionID 访问的接口均校验 `session.PlayerID` 归属**） |
 | 图片上传（AuthRequired） | `POST /uploads/image`（multipart：`file` + `kind`∈{avatar,cover}，返回 `{url}`）；静态直出 `GET /uploads/*`（见 §14） |
 | `POST /assist/world`、`/opening`、`/polish`、`/branches` | 创作辅助；**经 Go `/api/v1/assist/*` 转发**给创作编辑器消费（agent 无鉴权/CORS，前端不直连；Go 侧用 180s `assistClient`）。四个成功响应均回传已知 `usage` 供 Go 统一计费 |
-| BYOK（AuthRequired） | `GET/POST /llm/connections`、`PUT/DELETE /llm/connections/:id`、`POST /llm/connections/test`、`GET /llm/connections/:id/models`（拉端点模型列表）、`GET/PUT /llm/story-config/:storyId`（玩家在某作品的模型配置） |
+| BYOK（AuthRequired） | `GET/POST /llm/connections`、`PUT/DELETE /llm/connections/:id`、`POST /llm/connections/test`、`POST /llm/connections/models`（用表单现填的 key 拉模型，连接尚未保存时用）、`GET /llm/connections/:id/models`（用存量 key 重拉）、`GET/PUT /llm/story-config/:storyId`（玩家在某作品的模型配置） |
 | 平台设置（AuthRequired + `RequirePermission(authz.PermPlatformLLMManage)`，`RequireAdmin` 为其别名） | `GET/PUT /admin/llm/platform`、`POST /admin/llm/platform/test` |
 | 社区（未实现） | 路由**未注册**，一律 404。空壳曾返 `success:true`，调用方会误判点赞/评论成功 |
 
@@ -412,8 +412,8 @@ cd agent
 **分层**：连接（key/base_url）是**用户级**（账号里管一次）；「用哪个模型」是**作品级**（每玩家在每作品各配各的）。作者的推荐模型只作标注、不自动套用（作者与玩家配置大概率不同，复刻也用不了）。
 
 **数据模型**
-- `llm_connections`（每用户多条）：`name / provider(标签) / base_url / api_key_cipher(AES-GCM) / default_model`。
-- `user_story_llm_configs`（复合主键 user_id+story_id）：`bindings` TEXT/JSON = `{"write":{"conn":"<uuid>","model":""},"review":{...}}`；`model` 空→回退连接 `default_model`。仅 write/review。另有 `review_enabled BOOL`（**默认 false**，见下）。
+- `llm_connections`（每用户多条）：`name(备注) / provider(标签) / base_url / api_key_cipher(AES-GCM) / models`。`models` 是 TEXT/JSON 数组，用户填完 key 后由 `POST /llm/connections/models` 拿这套凭据去端点 `/models` 拉取、勾选入库（端点不实现 `/models` 时可手填）。**没有「默认模型」**：旧的 `default_model` 列已废弃留作孤儿，启动时 `DROP NOT NULL` + 一次性回填进 `models`。
+- `user_story_llm_configs`（复合主键 user_id+story_id）：`bindings` TEXT/JSON = `{"write":{"conn":"<uuid>","model":""},"review":{...}}`；**`conn` 非空时 `model` 必填**（连接无默认模型可回退，空 model 视为该档未配置、回落平台）。仅 write/review。另有 `review_enabled BOOL`（**默认 false**，见下）。
 - `platform_llm_settings`（全局，admin 管，每环节一行）：`stage PK / provider / base_url / api_key_cipher / model / price_in_per_mtok / price_out_per_mtok`。单价单位是**元 / 百万 token**（照抄供应商定价页）。⚠️ **单价为 0 则永远扣不动额度**，等于平台 key 无限免费——admin 页对此显式告警。
 - `users.credit_micro_cny BIGINT DEFAULT 1000000`：平台额度余额，单位**微元**（1e-6 元）。整数避免浮点累加误差；列默认值 = 1 元，注册即到账（AutoMigrate 加列时 Postgres 也会给存量行补上）。
 - `llm_usage_logs`：每笔**平台额度**消费的流水（user/story/stage/model/tokens/cost_micro/estimated）。玩家用自己的 key 不入账。没这张表，"我那 1 元花哪了"只能靠猜。

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	"backend/internal/model"
 	"backend/pkg"
@@ -28,10 +29,11 @@ var ValidStages = map[string]bool{StageWrite: true, StageReview: true, StageWorl
 // PlayStages 是游玩相关、可在作品级配置的环节；world 属创作侧、不入作品配置。
 var PlayStages = map[string]bool{StageWrite: true, StageReview: true}
 
-// StageBinding 是「某环节 → 用哪条连接的哪个模型」。Model 为空则回退连接的 DefaultModel。
+// StageBinding 是「某环节 → 用哪条连接的哪个模型」。
+// **Conn 非空时 Model 必填**：连接不再持有默认模型，没有可回退的东西。
 type StageBinding struct {
-	Conn  string `json:"conn"`  // 连接 uuid 字符串；空=该环节未配置
-	Model string `json:"model"` // 可空
+	Conn  string `json:"conn"`  // 连接 uuid 字符串；空=该环节走平台档
+	Model string `json:"model"` // Conn 非空时必填
 }
 
 // StageBindings 是环节到绑定的映射（key ∈ write/review），存于 user_story_llm_configs.bindings(JSON 文本)。
@@ -106,9 +108,12 @@ func (r *LLMResolver) ResolveForPlay(ctx context.Context, userID, storyID uuid.U
 
 // ResolveForAssist 解析创作者在创作侧（world 环节）的配置。
 // 优先级：编辑器显式覆盖连接 → 平台 world 设置 → nil。（创作侧无作品级配置，连接由编辑器现选。）
-func (r *LLMResolver) ResolveForAssist(ctx context.Context, userID uuid.UUID, overrideConnID *uuid.UUID) (*AgentLLMConfig, error) {
+//
+// model 与 overrideConnID 成对给：编辑器那个下拉选的就是「哪条连接的哪个模型」，
+// 只给连接不给模型解析不出东西——连接不再持有默认模型。
+func (r *LLMResolver) ResolveForAssist(ctx context.Context, userID uuid.UUID, overrideConnID *uuid.UUID, model string) (*AgentLLMConfig, error) {
 	if overrideConnID != nil && userID != uuid.Nil {
-		cfg, err := r.fromConnection(ctx, userID, *overrideConnID, "")
+		cfg, err := r.fromConnection(ctx, userID, *overrideConnID, model)
 		if err != nil {
 			return nil, err
 		}
@@ -153,9 +158,15 @@ func (r *LLMResolver) platformIfCredit(ctx context.Context, userID uuid.UUID, st
 	}, nil
 }
 
-// fromConnection 从一条连接构造下发配置：校验归属 + 解密 key（失败/无 key 返回 nil）。
-// modelOverride 非空时覆盖连接的 DefaultModel（环节级模型粒度）。
-func (r *LLMResolver) fromConnection(ctx context.Context, userID, connID uuid.UUID, modelOverride string) (*AgentLLMConfig, error) {
+// fromConnection 从一条连接 + 一个**显式指定的模型**构造下发配置：
+// 校验归属 + 解密 key（失败/无 key 返回 nil）。
+//
+// model 为空同样返回 nil：连接不再有默认模型，"选了连接没选模型"是确定的配置问题，
+// 与"连接已删 / key 解不开"同类，回落下一档而不是硬报错。
+func (r *LLMResolver) fromConnection(ctx context.Context, userID, connID uuid.UUID, model string) (*AgentLLMConfig, error) {
+	if strings.TrimSpace(model) == "" {
+		return nil, nil
+	}
 	conn, err := r.llm.FindConnByID(ctx, connID)
 	if err != nil {
 		return nil, err
@@ -167,13 +178,9 @@ func (r *LLMResolver) fromConnection(ctx context.Context, userID, connID uuid.UU
 	if err != nil || key == "" {
 		return nil, nil
 	}
-	model := modelOverride
-	if model == "" {
-		model = conn.DefaultModel
-	}
 	// Source=user：玩家自己的 key，不动平台额度，也不记用量流水。
 	return &AgentLLMConfig{
-		Provider: conn.Provider, BaseURL: conn.BaseURL, APIKey: key, Model: model,
+		Provider: conn.Provider, BaseURL: conn.BaseURL, APIKey: key, Model: strings.TrimSpace(model),
 		Source: SourceUser,
 	}, nil
 }

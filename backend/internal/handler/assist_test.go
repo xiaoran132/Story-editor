@@ -183,7 +183,7 @@ func TestAssistPolishByokSkipsPlatformUsage(t *testing.T) {
 		platform: map[string]*model.PlatformLLMSetting{},
 		conns: map[uuid.UUID]*model.LLMConnection{
 			connectionID: {
-				ID: connectionID, UserID: userID, Provider: "test", BaseURL: "https://byok.example", DefaultModel: "byok-model",
+				ID: connectionID, UserID: userID, Provider: "test", BaseURL: "https://byok.example", Models: `["byok-model"]`,
 				APIKeyCipher: assistCipher(t, "byok-key"),
 			},
 		},
@@ -193,7 +193,8 @@ func TestAssistPolishByokSkipsPlatformUsage(t *testing.T) {
 	h, closeServer := newAssistTestHandler(t, store, &received)
 	defer closeServer()
 
-	response := callAssist(t, h, userID, `{"text":"source","connection_id":"`+connectionID.String()+`","world":{}}`, h.Polish)
+	// connection_id 与 model 必须成对给：连接不再持有默认模型，只给连接解析不出东西。
+	response := callAssist(t, h, userID, `{"text":"source","connection_id":"`+connectionID.String()+`","model":"byok-model","world":{}}`, h.Polish)
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, body=%s", response.Code, response.Body.String())
 	}

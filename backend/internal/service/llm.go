@@ -33,11 +33,21 @@ func NewLLMService(llm *repository.LLMRepository, agent *AgentClient, encKey str
 // ----- 输入类型 -----
 
 type ConnectionInput struct {
-	Name         string `json:"name"`
-	Provider     string `json:"provider"`
-	BaseURL      string `json:"base_url"`
-	APIKey       string `json:"api_key"` // 创建必填；更新时空串=保留原 key
-	DefaultModel string `json:"default_model"`
+	Name     string `json:"name"`
+	Provider string `json:"provider"`
+	BaseURL  string `json:"base_url"`
+	APIKey   string `json:"api_key"` // 创建必填；更新时空串=保留原 key
+	// Models 是这条连接下可选的模型 id 列表。更新时 nil=保留原值、空数组=非法
+	// （一条选不出模型的连接没有用途）。没有「默认模型」，所以这里也没有单数形式。
+	Models []string `json:"models"`
+}
+
+// ProbeModelsInput 是「存连接之前先拿这套凭据去端点问一遍有哪些模型」的入参。
+// 已存连接可只传 connection_id（key 不回显，编辑时用户通常不会重填）。
+type ProbeModelsInput struct {
+	ConnectionID *uuid.UUID `json:"connection_id,omitempty"`
+	BaseURL      string     `json:"base_url"`
+	APIKey       string     `json:"api_key"`
 }
 
 type TestConnectionInput struct {
@@ -64,7 +74,7 @@ type PlatformInput struct {
 func (s *LLMService) toConnResponse(conn *model.LLMConnection) model.LLMConnectionResponse {
 	res := model.LLMConnectionResponse{
 		ID: conn.ID, Name: conn.Name, Provider: conn.Provider, BaseURL: conn.BaseURL,
-		DefaultModel: conn.DefaultModel, CreatedAt: conn.CreatedAt,
+		Models: parseModels(conn.Models), CreatedAt: conn.CreatedAt,
 	}
 	if plain, err := pkg.Decrypt(conn.APIKeyCipher, s.encKey); err == nil && plain != "" {
 		res.HasKey = true
@@ -88,11 +98,15 @@ func (s *LLMService) ListConnections(userID uuid.UUID) ([]model.LLMConnectionRes
 }
 
 func (s *LLMService) CreateConnection(userID uuid.UUID, in *ConnectionInput) (*model.LLMConnectionResponse, error) {
-	if strings.TrimSpace(in.Name) == "" || strings.TrimSpace(in.BaseURL) == "" || strings.TrimSpace(in.DefaultModel) == "" {
-		return nil, pkg.BadRequest("name / base_url / default_model 均不能为空")
+	if strings.TrimSpace(in.Name) == "" || strings.TrimSpace(in.BaseURL) == "" {
+		return nil, pkg.BadRequest("name / base_url 均不能为空")
 	}
 	if strings.TrimSpace(in.APIKey) == "" {
 		return nil, pkg.BadRequest("api_key 不能为空")
+	}
+	models := cleanModels(in.Models)
+	if len(models) == 0 {
+		return nil, pkg.BadRequest("请至少选择一个模型（可从端点拉取，或手动填写）")
 	}
 	cipher, err := pkg.Encrypt(strings.TrimSpace(in.APIKey), s.encKey)
 	if err != nil {
@@ -100,7 +114,7 @@ func (s *LLMService) CreateConnection(userID uuid.UUID, in *ConnectionInput) (*m
 	}
 	conn := &model.LLMConnection{
 		UserID: userID, Name: in.Name, Provider: in.Provider, BaseURL: strings.TrimSpace(in.BaseURL),
-		APIKeyCipher: cipher, DefaultModel: strings.TrimSpace(in.DefaultModel),
+		APIKeyCipher: cipher, Models: dumpModels(models),
 	}
 	if err := s.llm.CreateConnection(context.Background(), conn); err != nil {
 		return nil, pkg.Internal("failed to create connection")
@@ -127,8 +141,12 @@ func (s *LLMService) UpdateConnection(userID, id uuid.UUID, in *ConnectionInput)
 	if strings.TrimSpace(in.BaseURL) != "" {
 		conn.BaseURL = strings.TrimSpace(in.BaseURL)
 	}
-	if strings.TrimSpace(in.DefaultModel) != "" {
-		conn.DefaultModel = strings.TrimSpace(in.DefaultModel)
+	if in.Models != nil { // nil=不改；给了就整体替换（空数组是明确的错误，不是"清空"）
+		models := cleanModels(in.Models)
+		if len(models) == 0 {
+			return nil, pkg.BadRequest("请至少选择一个模型（可从端点拉取，或手动填写）")
+		}
+		conn.Models = dumpModels(models)
 	}
 	if strings.TrimSpace(in.APIKey) != "" { // 空串=保留原 key
 		cipher, err := pkg.Encrypt(strings.TrimSpace(in.APIKey), s.encKey)
@@ -165,7 +183,11 @@ func (s *LLMService) TestConnection(userID uuid.UUID, in *TestConnectionInput) (
 				baseURL = conn.BaseURL
 			}
 			if model == "" {
-				model = conn.DefaultModel
+				// ping 需要一个具体模型，就拿列表里第一个——这是探针的取值，
+				// 不是"默认模型"：真正用哪个模型由调用方在绑定里指定。
+				if ms := parseModels(conn.Models); len(ms) > 0 {
+					model = ms[0]
+				}
 			}
 		}
 	}
@@ -266,7 +288,16 @@ func (s *LLMService) SetStoryConfig(userID, storyID uuid.UUID, in StoryLLMConfig
 		if err != nil || conn == nil || conn.UserID != userID {
 			return nil, pkg.BadRequest("连接不存在或不属于你：" + b.Conn)
 		}
-		clean[stage] = StageBinding{Conn: b.Conn, Model: strings.TrimSpace(b.Model)}
+		// 选了连接就必须指明模型——连接不再有默认模型可回退，空 model 存进去
+		// 等于存了一条解析不出东西的绑定，开玩时才失败。
+		//
+		// 但**不**校验它是否还在该连接的 models 列表里：那份列表是选择器的辅助，
+		// 用户事后取消勾选某个模型，不该让已经保存的绑定连同存档一起失效。
+		mdl := strings.TrimSpace(b.Model)
+		if mdl == "" {
+			return nil, pkg.BadRequest("选了连接就要选一个模型（环节：" + stage + "）")
+		}
+		clean[stage] = StageBinding{Conn: b.Conn, Model: mdl}
 	}
 	// 开着审校却**解析不出任何配置** = 配置错误，当场拒绝。
 	// 不静默降级成"关掉审校"：那会让玩家以为审校在生效，而它并没有。
@@ -292,6 +323,76 @@ func (s *LLMService) SetStoryConfig(userID, storyID uuid.UUID, in StoryLLMConfig
 
 // ----- 模型列表（拉取连接端点的 /models，供下拉选择） -----
 
+// parseModels / dumpModels 是 LLMConnection.Models（JSON 数组文本）的两端。
+// 坏数据回空列表而不是报错：一条连接的模型列表读不出来，最坏后果是前端少了候选项，
+// 不该让整个连接列表接口 500。
+func parseModels(raw string) []string {
+	out := []string{}
+	if strings.TrimSpace(raw) == "" {
+		return out
+	}
+	_ = json.Unmarshal([]byte(raw), &out)
+	if out == nil {
+		out = []string{}
+	}
+	return out
+}
+
+func dumpModels(models []string) string {
+	b, err := json.Marshal(models)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
+}
+
+// cleanModels 去空白、去空串、去重，并保持用户勾选的顺序。
+func cleanModels(in []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(in))
+	for _, m := range in {
+		m = strings.TrimSpace(m)
+		if m == "" || seen[m] {
+			continue
+		}
+		seen[m] = true
+		out = append(out, m)
+	}
+	return out
+}
+
+// ProbeModels 用**表单里**的 base_url/api_key（或已存连接的存量 key）问一遍端点有哪些模型。
+// 存在的理由：新建连接时还没有 connID，ListModels 那条路走不通，而"填完 key 就能拉"正是这个流程的核心。
+func (s *LLMService) ProbeModels(userID uuid.UUID, in *ProbeModelsInput) ([]string, error) {
+	ctx := context.Background()
+	baseURL, key := strings.TrimSpace(in.BaseURL), strings.TrimSpace(in.APIKey)
+	if key == "" && in.ConnectionID != nil {
+		conn, err := s.llm.FindConnByID(ctx, *in.ConnectionID)
+		if err != nil {
+			return nil, pkg.Internal("database error")
+		}
+		if conn == nil || conn.UserID != userID {
+			return nil, pkg.NotFound("connection not found")
+		}
+		if plain, err := pkg.Decrypt(conn.APIKeyCipher, s.encKey); err == nil {
+			key = plain
+		}
+		if baseURL == "" {
+			baseURL = conn.BaseURL
+		}
+		// 存量 key 解不开（多为 ENCRYPTION_KEY 变更过，同 toConnResponse 里那种
+		// has_key=true / key_hint 空的状态）。说清楚是这件事——否则用户会盯着
+		// 明明填好了的 base_url 找问题。
+		if key == "" {
+			return nil, pkg.BadRequest("这条连接的存量 key 解不开（多因 ENCRYPTION_KEY 变更），请重新填写 API Key 后再拉取")
+		}
+	}
+	if key == "" || baseURL == "" {
+		return nil, pkg.BadRequest("base_url 与 api_key 都要先填好，才能拉取模型")
+	}
+	return s.fetchModels(ctx, baseURL, key)
+}
+
 // ListModels 用某连接的存量 key 调其 {base_url}/models，返回模型 id 列表。
 // 端点不实现 /models（或鉴权失败）时返回错误，前端回退手填。
 func (s *LLMService) ListModels(userID, connID uuid.UUID) ([]string, error) {
@@ -307,7 +408,13 @@ func (s *LLMService) ListModels(userID, connID uuid.UUID) ([]string, error) {
 	if err != nil || key == "" {
 		return nil, pkg.BadRequest("连接未配置可用 key")
 	}
-	url := strings.TrimRight(conn.BaseURL, "/") + "/models"
+	return s.fetchModels(ctx, conn.BaseURL, key)
+}
+
+// fetchModels 是真正那次 HTTP：GET {base_url}/models，解 OpenAI 兼容形态。
+// ListModels（已存连接）与 ProbeModels（表单现填）共用，免得两处各写一份解析。
+func (s *LLMService) fetchModels(ctx context.Context, baseURL, key string) ([]string, error) {
+	url := strings.TrimRight(baseURL, "/") + "/models"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, pkg.Internal("build request")

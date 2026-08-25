@@ -64,12 +64,10 @@
 
 .row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
   gap: 10px;
 }
 
-.sel,
-.inp {
+.sel {
   width: 100%;
   min-height: 44px;
   padding: 0 12px;
@@ -82,40 +80,19 @@
   transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
 }
 
-.sel:hover,
-.inp:hover {
+.sel:hover {
   background: oklch(1 0 0 / 0.08);
 }
 
-.sel:focus-visible,
-.inp:focus-visible {
+.sel:focus-visible {
   outline: none;
   border-color: var(--accent);
   box-shadow: var(--ring);
 }
 
 /* disabled 是唯一允许降对比度的状态（§9） */
-.sel:disabled,
-.inp:disabled {
+.sel:disabled {
   opacity: 0.5;
-}
-
-/* 平台档的模型是只读展示，不是失效控件：不降对比度（那是 disabled 的语义），
-   只去掉可编辑的暗示——光标不变 I 型，hover 不亮底。 */
-.inp:read-only {
-  cursor: default;
-  background: oklch(1 0 0 / 0.03);
-}
-
-.inp:read-only:hover {
-  background: oklch(1 0 0 / 0.03);
-}
-
-/* 深底下原生下拉的选项面板由系统画，这里至少把收起态的字压回深色 */
-.sel option,
-.sel optgroup {
-  background: var(--bg);
-  color: var(--fg);
 }
 
 .note {
