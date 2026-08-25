@@ -206,7 +206,7 @@ prepare
 | 游玩（全组 AuthRequired） | `POST /play/sessions`（建空会话）、`POST /play/sessions/:id/opening/stream`（SSE 流式开局，幂等）、`GET /play/sessions`、`GET/DELETE /play/sessions/:id`、`POST /play/sessions/:id/choice/stream`（SSE 流式续写）、`POST /play/sessions/:id/backtrack`（**所有按 sessionID 访问的接口均校验 `session.PlayerID` 归属**） |
 | 图片上传（AuthRequired） | `POST /uploads/image`（multipart：`file` + `kind`∈{avatar,cover}，返回 `{url}`）；静态直出 `GET /uploads/*`（见 §14） |
 | `POST /assist/world`、`/opening`、`/polish`、`/branches` | 创作辅助；**经 Go `/api/v1/assist/*` 转发**给创作编辑器消费（agent 无鉴权/CORS，前端不直连；Go 侧用 180s `assistClient`）。四个成功响应均回传已知 `usage` 供 Go 统一计费 |
-| BYOK（AuthRequired） | `GET/POST /llm/connections`、`PUT/DELETE /llm/connections/:id`、`POST /llm/connections/test`、`POST /llm/connections/models`（用表单现填的 key 拉模型，连接尚未保存时用）、`GET /llm/connections/:id/models`（用存量 key 重拉）、`GET/PUT /llm/story-config/:storyId`（玩家在某作品的模型配置） |
+| BYOK（AuthRequired） | `GET/POST /llm/connections`、`PUT/DELETE /llm/connections/:id`、`POST /llm/connections/test`、`POST /llm/connections/models`（用表单现填的 key 拉模型，连接尚未保存时用）、`GET /llm/connections/:id/models`（用存量 key 重拉）、`GET/PUT /llm/story-config/:storyId`（玩家在某作品的模型配置）、`GET/PUT /llm/assist-config`（创作辅助模型，账号级） |
 | 平台设置（AuthRequired + `RequirePermission(authz.PermPlatformLLMManage)`，`RequireAdmin` 为其别名） | `GET/PUT /admin/llm/platform`、`POST /admin/llm/platform/test` |
 | 社区（未实现） | 路由**未注册**，一律 404。空壳曾返 `success:true`，调用方会误判点赞/评论成功 |
 
@@ -409,10 +409,11 @@ cd agent
 ## 12. BYOK 多供应商 / 分环节模型 / 平台设置 / admin 门槛
 
 **目标**：支持任意 OpenAI 兼容 key；平台 key 入库由管理员管理；游玩优先烧**玩家自己**的 key，未配则从**注册赠送的 1 元额度**里按量扣平台 key，额度用尽必须自带连接。
-**分层**：连接（key/base_url）是**用户级**（账号里管一次）；「用哪个模型」是**作品级**（每玩家在每作品各配各的）。作者的推荐模型只作标注、不自动套用（作者与玩家配置大概率不同，复刻也用不了）。
+**分层**：连接（key/base_url）是**用户级**（账号里管一次）；游玩侧「用哪个模型」是**作品级**（每玩家在每作品各配各的）；创作辅助（world）是**账号级**（设置页配一次，所有作品通用——第一步「AI 生成世界观」时作品还不存在，没有 story_id 可挂）。作者的推荐模型只作标注、不自动套用（作者与玩家配置大概率不同，复刻也用不了）。
 
 **数据模型**
 - `llm_connections`（每用户多条）：`name(备注) / provider(标签) / base_url / api_key_cipher(AES-GCM) / models`。`models` 是 TEXT/JSON 数组，用户填完 key 后由 `POST /llm/connections/models` 拿这套凭据去端点 `/models` 拉取、勾选入库（端点不实现 `/models` 时可手填）。**没有「默认模型」**：旧的 `default_model` 列已废弃留作孤儿，启动时 `DROP NOT NULL` + 一次性回填进 `models`。
+- `user_assist_llm_configs`（主键 user_id，每用户一行）：`conn_id UUID NULL / model`。创作辅助用哪条连接的哪个模型；`conn_id` 空=走平台 world 档。
 - `user_story_llm_configs`（复合主键 user_id+story_id）：`bindings` TEXT/JSON = `{"write":{"conn":"<uuid>","model":""},"review":{...}}`；**`conn` 非空时 `model` 必填**（连接无默认模型可回退，空 model 视为该档未配置、回落平台）。仅 write/review。另有 `review_enabled BOOL`（**默认 false**，见下）。
 - `platform_llm_settings`（全局，admin 管，每环节一行）：`stage PK / provider / base_url / api_key_cipher / model / price_in_per_mtok / price_out_per_mtok`。单价单位是**元 / 百万 token**（照抄供应商定价页）。⚠️ **单价为 0 则永远扣不动额度**，等于平台 key 无限免费——admin 页对此显式告警。
 - `users.credit_micro_cny BIGINT DEFAULT 1000000`：平台额度余额，单位**微元**（1e-6 元）。整数避免浮点累加误差；列默认值 = 1 元，注册即到账（AutoMigrate 加列时 Postgres 也会给存量行补上）。
@@ -422,7 +423,7 @@ cd agent
 
 **解析优先级**（`service.LLMResolver`，单测见 `llm_resolver_test.go`）：
 - 游玩（`ResolveForPlay(userID, storyID, stage)`，stage∈{write,review}）：**作品级用户连接 → 平台档（需有额度）→ nil**。
-- 创作（`ResolveForAssist(userID, overrideConnID)`）：**编辑器覆盖连接 → 平台 world（需有额度）→ nil**。
+- 创作（`ResolveForAssist(userID)`）：**账号级创作辅助配置 → 平台 world（需有额度）→ nil**。配置读自 `user_assist_llm_configs`，**不由请求体携带**——客户端指不定用哪条连接。
 - 命中连接/平台时解密 key；连接失效/解密失败**跳到下一档**不硬报错。
 - **返回 nil 就是硬失败**（`pkg.CodeNoLLMConfig` = 10016），调用方必须在发请求前报错。曾经的第三档「agent 自己 `.env` 的 `DEEPSEEK_API_KEY`」**已删除**——那是一层看不见、无法限额、也不归 admin 管的服务器成本。`TestPlatformNeedsCredit` 守着这条别被加回来。
 - 平台档对**匿名一律不给**：额度挂账号。这一档如今是防御性的——`/play/*` 全组 `AuthRequired`，匿名请求到不了解析这一步；历史上所有匿名玩家共用同一个 `guest` id（§9.2），给了等于让第一个访客花光所有人的额度。

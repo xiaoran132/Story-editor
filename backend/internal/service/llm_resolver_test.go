@@ -19,7 +19,12 @@ type fakeLLM struct {
 	conns    map[uuid.UUID]*model.LLMConnection
 	platform map[string]*model.PlatformLLMSetting
 	story    map[string]*model.UserStoryLLMConfig // key: userID+"|"+storyID
-	credit   map[uuid.UUID]int64                  // 平台额度余额（微元）；缺省 = 0 = 没额度
+	assist   map[uuid.UUID]*model.UserAssistLLMConfig
+	credit   map[uuid.UUID]int64 // 平台额度余额（微元）；缺省 = 0 = 没额度
+}
+
+func (f *fakeLLM) FindAssistConfig(_ context.Context, userID uuid.UUID) (*model.UserAssistLLMConfig, error) {
+	return f.assist[userID], nil
 }
 
 func (f *fakeLLM) FindConnByID(_ context.Context, id uuid.UUID) (*model.LLMConnection, error) {
@@ -126,33 +131,46 @@ func TestResolveForPlayNeedsExplicitModel(t *testing.T) {
 	}
 }
 
-// TestResolveForAssist 覆盖创作侧：编辑器覆盖连接 > 平台 world > nil。
+// TestResolveForAssist 覆盖创作侧：账号级创作辅助配置 > 平台 world > nil。
+// 配置来自设置页（user_assist_llm_configs），不由请求体携带。
 func TestResolveForAssist(t *testing.T) {
 	uid, connO := uuid.New(), uuid.New()
-	f := &fakeLLM{
-		conns: map[uuid.UUID]*model.LLMConnection{
-			connO: {ID: connO, UserID: uid, Provider: "openai", BaseURL: "https://o", Models: `["gpt-x"]`, APIKeyCipher: cipherOf(t, "ovr-key")},
-		},
-		platform: map[string]*model.PlatformLLMSetting{
-			StageWorld: {Stage: StageWorld, BaseURL: "https://p", Model: "plat-world", APIKeyCipher: cipherOf(t, "plat-key")},
-		},
-		story:  map[string]*model.UserStoryLLMConfig{},
-		credit: map[uuid.UUID]int64{uid: MicroPerCNY},
+	newFake := func(assist *model.UserAssistLLMConfig) *fakeLLM {
+		f := &fakeLLM{
+			conns: map[uuid.UUID]*model.LLMConnection{
+				connO: {ID: connO, UserID: uid, Provider: "openai", BaseURL: "https://o", Models: `["gpt-x"]`, APIKeyCipher: cipherOf(t, "ovr-key")},
+			},
+			platform: map[string]*model.PlatformLLMSetting{
+				StageWorld: {Stage: StageWorld, BaseURL: "https://p", Model: "plat-world", APIKeyCipher: cipherOf(t, "plat-key")},
+			},
+			story:  map[string]*model.UserStoryLLMConfig{},
+			assist: map[uuid.UUID]*model.UserAssistLLMConfig{},
+			credit: map[uuid.UUID]int64{uid: MicroPerCNY},
+		}
+		if assist != nil {
+			f.assist[uid] = assist
+		}
+		return f
 	}
-	r := NewLLMResolver(f, testEncKey)
 	ctx := context.Background()
 
-	// 1) 编辑器覆盖连接优先，且用的是下拉里选中的那个模型
-	if cfg, _ := r.ResolveForAssist(ctx, uid, &connO, "gpt-x"); cfg == nil || cfg.APIKey != "ovr-key" || cfg.Model != "gpt-x" {
-		t.Fatalf("override 未生效: %+v", cfg)
+	// 1) 账号级配置命中，用的是设置页里选中的那个模型
+	f := newFake(&model.UserAssistLLMConfig{UserID: uid, ConnID: &connO, Model: "gpt-x"})
+	if cfg, _ := NewLLMResolver(f, testEncKey).ResolveForAssist(ctx, uid); cfg == nil || cfg.APIKey != "ovr-key" || cfg.Model != "gpt-x" {
+		t.Fatalf("账号级配置未生效: %+v", cfg)
 	}
-	// 2) 选了连接却没给模型 → 这条覆盖作废，回落平台 world（不擅自取连接里的某个模型）
-	if cfg, _ := r.ResolveForAssist(ctx, uid, &connO, ""); cfg == nil || cfg.APIKey != "plat-key" {
-		t.Fatalf("缺 model 的覆盖应回落平台: %+v", cfg)
+	// 2) 配了连接却没模型（脏数据）→ 这条作废，回落平台 world，不擅自取连接里的某个模型
+	f = newFake(&model.UserAssistLLMConfig{UserID: uid, ConnID: &connO})
+	if cfg, _ := NewLLMResolver(f, testEncKey).ResolveForAssist(ctx, uid); cfg == nil || cfg.APIKey != "plat-key" {
+		t.Fatalf("缺 model 应回落平台: %+v", cfg)
 	}
-	// 3) 无覆盖 → 回退平台 world
-	if cfg, _ := r.ResolveForAssist(ctx, uid, nil, ""); cfg == nil || cfg.APIKey != "plat-key" || cfg.Model != "plat-world" {
+	// 3) 没配过 → 回退平台 world
+	if cfg, _ := NewLLMResolver(newFake(nil), testEncKey).ResolveForAssist(ctx, uid); cfg == nil || cfg.Model != "plat-world" {
 		t.Fatalf("应回退平台 world: %+v", cfg)
+	}
+	// 4) 匿名 → nil（额度挂账号）
+	if cfg, _ := NewLLMResolver(newFake(nil), testEncKey).ResolveForAssist(ctx, uuid.Nil); cfg != nil {
+		t.Fatalf("匿名不该拿到平台档: %+v", cfg)
 	}
 }
 

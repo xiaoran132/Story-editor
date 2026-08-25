@@ -19,6 +19,7 @@ import WxHeader from "@/components/wx/WxHeader";
 import SubNav from "@/components/wx/SubNav";
 import ImageUpload from "@/components/ImageUpload";
 import LLMSettings from "@/components/LLMSettings";
+import AssistModelSettings from "@/components/AssistModelSettings";
 import Switch from "@/components/Switch";
 import { useToast } from "@/components/Toast";
 import styles from "./page.module.css";
@@ -184,6 +185,15 @@ export default function SettingsPage() {
                 连接是**账号级**的，具体哪部作品用哪条，在那部作品的详情页里选。
               </p>
               <LLMSettings flash={flash} />
+            </section>
+
+            <section className={styles.card}>
+              <p className={styles.cardTitle}>创作辅助模型</p>
+              <p className={styles.hint}>
+                编辑器里的「AI 生成世界观 / 生成开场 / 精品润色 / 分支建议」用哪个模型。
+                在这里配一次，所有作品的创作过程都用它；不选连接就走平台额度。
+              </p>
+              <AssistModelSettings flash={flash} />
             </section>
 
             <section className={styles.card}>

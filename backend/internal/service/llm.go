@@ -321,6 +321,66 @@ func (s *LLMService) SetStoryConfig(userID, storyID uuid.UUID, in StoryLLMConfig
 	return s.GetStoryConfig(userID, storyID)
 }
 
+// ----- 创作辅助配置（账号级，设置页里配） -----
+
+// AssistConfigResult 是创作辅助配置的外发信封。
+// 除了当前选择，还回平台 world 档的可用性与预设模型名——设置页那个下拉要
+// 如实标出「不选连接会用到什么」，而不是给个空白的默认项。
+type AssistConfigResult struct {
+	Conn     string         `json:"conn"`  // 连接 uuid 字符串；空=用平台 world 档
+	Model    string         `json:"model"` // Conn 非空时必填
+	Platform PlatformOption `json:"platform"`
+}
+
+// AssistConfigInput 是保存创作辅助配置的入参。
+type AssistConfigInput struct {
+	Conn  string `json:"conn"`
+	Model string `json:"model"`
+}
+
+func (s *LLMService) GetAssistConfig(userID uuid.UUID) (*AssistConfigResult, error) {
+	ctx := context.Background()
+	ac, err := s.llm.FindAssistConfig(ctx, userID)
+	if err != nil {
+		return nil, pkg.Internal("database error")
+	}
+	out := &AssistConfigResult{}
+	if ac != nil && ac.ConnID != nil {
+		out.Conn = ac.ConnID.String()
+		out.Model = ac.Model
+	}
+	if s.resolver != nil {
+		out.Platform = s.resolver.PlatformOptionFor(ctx, userID, StageWorld)
+	}
+	return out, nil
+}
+
+// SetAssistConfig 整体覆盖。校验与作品级绑定同一套：连接须属本人，选了连接就必须给模型。
+func (s *LLMService) SetAssistConfig(userID uuid.UUID, in AssistConfigInput) (*AssistConfigResult, error) {
+	ctx := context.Background()
+	row := &model.UserAssistLLMConfig{UserID: userID}
+	if conn := strings.TrimSpace(in.Conn); conn != "" {
+		connID, err := uuid.Parse(conn)
+		if err != nil {
+			return nil, pkg.BadRequest("非法连接 id：" + conn)
+		}
+		c, err := s.llm.FindConnByID(ctx, connID)
+		if err != nil || c == nil || c.UserID != userID {
+			return nil, pkg.BadRequest("连接不存在或不属于你：" + conn)
+		}
+		mdl := strings.TrimSpace(in.Model)
+		if mdl == "" {
+			return nil, pkg.BadRequest("选了连接就要选一个模型")
+		}
+		row.ConnID = &connID
+		row.Model = mdl
+	}
+	if err := s.llm.UpsertAssistConfig(ctx, row); err != nil {
+		return nil, pkg.Internal("failed to save assist config")
+	}
+	return s.GetAssistConfig(userID)
+}
+
 // ----- 模型列表（拉取连接端点的 /models，供下拉选择） -----
 
 // parseModels / dumpModels 是 LLMConnection.Models（JSON 数组文本）的两端。
@@ -445,6 +505,29 @@ func (s *LLMService) fetchModels(ctx context.Context, baseURL, key string) ([]st
 		}
 	}
 	return ids, nil
+}
+
+// UndecryptablePlatformStages 回「当前 ENCRYPTION_KEY 解不开哪些环节的平台 key」，供启动自检。
+//
+// 存在的理由：密钥配错时，解析链会把每一次解密失败都当成"确定的配置问题"静默下落，
+// 玩家看到的是"你没有可用的模型"、admin 页看到的是"未开放"，日志里一个字都没有。
+// 这条自检把服务端的配置错误在**启动时**就摆出来，而不是等它伪装成用户的配置问题。
+// 返回空切片有两种情况——都正常：库里没有平台设置（干净库），或全部解得开。
+func (s *LLMService) UndecryptablePlatformStages() []string {
+	rows, err := s.llm.ListPlatform(context.Background())
+	if err != nil {
+		return nil // 查不到就别在启动时喊；DB 出问题自有别的地方报
+	}
+	var broken []string
+	for i := range rows {
+		if rows[i].APIKeyCipher == "" {
+			continue // 没配 key 是"还没配"，不是解不开
+		}
+		if plain, err := pkg.Decrypt(rows[i].APIKeyCipher, s.encKey); err != nil || plain == "" {
+			broken = append(broken, rows[i].Stage)
+		}
+	}
+	return broken
 }
 
 // ----- 平台设置（admin） -----

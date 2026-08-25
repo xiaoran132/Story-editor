@@ -123,6 +123,31 @@ func (h *LLMHandler) ListModels(c *gin.Context) {
 	pkg.Success(c, gin.H{"models": models})
 }
 
+// ----- 创作辅助配置（账号级） -----
+
+func (h *LLMHandler) GetAssistConfig(c *gin.Context) {
+	res, err := h.svc.GetAssistConfig(middleware.GetUserID(c))
+	if err != nil {
+		pkg.Error(c, err)
+		return
+	}
+	pkg.Success(c, res)
+}
+
+func (h *LLMHandler) SetAssistConfig(c *gin.Context) {
+	var in service.AssistConfigInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		pkg.Error(c, pkg.BadRequest(err.Error()))
+		return
+	}
+	res, err := h.svc.SetAssistConfig(middleware.GetUserID(c), in)
+	if err != nil {
+		pkg.Error(c, err)
+		return
+	}
+	pkg.Success(c, res)
+}
+
 // ----- 作品级模型配置 -----
 
 func (h *LLMHandler) GetStoryConfig(c *gin.Context) {

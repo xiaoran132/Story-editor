@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"strings"
 
 	"backend/internal/model"
@@ -55,6 +56,7 @@ type llmStore interface {
 	FindConnByID(ctx context.Context, id uuid.UUID) (*model.LLMConnection, error)
 	FindPlatform(ctx context.Context, stage string) (*model.PlatformLLMSetting, error)
 	FindStoryConfig(ctx context.Context, userID, storyID uuid.UUID) (*model.UserStoryLLMConfig, error)
+	FindAssistConfig(ctx context.Context, userID uuid.UUID) (*model.UserAssistLLMConfig, error)
 	GetCredit(ctx context.Context, userID uuid.UUID) (int64, error)
 }
 
@@ -107,18 +109,25 @@ func (r *LLMResolver) ResolveForPlay(ctx context.Context, userID, storyID uuid.U
 }
 
 // ResolveForAssist 解析创作者在创作侧（world 环节）的配置。
-// 优先级：编辑器显式覆盖连接 → 平台 world 设置 → nil。（创作侧无作品级配置，连接由编辑器现选。）
+// 优先级：**账号级创作辅助配置** → 平台 world 设置 → nil。
 //
-// model 与 overrideConnID 成对给：编辑器那个下拉选的就是「哪条连接的哪个模型」，
-// 只给连接不给模型解析不出东西——连接不再持有默认模型。
-func (r *LLMResolver) ResolveForAssist(ctx context.Context, userID uuid.UUID, overrideConnID *uuid.UUID, model string) (*AgentLLMConfig, error) {
-	if overrideConnID != nil && userID != uuid.Nil {
-		cfg, err := r.fromConnection(ctx, userID, *overrideConnID, model)
+// 配置来自设置页（user_assist_llm_configs），不由请求体携带：编辑器里曾有一个临时下拉，
+// 但它只在第 1 段出现、也从不持久，作者直奔第 4 段用「生成开场 / 精品润色」时既看不到
+// 也改不了。入口收敛到设置页后，客户端不再能指定用哪条连接，少一个可注入的入参。
+func (r *LLMResolver) ResolveForAssist(ctx context.Context, userID uuid.UUID) (*AgentLLMConfig, error) {
+	if userID != uuid.Nil {
+		ac, err := r.llm.FindAssistConfig(ctx, userID)
 		if err != nil {
-			return nil, err
+			return nil, err // 存储故障上抛，别伪装成「没配置」
 		}
-		if cfg != nil {
-			return cfg, nil
+		if ac != nil && ac.ConnID != nil {
+			cfg, err := r.fromConnection(ctx, userID, *ac.ConnID, ac.Model)
+			if err != nil {
+				return nil, err
+			}
+			if cfg != nil {
+				return cfg, nil
+			}
 		}
 	}
 	return r.platformIfCredit(ctx, userID, StageWorld)
@@ -150,7 +159,12 @@ func (r *LLMResolver) platformIfCredit(ctx context.Context, userID uuid.UUID, st
 	}
 	key, err := pkg.Decrypt(ps.APIKeyCipher, r.encKey)
 	if err != nil || key == "" {
-		return nil, nil // 解密失败属配置问题（换过 ENCRYPTION_KEY），不是存储故障
+		// 仍然下落（对调用方而言这一档就是不可用），但**必须留痕**：
+		// 静默下落会把"服务端密钥配错"伪装成"用户没配模型"，线上无从排查。
+		if ps.APIKeyCipher != "" {
+			log.Printf("llm: 平台 key 解不开 stage=%s（ENCRYPTION_KEY 与密文不匹配？）: %v", stage, err)
+		}
+		return nil, nil
 	}
 	return &AgentLLMConfig{
 		Provider: ps.Provider, BaseURL: ps.BaseURL, APIKey: key, Model: ps.Model,
@@ -176,6 +190,9 @@ func (r *LLMResolver) fromConnection(ctx context.Context, userID, connID uuid.UU
 	}
 	key, err := pkg.Decrypt(conn.APIKeyCipher, r.encKey)
 	if err != nil || key == "" {
+		if conn.APIKeyCipher != "" {
+			log.Printf("llm: 连接 key 解不开 conn=%s（ENCRYPTION_KEY 与密文不匹配？）: %v", connID, err)
+		}
 		return nil, nil
 	}
 	// Source=user：玩家自己的 key，不动平台额度，也不记用量流水。

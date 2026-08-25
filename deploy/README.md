@@ -118,4 +118,5 @@ python agent/tools/aggregate_log.py agent.log   # 见 handoff §8.4
 
 - **平台额度是你在付钱**:匿名已进不来(2026-08-11 起 `/play/*` 全组 `AuthRequired`,agent 的默认 `DEEPSEEK_*` 凭据也已删除),但任何人都能注册领 1 元额度烧平台 key。更要命的是 `platform_llm_settings.price_*` **不填就永远扣不动额度**(handoff §9.2),等于无限免费——上线前先把单价填上,并加注册/速率限制。
 - 无速率限制/审计;`community` 未实现。**建议先小范围/加访问控制,别长期公网裸放。**
-- **`JWT_SECRET` 与 `ENCRYPTION_KEY` 必须改成各自独立的随机长串**:前者签发登录 token,后者加密用户自带的 LLM key(`users.llm_key_cipher`)。用默认值 = 密文可被任何人用默认密钥解开。
+- **`JWT_SECRET` 与 `ENCRYPTION_KEY` 必须改成各自独立的随机长串**:前者签发登录 token,后者加密 `llm_connections.api_key_cipher` 与 `platform_llm_settings.api_key_cipher`。用默认值 = 密文可被任何人用默认密钥解开。
+- **`ENCRYPTION_KEY` 换一把,库里已有的密文就全部作废**(AES-GCM 认证失败)。解析链把解密失败视为"这一档没配置"往下落,于是它伪装成用户侧问题:平台档显示「未开放」、玩家看到「没有可用的模型」、连自带连接也开不了局。⚠️ **本地开发若直连同一个库,两边的 `ENCRYPTION_KEY` 必须一致**——否则谁写入的密文只有谁能读,另一边完整复现上述三个症状。`backend/.env` 缺这一行会静默落到 `config.setDefaults()` 的默认值,是这种分裂最常见的来源。启动时会对平台 key 做一次解密自检,不匹配就打显著警告,别忽略它。

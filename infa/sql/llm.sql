@@ -36,6 +36,18 @@ CREATE TABLE llm_connections (
 CREATE INDEX idx_llm_connections_user ON llm_connections(user_id);
 
 -- ------------------------------------------------------------
+-- 创作辅助模型：某创作者的 world 环节用哪条连接的哪个模型。**账号级**，每用户一行。
+-- 不挂作品——第一步「AI 生成世界观」时作品还不存在，没有 story_id 可挂；
+-- 同一个创作者在所有作品里也确实用同一套辅助模型。
+-- ------------------------------------------------------------
+CREATE TABLE user_assist_llm_configs (
+    user_id     UUID        PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    conn_id     UUID        REFERENCES llm_connections(id) ON DELETE SET NULL,  -- 空=走平台 world 档
+    model       VARCHAR(80) NOT NULL DEFAULT '',                                -- conn_id 非空时必填
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ------------------------------------------------------------
 -- 作品级模型配置：某玩家在某作品下，各环节选自己的哪条连接 + 哪个模型
 -- ------------------------------------------------------------
 CREATE TABLE user_story_llm_configs (
@@ -43,7 +55,7 @@ CREATE TABLE user_story_llm_configs (
     story_id    UUID        NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
     -- bindings：{"write":{"conn":"<uuid>","model":"deepseek-reasoner"},"review":{...}}
     --   conn 非空时 model 必填（连接无默认模型）；model 为空/连接被删/非本人 → 回退平台。
-    --   仅 write/review（world 属创作侧、走编辑器临时连接，不入此表）。
+    --   仅 write/review（world 属创作侧，见上面的 user_assist_llm_configs）。
     --   用 TEXT 而非 JSONB（无需 JSON 查询，整行取用；规避 jsonb 拒绝空串）。
     bindings    TEXT        NOT NULL DEFAULT '{}',
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),

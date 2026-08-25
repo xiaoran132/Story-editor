@@ -8,7 +8,6 @@ import (
 	"backend/pkg"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 )
 
 // bizCodeAIUnavailable 是 agent 服务不可用时返回的业务错误码。
@@ -26,13 +25,13 @@ func NewAssistHandler(agent *service.AgentClient, resolver *service.LLMResolver,
 	return &AssistHandler{agent: agent, resolver: resolver, credit: credit}
 }
 
-// resolveWorld 沿用创作侧的模型解析顺序：编辑器连接覆盖、平台 world、无模型错误。
-// connOverride 与 model 成对来自编辑器那个「连接 → 模型」的分层下拉。
-func (h *AssistHandler) resolveWorld(c *gin.Context, connOverride *uuid.UUID, model string) (*service.AgentLLMConfig, error) {
+// resolveWorld 沿用创作侧的模型解析顺序：账号级创作辅助配置、平台 world、无模型错误。
+// 用哪个模型由设置页决定，不看请求体——客户端指定不了连接。
+func (h *AssistHandler) resolveWorld(c *gin.Context) (*service.AgentLLMConfig, error) {
 	if h.resolver == nil {
 		return nil, noModelErr()
 	}
-	cfg, err := h.resolver.ResolveForAssist(c.Request.Context(), middleware.GetUserID(c), connOverride, model)
+	cfg, err := h.resolver.ResolveForAssist(c.Request.Context(), middleware.GetUserID(c))
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +70,7 @@ func (h *AssistHandler) World(c *gin.Context) {
 		pkg.Error(c, pkg.BadRequest("idea 不能为空"))
 		return
 	}
-	cfg, cfgErr := h.resolveWorld(c, req.ConnectionID, req.Model)
+	cfg, cfgErr := h.resolveWorld(c)
 	if cfgErr != nil {
 		pkg.Error(c, cfgErr)
 		return
@@ -93,7 +92,7 @@ func (h *AssistHandler) Opening(c *gin.Context) {
 		pkg.Error(c, pkg.BadRequest(err.Error()))
 		return
 	}
-	cfg, cfgErr := h.resolveWorld(c, req.ConnectionID, req.Model)
+	cfg, cfgErr := h.resolveWorld(c)
 	if cfgErr != nil {
 		pkg.Error(c, cfgErr)
 		return
@@ -121,7 +120,7 @@ func (h *AssistHandler) Polish(c *gin.Context) {
 		pkg.Error(c, pkg.BadRequest("text 不能为空"))
 		return
 	}
-	cfg, cfgErr := h.resolveWorld(c, req.ConnectionID, req.Model)
+	cfg, cfgErr := h.resolveWorld(c)
 	if cfgErr != nil {
 		pkg.Error(c, cfgErr)
 		return
@@ -147,7 +146,7 @@ func (h *AssistHandler) Branches(c *gin.Context) {
 		pkg.Error(c, pkg.BadRequest("content 不能为空"))
 		return
 	}
-	cfg, cfgErr := h.resolveWorld(c, req.ConnectionID, req.Model)
+	cfg, cfgErr := h.resolveWorld(c)
 	if cfgErr != nil {
 		pkg.Error(c, cfgErr)
 		return

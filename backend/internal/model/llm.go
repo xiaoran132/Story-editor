@@ -45,6 +45,21 @@ type LLMConnectionResponse struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// UserAssistLLMConfig 是「某创作者的创作辅助（world 环节）用哪条连接的哪个模型」，每用户一行。
+//
+// 为什么不塞进 UserStoryLLMConfig：那张表按 (user, story) 复合主键，而创作辅助在
+// **作品还不存在时**就要用（第一步就是「AI 生成世界观」），没有 story_id 可挂。
+// 它也确实是账号级偏好——同一个创作者在所有作品里用同一套辅助模型。
+//
+// ConnID 为 nil = 用平台 world 档（需额度）。Model 在 ConnID 非空时必填，
+// 与 StageBinding 同一条规则：连接不持有默认模型。
+type UserAssistLLMConfig struct {
+	UserID    uuid.UUID  `gorm:"type:uuid;primaryKey" json:"user_id"`
+	ConnID    *uuid.UUID `gorm:"type:uuid" json:"-"`
+	Model     string     `gorm:"size:80;not null;default:''" json:"model"`
+	UpdatedAt time.Time  `json:"updated_at"`
+}
+
 // UserStoryLLMConfig 是「某玩家在某作品」下的 LLM 配置：每环节选自己的哪条连接 + 哪个模型。
 // 连接/key 仍是用户级（llm_connections），此处只承载「模型选择」（隐含选了哪条连接）。
 // stage ∈ {write, review}（游玩相关；创作侧 world 环节走编辑器临时连接，不入此表）。

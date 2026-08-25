@@ -70,6 +70,26 @@ func (r *LLMRepository) UpsertStoryConfig(ctx context.Context, c *model.UserStor
 	return r.db.WithContext(ctx).Save(c).Error
 }
 
+// ----- 创作辅助配置（每用户一行） -----
+
+// FindAssistConfig 取某创作者的辅助模型配置。没有返回 (nil, nil)——没配过是正常状态。
+func (r *LLMRepository) FindAssistConfig(ctx context.Context, userID uuid.UUID) (*model.UserAssistLLMConfig, error) {
+	var c model.UserAssistLLMConfig
+	err := r.db.WithContext(ctx).Where("user_id = ?", userID).First(&c).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
+// UpsertAssistConfig 按 user_id 主键整行覆盖。
+func (r *LLMRepository) UpsertAssistConfig(ctx context.Context, c *model.UserAssistLLMConfig) error {
+	return r.db.WithContext(ctx).Save(c).Error
+}
+
 // ----- 平台设置 -----
 
 // ListPlatform 返回全部平台环节设置。

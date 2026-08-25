@@ -113,6 +113,15 @@ export interface PlatformOption {
   model: string;
 }
 
+// 创作辅助（world 环节）用哪条连接的哪个模型。**账号级**，在设置页里配。
+// 不挂作品：第一步「AI 生成世界观」时作品还不存在，没有 story_id 可挂。
+// GET/PUT /llm/assist-config
+export interface AssistConfig {
+  conn: string; // 连接 id；空=用平台创作辅助档
+  model: string; // conn 非空时必填
+  platform: PlatformOption; // 平台 world 档的可用性与预设模型名
+}
+
 // 保存作品级配置的请求体。
 export interface StoryLLMConfigInput {
   bindings: StageBindings;

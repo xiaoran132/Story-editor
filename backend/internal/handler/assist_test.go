@@ -21,6 +21,7 @@ const assistTestEncryptionKey = "assist-handler-test-key"
 type assistTestStore struct {
 	platform map[string]*model.PlatformLLMSetting
 	conns    map[uuid.UUID]*model.LLMConnection
+	assist   map[uuid.UUID]*model.UserAssistLLMConfig
 	credit   map[uuid.UUID]int64
 	charges  []*model.LLMUsageLog
 }
@@ -35,6 +36,10 @@ func (s *assistTestStore) FindPlatform(_ context.Context, stage string) (*model.
 
 func (s *assistTestStore) FindStoryConfig(_ context.Context, _, _ uuid.UUID) (*model.UserStoryLLMConfig, error) {
 	return nil, nil
+}
+
+func (s *assistTestStore) FindAssistConfig(_ context.Context, userID uuid.UUID) (*model.UserAssistLLMConfig, error) {
+	return s.assist[userID], nil
 }
 
 func (s *assistTestStore) GetCredit(_ context.Context, userID uuid.UUID) (int64, error) {
@@ -187,14 +192,17 @@ func TestAssistPolishByokSkipsPlatformUsage(t *testing.T) {
 				APIKeyCipher: assistCipher(t, "byok-key"),
 			},
 		},
+		// 创作辅助用哪条连接的哪个模型是**账号级设置**，不由请求体携带。
+		assist: map[uuid.UUID]*model.UserAssistLLMConfig{
+			userID: {UserID: userID, ConnID: &connectionID, Model: "byok-model"},
+		},
 		credit: map[uuid.UUID]int64{userID: service.MicroPerCNY},
 	}
 	var received []map[string]any
 	h, closeServer := newAssistTestHandler(t, store, &received)
 	defer closeServer()
 
-	// connection_id 与 model 必须成对给：连接不再持有默认模型，只给连接解析不出东西。
-	response := callAssist(t, h, userID, `{"text":"source","connection_id":"`+connectionID.String()+`","model":"byok-model","world":{}}`, h.Polish)
+	response := callAssist(t, h, userID, `{"text":"source","world":{}}`, h.Polish)
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, body=%s", response.Code, response.Body.String())
 	}

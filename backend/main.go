@@ -36,7 +36,7 @@ func main() {
 	// 不先松开约束，新建连接会直接失败。新库上 IF EXISTS 是空操作。GORM 不删列，留孤儿。
 	db.Exec("ALTER TABLE IF EXISTS llm_connections ALTER COLUMN default_model DROP NOT NULL")
 
-	if err := db.AutoMigrate(&model.User{}, &model.UserCredential{}, &model.Story{}, &model.StoryLike{}, &model.StoryNode{}, &model.PlaySession{}, &model.LLMConnection{}, &model.PlatformLLMSetting{}, &model.UserStoryLLMConfig{}, &model.LLMUsageLog{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.UserCredential{}, &model.Story{}, &model.StoryLike{}, &model.StoryNode{}, &model.PlaySession{}, &model.LLMConnection{}, &model.PlatformLLMSetting{}, &model.UserStoryLLMConfig{}, &model.UserAssistLLMConfig{}, &model.LLMUsageLog{}); err != nil {
 		log.Fatalf("failed to migrate: %v", err)
 	}
 
@@ -79,6 +79,15 @@ func main() {
 	userH := handler.NewUserHandler(userSvc)
 	storyH := handler.NewStoryHandler(storySvc)
 	playH := handler.NewPlayHandler(playSvc)
+	// 启动自检：ENCRYPTION_KEY 配错时，解析链会把每次解密失败静默当成"没配置"，
+	// 玩家看到的是"没有可用的模型"、下拉里是"未开放"，没有任何线索指向密钥。
+	// 这里在启动时就把它喊出来。不 Fatal——干净库没有平台设置是正常状态。
+	if broken := llmSvc.UndecryptablePlatformStages(); len(broken) > 0 {
+		log.Printf("⚠️  ENCRYPTION_KEY 与库中密文不匹配：平台设置 %v 的 api_key 解不开。"+
+			"这些环节会表现为「平台未开放」，用户自带连接（同一把密钥加密）同样会失效、"+
+			"表现为「没有可用的模型」。请核对 ENCRYPTION_KEY，或在 /admin 与设置页重新录入 key。", broken)
+	}
+
 	assistH := handler.NewAssistHandler(agentClient, llmResolver, creditSvc)
 	llmH := handler.NewLLMHandler(llmSvc)
 	uploadH := handler.NewUploadHandler(uploadSvc)
@@ -156,8 +165,10 @@ func main() {
 		llm.PUT("/connections/:id", llmH.UpdateConnection)
 		llm.DELETE("/connections/:id", llmH.DeleteConnection)
 		llm.POST("/connections/test", llmH.TestConnection)
-		llm.POST("/connections/models", llmH.ProbeModels)      // 用表单现填的 key 拉模型（连接尚未保存）
-		llm.GET("/connections/:id/models", llmH.ListModels)    // 用存量 key 重拉某条已存连接的模型
+		llm.POST("/connections/models", llmH.ProbeModels)   // 用表单现填的 key 拉模型（连接尚未保存）
+		llm.GET("/connections/:id/models", llmH.ListModels) // 用存量 key 重拉某条已存连接的模型
+		llm.GET("/assist-config", llmH.GetAssistConfig)     // 创作辅助用哪条连接的哪个模型（账号级）
+		llm.PUT("/assist-config", llmH.SetAssistConfig)
 		llm.GET("/story-config/:storyId", llmH.GetStoryConfig) // 玩家在某作品的模型配置
 		llm.PUT("/story-config/:storyId", llmH.SetStoryConfig)
 	}
