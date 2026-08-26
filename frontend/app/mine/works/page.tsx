@@ -109,11 +109,17 @@ export default function MyWorksPage() {
   }, [user]);
 
   const remove = async (id: string) => {
+    setErr("");
     try {
       await api.del(`/stories/${id}`);
       setWorks((cur) => cur.filter((s) => s.id !== id));
-    } catch {
-      setStatus("error");
+    } catch (e) {
+      // 删一条失败不该把整张列表收走——setStatus("error") 会让整页变成「作品列表打不开」，
+      // 而列表明明就在手上，文案也对不上。用这一页已有的局部错误条说清楚。
+      setErr((e as Error).message);
+      // 顺带重取一次：删除失败最常见的原因就是它已经不在了（另一个标签页删过，
+      // 或上一次点击其实成功了）。不重取的话那张卡片会一直留着，再点还是同一个错。
+      load();
     } finally {
       setConfirmDel(null);
     }

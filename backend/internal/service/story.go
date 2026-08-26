@@ -229,6 +229,15 @@ func (s *StoryService) ListMine(userID uuid.UUID, offset, limit int) (*StoryList
 	return toListResult(stories, total), nil
 }
 
+// Delete 删除作品（仅属主）。
+//
+// 「不存在」与「非属主」给**同一个** 404，理由同 Update/SetStatus：作品存不存在是作者
+// 的私事。只是那两个返回 (nil, nil) 由 handler 转 404，而 Delete 只有 error 一个返回
+// 通道，只能在这里就造出来——同一套语义，两种实现层，别当成风格不一致。
+//
+// ⚠️ 两条分支必须给同一个答案。只改非属主那条会变成「别人的作品→404、不存在→204」，
+// 等于把存在性反过来泄露了。此前两条都 `return nil`，handler 照常回 204「删除成功」，
+// 而一行都没删。
 func (s *StoryService) Delete(storyID, userID uuid.UUID) error {
 	ctx := context.Background()
 
@@ -236,11 +245,10 @@ func (s *StoryService) Delete(storyID, userID uuid.UUID) error {
 	if err != nil {
 		return err
 	}
-	if story == nil {
-		return nil
-	}
-	if story.CreatorID != userID {
-		return nil
+	if story == nil || story.CreatorID != userID {
+		// 不复用 ownerOrNotFound：它的文案是英文 "not found"，会经 pkg.Error 直达
+		// 前端的 role="alert" 横幅，在全中文界面里冒一句英文。
+		return pkg.NotFound("作品不存在，或者它不属于你")
 	}
 
 	return s.repo.Delete(ctx, storyID)
