@@ -163,10 +163,14 @@ func ValidateWorldConfig(raw []byte, strict bool) *AppError {
 	return nil
 }
 
-// styleProfileErr 拼一句作者能照着做的话：中文名 + 具体要求 + 唯一的出路。
-// 这一节没有编辑界面，指望作者去改某个 JSON 键是不现实的。
+// styleProfileErr 拼一句作者能照着做的话：中文名 + 具体要求 + 真正管用的出路。
+//
+// ⚠️ 出路**不是**「重新生成世界观」——`/assist/world` 的 WorldDraft 里根本没有
+// style_profile 这个字段，重生成不会碰它。管用的是让它过一遍编辑器的序列化：
+// `editorStore.serializeStyleProfile` 会丢掉非法枚举、按上限截断数组与文本、
+// 去首尾空白，所以在编辑器里重新保存一次就能把存量值规范成合法的。
 func styleProfileErr(label, field, want string) string {
-	return "AI 生成的风格档中「" + label + "」" + want + "；请在第 2 段重新生成世界观（字段 style_profile." + field + "）"
+	return "风格档「" + label + "」" + want + "；该字段在编辑器中没有对应控件，重新打开本作品并保存一次即可自动规范化（字段 style_profile." + field + "）"
 }
 
 func styleProfileLabel(field string) string {
@@ -179,9 +183,10 @@ func styleProfileLabel(field string) string {
 	return field
 }
 
-// ⚠️ style_profile 在编辑器里没有任何输入控件，只由 AI 生成世界观时写入。
-// 所以这些文案不能只报字段名——作者在界面上找不到那一栏。一律给中文名 +
-// 可执行的出路（重新生成世界观），字段路径留在括号里供排查。
+// ⚠️ style_profile 在本产品里**没有任何写入方**：编辑器无控件，`/assist/world`
+// 的响应也不含该字段。它只会来自直接写库/直调 API 的数据或存量数据，读侧则由
+// agent_client 透传给润色管线。这几条校验因此是防御性的，对编辑器建出来的作品
+// 恒为 nil、恒通过。文案不能只报 JSON 键名——作者在界面上找不到那一栏。
 func validateStyleProfile(profile *styleProfileShape) *AppError {
 	if profile == nil {
 		return nil
