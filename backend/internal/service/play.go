@@ -122,6 +122,14 @@ func (s *PlayService) resolvePlay(ctx context.Context, playerID, storyID uuid.UU
 	return write, review, nil
 }
 
+// aiUnavailableMsg 是 AI 调不通时给玩家看的话。
+//
+// ⚠️ **不要把底层错误拼进来。** AgentClient 的错误文本里带着 agent 的完整响应体与
+// 内网 URL（agent_client.go 的 "ai stream status %d: %s" / "call ai stream: %w"），
+// 而这条 Message 会作为 AppError 原样通过 pkg.SafeDetail，经 SSE 的 detail 帧
+// 直达浏览器。真实原因记服务端日志。
+const aiUnavailableMsg = "AI 服务暂时不可用，请稍后重试"
+
 // noLLMConfigErr 是"没有可用模型"的统一文案。放一处，免得三个调用点各写一句。
 func noLLMConfigErr() error {
 	return pkg.NewBusinessErrorWithMessage(pkg.CodeNoLLMConfig,
@@ -249,7 +257,8 @@ func (s *PlayService) runOpening(
 	// ⚠️ recover 不是防御性编程：leader panic 而没走 finish，所有 follower 会**永久挂起**。
 	defer func() {
 		if r := recover(); r != nil {
-			retErr = pkg.Internal(fmt.Sprintf("opening panic: %v", r))
+			log.Printf("opening panic session=%s: %v", sessionID, r)
+			retErr = pkg.Internal("开场生成出错，请重试") // panic 值可能含任意内部信息，不外发
 			fl.err = retErr
 		}
 		s.finish(sessionID, fl)
@@ -307,7 +316,8 @@ func (s *PlayService) runOpening(
 	} else {
 		opening, err = s.ai.StartStoryStream(ctx, world, initialState, parseStrList(session.RevealedAttrs), write, review, onDelta, onRevise)
 		if err != nil {
-			fl.err = pkg.Internal("ai start story stream: " + err.Error())
+			log.Printf("ai start story stream failed session=%s: %v", session.ID, err)
+			fl.err = pkg.Internal(aiUnavailableMsg)
 			return nil, fl.err
 		}
 	}
@@ -590,7 +600,8 @@ func (s *PlayService) MakeChoiceStream(
 	}
 	result, err := s.ai.ContinueStream(ctx, world, history, currentState, choice, parseStrList(session.RevealedAttrs), write, review, onDelta, onRevise)
 	if err != nil {
-		return nil, pkg.Internal("ai continue stream: " + err.Error())
+		log.Printf("ai continue stream failed session=%s: %v", session.ID, err)
+		return nil, pkg.Internal(aiUnavailableMsg)
 	}
 
 	// **生成之后切到不可取消的 ctx**：到这里 token 已经烧掉、正文已经拿到，

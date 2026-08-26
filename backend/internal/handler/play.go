@@ -50,6 +50,9 @@ type choiceReq struct {
 }
 
 // sseStart 设置 SSE 响应头并返回逐帧发送函数（event/data + flush）。ChoiceStream/OpeningStream 共用。
+//
+// ⚠️ error 帧的 detail 一律经 pkg.SafeDetail，不用 err.Error()：SSE 是**唯一**能把
+// service 层错误原文直送浏览器的通道（普通路由至少还过一次 pkg.Error）。
 func sseStart(c *gin.Context) func(event string, data any) {
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
@@ -82,7 +85,7 @@ func (h *PlayHandler) ChoiceStream(c *gin.Context) {
 		func() { send("revise", gin.H{}) },
 	)
 	if err != nil {
-		send("error", gin.H{"detail": err.Error()})
+		send("error", gin.H{"detail": pkg.SafeDetail(err)})
 		return
 	}
 	send("done", result)
@@ -103,7 +106,7 @@ func (h *PlayHandler) OpeningStream(c *gin.Context) {
 		func() { send("revise", gin.H{}) },
 	)
 	if err != nil {
-		send("error", gin.H{"detail": err.Error()})
+		send("error", gin.H{"detail": pkg.SafeDetail(err)})
 		return
 	}
 	send("done", result)
