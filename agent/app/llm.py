@@ -155,7 +155,7 @@ def validate_key(api_key: str, base_url: str = "", model: str = "") -> tuple[boo
         if not (v or "").strip()
     ]
     if missing:
-        return False, f"缺少 {', '.join(missing)}"
+        return False, f"配置不完整，缺少：{'、'.join(missing)}"
     try:
         llm = ChatOpenAI(
             model=model,

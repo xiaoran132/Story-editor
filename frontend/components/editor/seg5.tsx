@@ -21,7 +21,7 @@ export default function Seg5({ go, names }: SegProps) {
     <>
           <>
             <p className={styles.desc}>
-              这部作品的颜色。<strong>色相是连续的，不是几选一</strong>——预设只是起点，选完还能自己拖。
+              这部作品的颜色。<strong>色相是连续的</strong>，预设只是起点，可继续手动调整。
               选定后云层与流星痕会亮起来。
             </p>
 
@@ -50,7 +50,7 @@ export default function Seg5({ go, names }: SegProps) {
 
             <div className={styles.field}>
               <label className={styles.label} htmlFor="wx-hue-range">
-                色相 <span className={styles.hint}>0–360，随作品落库</span>
+                色相 <span className={styles.hint}>0–360，随作品保存</span>
               </label>
               <div className={styles.hueRow}>
                 <input
@@ -90,7 +90,7 @@ export default function Seg5({ go, names }: SegProps) {
               value={s.coverUrl}
               onChange={(url) => s.setField("coverUrl", url)}
               label="封面图"
-              hint="（可选）不传就用这片天空当封面——无图是默认态，不是降级态"
+              hint="（可选）未上传时以这片天空作封面；无图是正常状态"
             />
 
             <TextField
@@ -101,7 +101,7 @@ export default function Seg5({ go, names }: SegProps) {
             />
             <TextField
               label="推荐审校模型"
-              hint="同上"
+              hint="仅作展示，玩家不会被自动套用"
               value={s.recReviewModel}
               onChange={(v) => s.setField("recReviewModel", v)}
             />

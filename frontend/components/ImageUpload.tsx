@@ -50,7 +50,7 @@ export default function ImageUpload({
     try {
       const blob = await shrinkImage(file, MAX_EDGE[kind]);
       if (blob.size > MAX_MB * 1024 * 1024) {
-        setError(`图片压缩后仍超过 ${MAX_MB}MB，请换一张`);
+        setError(`图片压缩后仍超过 ${MAX_MB}MB，请更换图片`);
         return;
       }
       onChange(await api.upload(kind, blob, file.name));

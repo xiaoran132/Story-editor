@@ -42,7 +42,7 @@ func NewUploadService(rootDir string, maxBytes int64) *UploadService {
 // SaveImage 校验并保存一张图片，返回可直接访问的 URL。
 func (s *UploadService) SaveImage(kind string, r io.Reader) (string, error) {
 	if !uploadKinds[kind] {
-		return "", pkg.BadRequest("invalid upload kind")
+		return "", pkg.BadRequest("不支持的上传类型")
 	}
 
 	// 先读文件头做嗅探。文件比 512 字节还短是正常的（极小 GIF），
@@ -50,7 +50,7 @@ func (s *UploadService) SaveImage(kind string, r io.Reader) (string, error) {
 	head := make([]byte, pkg.SniffLen)
 	n, err := io.ReadFull(r, head)
 	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
-		return "", pkg.BadRequest("failed to read upload")
+		return "", pkg.BadRequest("无法读取上传文件")
 	}
 	head = head[:n]
 
@@ -62,12 +62,12 @@ func (s *UploadService) SaveImage(kind string, r io.Reader) (string, error) {
 	key := pkg.NewObjectKey(kind, ext)
 	dest := filepath.Join(s.rootDir, filepath.FromSlash(key))
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-		return "", pkg.Internal("failed to prepare upload dir")
+		return "", pkg.InternalDefault()
 	}
 
 	f, err := os.Create(dest)
 	if err != nil {
-		return "", pkg.Internal("failed to create file")
+		return "", pkg.InternalDefault()
 	}
 
 	// 把嗅探时读掉的头拼回去继续写。
@@ -78,7 +78,7 @@ func (s *UploadService) SaveImage(kind string, r io.Reader) (string, error) {
 
 	if copyErr != nil || closeErr != nil {
 		os.Remove(dest)
-		return "", pkg.Internal("failed to save file")
+		return "", pkg.InternalDefault()
 	}
 	if written > s.maxBytes {
 		os.Remove(dest) // 半成品不留在磁盘上

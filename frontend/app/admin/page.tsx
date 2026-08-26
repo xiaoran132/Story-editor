@@ -124,7 +124,7 @@ export default function AdminPage() {
       </div>
       <h1 className={styles.h1}>平台 AI 设置</h1>
       <p className={styles.desc}>
-        每个环节配一套平台连接，作为用户未配自带连接时的回退。key 加密存储、不回显。
+        每个环节配置一套平台连接，作为用户未配置自有连接时的回退。API Key 加密存储，保存后不再显示。
       </p>
       {error && <div className={styles.err} role="alert">出错：{error}</div>}
 
@@ -132,7 +132,7 @@ export default function AdminPage() {
         <div className={styles.state}>载入中…</div>
       ) : rows.length === 0 ? (
         // 后端按 LLM_STAGES 补齐空壳，正常不会为空；真为空时给句人话，别只剩一个标题
-        <div className={styles.state}>尚未初始化任何环节配置，请检查后端 /admin/llm/platform 是否可用。</div>
+        <div className={styles.state}>尚未初始化任何环节配置。</div>
       ) : (
         rows.map((r) => (
           <section className={styles.stage} key={r.stage}>
@@ -175,7 +175,7 @@ export default function AdminPage() {
                 所以这里必须显式警告，而不是让它安静地是 0。 */}
             <div className="wx-field">
               <span className="wx-label">
-                单价 <span className="wx-hint">元 / 百万 token，照抄供应商定价页</span>
+                单价 <span className="wx-hint">元 / 百万 token，与供应商定价页保持一致</span>
               </span>
               <div className={styles.price}>
                 <label>
@@ -193,7 +193,7 @@ export default function AdminPage() {
               </div>
               {!r.price_in_per_mtok && !r.price_out_per_mtok && (
                 <span className="wx-err" role="alert">
-                  单价为 0：玩家用这个环节的平台 key 时不会扣任何额度，等于无限免费。请填上真实单价。
+                  单价为 0：玩家使用该环节的平台连接时不会扣减任何额度，等同于无限免费。请填写真实单价。
                 </span>
               )}
             </div>

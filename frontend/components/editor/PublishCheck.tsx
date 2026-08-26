@@ -13,7 +13,7 @@ import { useEditorStore } from "@/store/editorStore";
 export interface CheckItem {
   ok: boolean;
   label: string;
-  step: number; // 缺这项该去第几段补（驱动段 6 的「去补 →」回跳）
+  step: number; // 缺这项该去第几段补（驱动段 6 的「前往修改 →」回跳）
 }
 
 export function usePublishChecks(): CheckItem[] {

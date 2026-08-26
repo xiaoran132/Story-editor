@@ -350,7 +350,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   genWorld: async (idea, style) => {
     if (!idea.trim()) {
-      set({ error: "请先写一句灵感" });
+      set({ error: "请先填写灵感" });
       return;
     }
     set({ aiBusy: "world", error: null });
@@ -477,7 +477,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({ saving: true, error: null });
     try {
       const s = await api.put<Story>(`/stories/${id}/status`, { status: "published" });
-      set({ status: s.status, saving: false, toast: "已发布，作品已在首页可玩" });
+      set({ status: s.status, saving: false, toast: "已发布，作品已在星海中可玩" });
     } catch (e) {
       set({ saving: false, error: (e as Error).message });
     }

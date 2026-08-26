@@ -55,7 +55,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 func (h *UserHandler) GetProfile(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	if userID == uuid.Nil {
-		pkg.Error(c, pkg.Unauthorized("invalid user"))
+		pkg.Error(c, pkg.Unauthorized("登录状态无效，请重新登录"))
 		return
 	}
 
@@ -71,7 +71,7 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 func (h *UserHandler) UpdateProfile(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	if userID == uuid.Nil {
-		pkg.Error(c, pkg.Unauthorized("invalid user"))
+		pkg.Error(c, pkg.Unauthorized("登录状态无效，请重新登录"))
 		return
 	}
 

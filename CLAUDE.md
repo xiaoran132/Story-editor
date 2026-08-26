@@ -116,9 +116,10 @@ Registered in route groups in `main.go`. **The endpoint list lives in `docs/hand
 | Concern | Rule |
 |---|---|
 | Error type | `pkg/errors.go` `AppError`: `StatusCode` (HTTP, not serialized) + `BizCode` (serialized as `error.code`) |
-| HTTP helpers | `BadRequest` / `Unauthorized` / `NotFound` / `Forbidden` / `Conflict` / `Internal` |
+| HTTP helpers | `BadRequest` / `Unauthorized` / `NotFound` / `Forbidden` / `Conflict` / `Internal`. For an internal fault the user cannot act on, use **`pkg.InternalDefault()`** — it carries the one shared Chinese fallback (`internalDetail`, `response.go`); a bespoke `Internal("...")` string ships that string to the browser |
 | Business codes | `NewBusinessError(code)` / `NewBusinessErrorWithMessage`. **The allocated range is the comment block above `NewBusinessError`** — read it there, take the next free number, don't restate the list here |
 | Propagation | handlers return service errors straight to `pkg.Error(c, err)`, which type-asserts and sets the status. A non-`AppError` is logged server-side and answered with a fixed message — never `err.Error()`, which carries table/column/constraint names. `pkg.SafeDetail` is the single place that decides what may go out; SSE error frames call it directly |
+| Message language | every `AppError.Message` is **user-facing Chinese** — the frontend has no code→copy map (`lib/api.ts` renders `error.message` verbatim), so what is written here is what the user reads. No English, no JSON field names as subjects (`idea 不能为空`), no internal terms (env var names, routes, 端点/落库), and never a lower-level error's text |
 | JSON output | only `pkg.Success` / `Created` / `SuccessWithMeta` / `Error` / `NoContent` — never `c.JSON()`. Shape `{success, data, error, meta}` |
 | Auth context | `middleware.AuthRequired(secret)` parses the Bearer JWT, sets `user_id` + `role`; read via `middleware.GetUserID(c)` / `GetRole(c)` |
 

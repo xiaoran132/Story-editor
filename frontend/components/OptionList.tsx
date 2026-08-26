@@ -138,7 +138,7 @@ export default function OptionList({
           {free.trim().length} / {MAX_INPUT}
         </p>
         <p className={styles.note} id="free-action-note">
-          写一个动作就好，别替 AI 写剧情——上限 {MAX_INPUT} 字。
+          请只描述一个动作，不要代写剧情；上限 {MAX_INPUT} 字。
         </p>
       </div>
     </>

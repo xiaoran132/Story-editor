@@ -10,7 +10,7 @@ import (
 // 用于资源确定存在、越权即应显式拒绝的场景（如 play 会话、node 归属修复）。
 func requireOwner(ownerID, callerID uuid.UUID) error {
 	if ownerID != callerID {
-		return pkg.Forbidden("no permission on this resource")
+		return pkg.Forbidden("无权访问该资源")
 	}
 	return nil
 }
@@ -19,7 +19,7 @@ func requireOwner(ownerID, callerID uuid.UUID) error {
 // 对应 story/llm 现有语义（本次不强制迁移，供新代码按需复用）。
 func ownerOrNotFound(ownerID, callerID uuid.UUID) error {
 	if ownerID != callerID {
-		return pkg.NotFound("not found")
+		return pkg.NotFound("内容不存在")
 	}
 	return nil
 }

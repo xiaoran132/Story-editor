@@ -322,7 +322,7 @@ export default function PlayPage() {
                   <rect x="4" y="11" width="16" height="10" rx="2" />
                   <path d="M8 11V7a4 4 0 0 1 8 0v4" />
                 </svg>
-                作者已取消发布这部作品 · 这一局可以读完，但不能再推进
+                作者已取消发布这部作品 · 当前进度可继续阅读，但无法再推进
               </p>
             )}
             {error && (
@@ -518,7 +518,7 @@ export default function PlayPage() {
               </div>
             </dl>
             <p className={styles.mapPrivacy}>
-              查看任意航点不会改动剧情。「回到这里重新选择」也不删任何东西——它只把你所在的位置移回该航点，并恢复那时的属性与已揭示内容；走过的分支都留在星图上，随时能再回去。
+              查看任意航点不会改动剧情。「回到这里重新选择」也不会删除任何内容，它只是把你所在的位置移回该航点，并恢复当时的属性与已揭示内容；走过的分支都保留在星图上，随时可以再次进入。
             </p>
           </section>
         </div>
@@ -555,7 +555,7 @@ export default function PlayPage() {
             onChange={(e) => setScrim(setScrimAlpha(Number(e.target.value)))}
           />
           <p className={styles.tip} id="tip-veil">
-            下限锁 {(SCRIM_MIN / 100).toFixed(2)}。再低，正文与身后的天空就不足 4.5:1，读不下去。
+            下限锁 {(SCRIM_MIN / 100).toFixed(2)}。再低会影响正文可读性。
           </p>
         </div>
 
@@ -609,7 +609,7 @@ export default function PlayPage() {
               }}
             />
           </div>
-          <p className={styles.tip}>关闭后云与流星静止，阅读时更安静。</p>
+          <p className={styles.tip}>关闭后云与流星静止，阅读时干扰更少。</p>
         </div>
       </aside>
     </WorldScope>

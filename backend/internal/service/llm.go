@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -88,7 +89,7 @@ func (s *LLMService) toConnResponse(conn *model.LLMConnection) model.LLMConnecti
 func (s *LLMService) ListConnections(userID uuid.UUID) ([]model.LLMConnectionResponse, error) {
 	conns, err := s.llm.ListConnsByUser(context.Background(), userID)
 	if err != nil {
-		return nil, pkg.Internal("database error")
+		return nil, pkg.InternalDefault()
 	}
 	out := make([]model.LLMConnectionResponse, 0, len(conns))
 	for i := range conns {
@@ -99,25 +100,25 @@ func (s *LLMService) ListConnections(userID uuid.UUID) ([]model.LLMConnectionRes
 
 func (s *LLMService) CreateConnection(userID uuid.UUID, in *ConnectionInput) (*model.LLMConnectionResponse, error) {
 	if strings.TrimSpace(in.Name) == "" || strings.TrimSpace(in.BaseURL) == "" {
-		return nil, pkg.BadRequest("name / base_url 均不能为空")
+		return nil, pkg.BadRequest("名称与 base_url 均不能为空")
 	}
 	if strings.TrimSpace(in.APIKey) == "" {
 		return nil, pkg.BadRequest("api_key 不能为空")
 	}
 	models := cleanModels(in.Models)
 	if len(models) == 0 {
-		return nil, pkg.BadRequest("请至少选择一个模型（可从端点拉取，或手动填写）")
+		return nil, pkg.BadRequest("请至少选择一个模型（可自动拉取，或手动填写）")
 	}
 	cipher, err := pkg.Encrypt(strings.TrimSpace(in.APIKey), s.encKey)
 	if err != nil {
-		return nil, pkg.Internal("failed to encrypt key")
+		return nil, pkg.InternalDefault()
 	}
 	conn := &model.LLMConnection{
 		UserID: userID, Name: in.Name, Provider: in.Provider, BaseURL: strings.TrimSpace(in.BaseURL),
 		APIKeyCipher: cipher, Models: dumpModels(models),
 	}
 	if err := s.llm.CreateConnection(context.Background(), conn); err != nil {
-		return nil, pkg.Internal("failed to create connection")
+		return nil, pkg.InternalDefault()
 	}
 	res := s.toConnResponse(conn)
 	return &res, nil
@@ -127,10 +128,10 @@ func (s *LLMService) UpdateConnection(userID, id uuid.UUID, in *ConnectionInput)
 	ctx := context.Background()
 	conn, err := s.llm.FindConnByID(ctx, id)
 	if err != nil {
-		return nil, pkg.Internal("database error")
+		return nil, pkg.InternalDefault()
 	}
 	if conn == nil || conn.UserID != userID {
-		return nil, pkg.NotFound("connection not found")
+		return nil, pkg.NotFound("连接不存在")
 	}
 	if in.Name != "" {
 		conn.Name = in.Name
@@ -144,19 +145,19 @@ func (s *LLMService) UpdateConnection(userID, id uuid.UUID, in *ConnectionInput)
 	if in.Models != nil { // nil=不改；给了就整体替换（空数组是明确的错误，不是"清空"）
 		models := cleanModels(in.Models)
 		if len(models) == 0 {
-			return nil, pkg.BadRequest("请至少选择一个模型（可从端点拉取，或手动填写）")
+			return nil, pkg.BadRequest("请至少选择一个模型（可自动拉取，或手动填写）")
 		}
 		conn.Models = dumpModels(models)
 	}
 	if strings.TrimSpace(in.APIKey) != "" { // 空串=保留原 key
 		cipher, err := pkg.Encrypt(strings.TrimSpace(in.APIKey), s.encKey)
 		if err != nil {
-			return nil, pkg.Internal("failed to encrypt key")
+			return nil, pkg.InternalDefault()
 		}
 		conn.APIKeyCipher = cipher
 	}
 	if err := s.llm.UpdateConnection(ctx, conn); err != nil {
-		return nil, pkg.Internal("failed to update connection")
+		return nil, pkg.InternalDefault()
 	}
 	res := s.toConnResponse(conn)
 	return &res, nil
@@ -164,7 +165,7 @@ func (s *LLMService) UpdateConnection(userID, id uuid.UUID, in *ConnectionInput)
 
 func (s *LLMService) DeleteConnection(userID, id uuid.UUID) error {
 	if err := s.llm.DeleteConnection(context.Background(), userID, id); err != nil {
-		return pkg.Internal("failed to delete connection")
+		return pkg.InternalDefault()
 	}
 	return nil
 }
@@ -228,7 +229,7 @@ func (s *LLMService) GetStoryConfig(userID, storyID uuid.UUID) (*StoryLLMConfigR
 	ctx := context.Background()
 	sc, err := s.llm.FindStoryConfig(ctx, userID, storyID)
 	if err != nil {
-		return nil, pkg.Internal("database error")
+		return nil, pkg.InternalDefault()
 	}
 
 	out := &StoryLLMConfigResult{Bindings: StageBindings{}}
@@ -255,9 +256,9 @@ func (s *LLMService) GetStoryConfig(userID, storyID uuid.UUID) (*StoryLLMConfigR
 	}
 	if !out.Ready {
 		if out.CreditMicroCNY <= 0 {
-			out.Blocked = "平台赠送额度已用尽。请在「个人主页 → AI 连接」添加你自己的模型连接后继续。"
+			out.Blocked = "平台赠送额度已用尽。请在「个人主页 → AI 连接」添加自有模型连接后继续。"
 		} else {
-			out.Blocked = "还没有可用的模型。请为「续写」环节选择一条连接，或在「个人主页 → AI 连接」先添加一条。"
+			out.Blocked = "没有可用的模型。请为「续写」环节选择一条连接，或先在「个人主页 → AI 连接」添加一条。"
 		}
 	}
 	return out, nil
@@ -275,18 +276,18 @@ func (s *LLMService) SetStoryConfig(userID, storyID uuid.UUID, in StoryLLMConfig
 	clean := StageBindings{}
 	for stage, b := range in.Bindings {
 		if !PlayStages[stage] {
-			return nil, pkg.BadRequest("非法环节（作品级仅 write/review）：" + stage)
+			return nil, pkg.BadRequest("作品级仅支持「续写」与「审校」两个环节：" + stage)
 		}
 		if strings.TrimSpace(b.Conn) == "" {
 			continue // 清除该环节
 		}
 		connID, err := uuid.Parse(b.Conn)
 		if err != nil {
-			return nil, pkg.BadRequest("非法连接 id：" + b.Conn)
+			return nil, pkg.BadRequest("无效的连接标识：" + b.Conn)
 		}
 		conn, err := s.llm.FindConnByID(ctx, connID)
 		if err != nil || conn == nil || conn.UserID != userID {
-			return nil, pkg.BadRequest("连接不存在或不属于你：" + b.Conn)
+			return nil, pkg.BadRequest("连接不存在或无权访问：" + b.Conn)
 		}
 		// 选了连接就必须指明模型——连接不再有默认模型可回退，空 model 存进去
 		// 等于存了一条解析不出东西的绑定，开玩时才失败。
@@ -295,7 +296,7 @@ func (s *LLMService) SetStoryConfig(userID, storyID uuid.UUID, in StoryLLMConfig
 		// 用户事后取消勾选某个模型，不该让已经保存的绑定连同存档一起失效。
 		mdl := strings.TrimSpace(b.Model)
 		if mdl == "" {
-			return nil, pkg.BadRequest("选了连接就要选一个模型（环节：" + stage + "）")
+			return nil, pkg.BadRequest("选择连接后须同时选择一个模型（环节：" + stage + "）")
 		}
 		clean[stage] = StageBinding{Conn: b.Conn, Model: mdl}
 	}
@@ -307,7 +308,7 @@ func (s *LLMService) SetStoryConfig(userID, storyID uuid.UUID, in StoryLLMConfig
 	// 把已经配好的平台预设模型锁死在选项里选不中。
 	if in.ReviewEnabled && clean[StageReview].Conn == "" {
 		if s.resolver == nil || !s.resolver.PlatformAvailable(ctx, userID, StageReview) {
-			return nil, pkg.BadRequest("开启质量审校需要平台档在「审校」环节可用，或为它选择一条自己的连接")
+			return nil, pkg.BadRequest("开启质量审校需要平台模型在「审校」环节可用，或为该环节选择一条自有连接")
 		}
 	}
 
@@ -316,7 +317,7 @@ func (s *LLMService) SetStoryConfig(userID, storyID uuid.UUID, in StoryLLMConfig
 		UserID: userID, StoryID: storyID, Bindings: string(raw),
 		ReviewEnabled: in.ReviewEnabled,
 	}); err != nil {
-		return nil, pkg.Internal("failed to save story config")
+		return nil, pkg.InternalDefault()
 	}
 	return s.GetStoryConfig(userID, storyID)
 }
@@ -342,7 +343,7 @@ func (s *LLMService) GetAssistConfig(userID uuid.UUID) (*AssistConfigResult, err
 	ctx := context.Background()
 	ac, err := s.llm.FindAssistConfig(ctx, userID)
 	if err != nil {
-		return nil, pkg.Internal("database error")
+		return nil, pkg.InternalDefault()
 	}
 	out := &AssistConfigResult{}
 	if ac != nil && ac.ConnID != nil {
@@ -362,21 +363,21 @@ func (s *LLMService) SetAssistConfig(userID uuid.UUID, in AssistConfigInput) (*A
 	if conn := strings.TrimSpace(in.Conn); conn != "" {
 		connID, err := uuid.Parse(conn)
 		if err != nil {
-			return nil, pkg.BadRequest("非法连接 id：" + conn)
+			return nil, pkg.BadRequest("无效的连接标识：" + conn)
 		}
 		c, err := s.llm.FindConnByID(ctx, connID)
 		if err != nil || c == nil || c.UserID != userID {
-			return nil, pkg.BadRequest("连接不存在或不属于你：" + conn)
+			return nil, pkg.BadRequest("连接不存在或无权访问：" + conn)
 		}
 		mdl := strings.TrimSpace(in.Model)
 		if mdl == "" {
-			return nil, pkg.BadRequest("选了连接就要选一个模型")
+			return nil, pkg.BadRequest("选择连接后须同时选择一个模型")
 		}
 		row.ConnID = &connID
 		row.Model = mdl
 	}
 	if err := s.llm.UpsertAssistConfig(ctx, row); err != nil {
-		return nil, pkg.Internal("failed to save assist config")
+		return nil, pkg.InternalDefault()
 	}
 	return s.GetAssistConfig(userID)
 }
@@ -429,10 +430,10 @@ func (s *LLMService) ProbeModels(userID uuid.UUID, in *ProbeModelsInput) ([]stri
 	if key == "" && in.ConnectionID != nil {
 		conn, err := s.llm.FindConnByID(ctx, *in.ConnectionID)
 		if err != nil {
-			return nil, pkg.Internal("database error")
+			return nil, pkg.InternalDefault()
 		}
 		if conn == nil || conn.UserID != userID {
-			return nil, pkg.NotFound("connection not found")
+			return nil, pkg.NotFound("连接不存在")
 		}
 		if plain, err := pkg.Decrypt(conn.APIKeyCipher, s.encKey); err == nil {
 			key = plain
@@ -444,11 +445,11 @@ func (s *LLMService) ProbeModels(userID uuid.UUID, in *ProbeModelsInput) ([]stri
 		// has_key=true / key_hint 空的状态）。说清楚是这件事——否则用户会盯着
 		// 明明填好了的 base_url 找问题。
 		if key == "" {
-			return nil, pkg.BadRequest("这条连接的存量 key 解不开（多因 ENCRYPTION_KEY 变更），请重新填写 API Key 后再拉取")
+			return nil, pkg.BadRequest("这条连接的已存密钥无法解密，请重新填写 API Key 后再拉取")
 		}
 	}
 	if key == "" || baseURL == "" {
-		return nil, pkg.BadRequest("base_url 与 api_key 都要先填好，才能拉取模型")
+		return nil, pkg.BadRequest("请先填写 base_url 与 api_key，再拉取模型")
 	}
 	return s.fetchModels(ctx, baseURL, key)
 }
@@ -459,14 +460,14 @@ func (s *LLMService) ListModels(userID, connID uuid.UUID) ([]string, error) {
 	ctx := context.Background()
 	conn, err := s.llm.FindConnByID(ctx, connID)
 	if err != nil {
-		return nil, pkg.Internal("database error")
+		return nil, pkg.InternalDefault()
 	}
 	if conn == nil || conn.UserID != userID {
-		return nil, pkg.NotFound("connection not found")
+		return nil, pkg.NotFound("连接不存在")
 	}
 	key, err := pkg.Decrypt(conn.APIKeyCipher, s.encKey)
 	if err != nil || key == "" {
-		return nil, pkg.BadRequest("连接未配置可用 key")
+		return nil, pkg.BadRequest("该连接未配置可用的 API Key")
 	}
 	return s.fetchModels(ctx, conn.BaseURL, key)
 }
@@ -477,17 +478,19 @@ func (s *LLMService) fetchModels(ctx context.Context, baseURL, key string) ([]st
 	url := strings.TrimRight(baseURL, "/") + "/models"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, pkg.Internal("build request")
+		return nil, pkg.InternalDefault()
 	}
 	req.Header.Set("Authorization", "Bearer "+key)
 	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
 	if err != nil {
-		return nil, pkg.NewBusinessErrorWithMessage(bizCodeAIUnavailableSvc, "拉取模型列表失败："+err.Error())
+		// 原始错误带内部 URL 与超时栈，只记服务端；对外只说该怎么办。
+		log.Printf("fetchModels %s: %v", url, err)
+		return nil, pkg.NewBusinessErrorWithMessage(bizCodeAIUnavailableSvc, "拉取模型列表失败，请检查 base_url 与 API Key")
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return nil, pkg.NewBusinessErrorWithMessage(bizCodeAIUnavailableSvc, "该端点未返回模型列表（HTTP "+http.StatusText(resp.StatusCode)+"），可手填")
+		return nil, pkg.NewBusinessErrorWithMessage(bizCodeAIUnavailableSvc, "该服务未返回模型列表（HTTP "+http.StatusText(resp.StatusCode)+"），请手动填写模型名")
 	}
 	// OpenAI 兼容形态：{"data":[{"id":"..."}]}
 	var parsed struct {
@@ -496,7 +499,7 @@ func (s *LLMService) fetchModels(ctx context.Context, baseURL, key string) ([]st
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &parsed); err != nil {
-		return nil, pkg.NewBusinessErrorWithMessage(bizCodeAIUnavailableSvc, "模型列表格式无法解析，可手填")
+		return nil, pkg.NewBusinessErrorWithMessage(bizCodeAIUnavailableSvc, "模型列表格式无法解析，请手动填写模型名")
 	}
 	ids := make([]string, 0, len(parsed.Data))
 	for _, m := range parsed.Data {
@@ -550,7 +553,7 @@ func (s *LLMService) toPlatformResponse(p *model.PlatformLLMSetting) model.Platf
 func (s *LLMService) ListPlatform() ([]model.PlatformLLMSettingResponse, error) {
 	rows, err := s.llm.ListPlatform(context.Background())
 	if err != nil {
-		return nil, pkg.Internal("database error")
+		return nil, pkg.InternalDefault()
 	}
 	byStage := map[string]*model.PlatformLLMSetting{}
 	for i := range rows {
@@ -570,12 +573,12 @@ func (s *LLMService) ListPlatform() ([]model.PlatformLLMSettingResponse, error) 
 // UpsertPlatform 更新某环节平台设置。api_key 空串=保留原 key。
 func (s *LLMService) UpsertPlatform(stage string, in *PlatformInput) (*model.PlatformLLMSettingResponse, error) {
 	if !ValidStages[stage] {
-		return nil, pkg.BadRequest("非法环节：" + stage)
+		return nil, pkg.BadRequest("无效的环节：" + stage)
 	}
 	ctx := context.Background()
 	existing, err := s.llm.FindPlatform(ctx, stage)
 	if err != nil {
-		return nil, pkg.Internal("database error")
+		return nil, pkg.InternalDefault()
 	}
 	p := &model.PlatformLLMSetting{Stage: stage}
 	if existing != nil {
@@ -605,12 +608,12 @@ func (s *LLMService) UpsertPlatform(stage string, in *PlatformInput) (*model.Pla
 	if strings.TrimSpace(in.APIKey) != "" { // 空串=保留原 key
 		cipher, err := pkg.Encrypt(strings.TrimSpace(in.APIKey), s.encKey)
 		if err != nil {
-			return nil, pkg.Internal("failed to encrypt key")
+			return nil, pkg.InternalDefault()
 		}
 		p.APIKeyCipher = cipher
 	}
 	if err := s.llm.UpsertPlatform(ctx, p); err != nil {
-		return nil, pkg.Internal("failed to save platform setting")
+		return nil, pkg.InternalDefault()
 	}
 	res := s.toPlatformResponse(p)
 	return &res, nil

@@ -555,8 +555,8 @@ export default function HomePage() {
                 )}
                 {status === "error" && (
                   <>
-                    <p>星海暂时没有回应</p>
-                    <small>没能取到作品列表，检查一下后端是否在跑。</small>
+                    <p>暂时无法载入作品列表</p>
+                    <small>请稍后重试。</small>
                     <button className={styles.stateRetry} type="button" onClick={load}>
                       重新尝试
                     </button>

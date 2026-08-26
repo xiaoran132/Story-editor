@@ -88,7 +88,7 @@ export default function HistoryPage() {
         <p className={styles.eyebrow}>我的空间 · 历史记录</p>
         <h1 className={styles.h1}>你走过的那些世界。</h1>
         <p className={styles.lede}>
-          每一条都是一局还在的存档。作品被作者收回后这一局仍读得完，只是推不动了。
+          每一条都是一份仍在的存档。作品被作者收回后，该存档仍可阅读，但无法继续推进。
         </p>
 
         <div className={styles.filters} role="group" aria-label="筛选存档">
@@ -107,7 +107,7 @@ export default function HistoryPage() {
 
         {status === "error" ? (
           <div className={styles.state}>
-            <p className={styles.stateTitle}>存档取不回来</p>
+            <p className={styles.stateTitle}>暂时无法载入存档</p>
             <button className={styles.btn} type="button" onClick={load}>
               重新尝试
             </button>
@@ -117,9 +117,9 @@ export default function HistoryPage() {
         ) : !user ? (
           <div className={styles.state}>
             <p className={styles.stateTitle}>先登录</p>
-            <p>存档挂在账号上，跨设备同步。</p>
+            <p>存档随账号保存，跨设备同步。</p>
             <Link className={styles.btn} href="/login?next=/mine/history">
-              去登录
+              前往登录
             </Link>
           </div>
         ) : shown.length === 0 ? (
@@ -127,10 +127,10 @@ export default function HistoryPage() {
             <p className={styles.stateTitle}>
               {items.length === 0 ? "还没有走过任何世界" : "这个筛选下没有存档"}
             </p>
-            <p>{items.length === 0 ? "挑一部作品走进去，这里就会有航迹。" : "换个筛选试试。"}</p>
+            <p>{items.length === 0 ? "挑一部作品走进去，这里就会有航迹。" : "可更换筛选条件。"}</p>
             {items.length === 0 && (
               <Link className={styles.btn} href="/">
-                去星海
+                前往星海
               </Link>
             )}
           </div>
@@ -176,7 +176,7 @@ export default function HistoryPage() {
 
                   <div className={styles.acts}>
                     <Link className={styles.btn} href={`/play/${s.id}`}>
-                      {ended ? "回去看看" : "继续"}
+                      {ended ? "继续阅读" : "继续"}
                     </Link>
                     <button
                       className={`${styles.btn} ${styles.del}`}
@@ -185,7 +185,7 @@ export default function HistoryPage() {
                       onClick={() => (confirmDel === s.id ? remove(s.id) : setConfirmDel(s.id))}
                       onBlur={() => setConfirmDel((c) => (c === s.id ? null : c))}
                     >
-                      {confirmDel === s.id ? "确认删档？" : "删档"}
+                      {confirmDel === s.id ? "确认删除？" : "删除存档"}
                     </button>
                   </div>
                 </WorldScope>

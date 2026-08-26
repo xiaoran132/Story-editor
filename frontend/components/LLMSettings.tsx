@@ -85,7 +85,7 @@ export default function LLMSettings({ flash }: { flash: (m: string) => void }) {
       setFetched(r.models || []);
     } catch (e) {
       setFetched(null);
-      setError((e as Error).message + "（端点可能不提供模型列表，可在下方手动填写）");
+      setError((e as Error).message + "（该服务可能不提供模型列表，可在下方手动填写）");
     } finally {
       setProbing(false);
     }
@@ -106,7 +106,7 @@ export default function LLMSettings({ flash }: { flash: (m: string) => void }) {
   const saveConn = async () => {
     if (!form) return;
     if (form.models.length === 0) {
-      setError("请至少选择一个模型：点「拉取模型」从端点获取，或在下方手动填写。");
+      setError("请至少选择一个模型：使用「拉取模型」获取，或在下方手动填写。");
       return;
     }
     setBusy(true);
@@ -168,8 +168,8 @@ export default function LLMSettings({ flash }: { flash: (m: string) => void }) {
     <section>
       <span className={styles.eyebrow}>AI 连接（BYOK）</span>
       <p className={styles.desc}>
-        添加你自己的 LLM 连接（任意 OpenAI 兼容端点，key 加密存储、绝不回显）。
-        <span className="wx-hint">每部作品「用哪个模型」在作品详情页里单独配；这里只管连接本身。</span>
+        添加你自己的 LLM 连接（支持任意 OpenAI 兼容服务；API Key 加密存储，保存后不再显示）。
+        <span className="wx-hint">每部作品使用哪个模型，在该作品详情页单独设置；此处仅管理连接本身。</span>
       </p>
       {/* 弹窗打开时错误改在弹窗内显示——留在这里会被遮罩挡住，用户只会看到「保存」毫无反应 */}
       {error && form === null && <div className="wx-err" role="alert">出错：{error}</div>}
@@ -179,7 +179,7 @@ export default function LLMSettings({ flash }: { flash: (m: string) => void }) {
         {loading ? (
           <div className={`wx-hint ${styles.loading}`}>载入连接…</div>
         ) : (
-          conns.length === 0 && !error && <div className="wx-hint">还没有连接，添加一个开始。</div>
+          conns.length === 0 && !error && <div className="wx-hint">还没有连接，请先添加一条。</div>
         )}
         {conns.map((c) => (
           <div className={styles.row} key={c.id}>
@@ -213,7 +213,7 @@ export default function LLMSettings({ flash }: { flash: (m: string) => void }) {
       <Dialog
         open={form !== null}
         title={form?.id ? "编辑连接" : "添加连接"}
-        desc="任意 OpenAI 兼容端点。Key 加密存储、绝不回显。"
+        desc="支持任意 OpenAI 兼容服务。API Key 加密存储，保存后不再显示。"
         labelledBy="conn-dialog-title"
         onClose={() => setForm(null)}
         actions={
@@ -262,7 +262,7 @@ export default function LLMSettings({ flash }: { flash: (m: string) => void }) {
                 <button className="wx-btn sm" type="button" disabled={probing} onClick={probeModels}>
                   {probing ? "拉取中…" : "拉取模型"}
                 </button>
-                <input className="wx-input" value={manual} placeholder="或手填模型名后回车"
+                <input className="wx-input" value={manual} placeholder="或手动输入模型名后回车"
                   onChange={(e) => setManual(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
@@ -277,7 +277,7 @@ export default function LLMSettings({ flash }: { flash: (m: string) => void }) {
 
               {fetched !== null && (
                 fetched.length === 0 ? (
-                  <p className="wx-hint">端点没有返回任何模型，请手动填写。</p>
+                  <p className="wx-hint">该服务未返回任何模型，请手动填写。</p>
                 ) : (
                   <div className={styles.modelPick}>
                     {fetched.map((m) => (
@@ -303,7 +303,7 @@ export default function LLMSettings({ flash }: { flash: (m: string) => void }) {
                   ))}
                 </div>
               ) : (
-                <p className="wx-hint">还没有选模型——保存前至少要有一个。</p>
+                <p className="wx-hint">请至少选择一个模型后再保存。</p>
               )}
             </div>
             <label className="wx-field">

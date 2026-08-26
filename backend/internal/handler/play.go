@@ -70,7 +70,7 @@ func sseStart(c *gin.Context) func(event string, data any) {
 func (h *PlayHandler) ChoiceStream(c *gin.Context) {
 	sessionID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		pkg.Error(c, pkg.BadRequest("invalid session id"))
+		pkg.Error(c, pkg.BadRequest("无效的会话标识"))
 		return
 	}
 	var req choiceReq
@@ -96,7 +96,7 @@ func (h *PlayHandler) ChoiceStream(c *gin.Context) {
 func (h *PlayHandler) OpeningStream(c *gin.Context) {
 	sessionID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		pkg.Error(c, pkg.BadRequest("invalid session id"))
+		pkg.Error(c, pkg.BadRequest("无效的会话标识"))
 		return
 	}
 	send := sseStart(c)
@@ -119,7 +119,7 @@ type backtrackReq struct {
 func (h *PlayHandler) Backtrack(c *gin.Context) {
 	sessionID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		pkg.Error(c, pkg.BadRequest("invalid session id"))
+		pkg.Error(c, pkg.BadRequest("无效的会话标识"))
 		return
 	}
 
@@ -151,7 +151,7 @@ func (h *PlayHandler) List(c *gin.Context) {
 func (h *PlayHandler) Delete(c *gin.Context) {
 	sessionID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		pkg.Error(c, pkg.BadRequest("invalid session id"))
+		pkg.Error(c, pkg.BadRequest("无效的会话标识"))
 		return
 	}
 
@@ -165,7 +165,7 @@ func (h *PlayHandler) Delete(c *gin.Context) {
 func (h *PlayHandler) Get(c *gin.Context) {
 	sessionID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		pkg.Error(c, pkg.BadRequest("invalid session id"))
+		pkg.Error(c, pkg.BadRequest("无效的会话标识"))
 		return
 	}
 

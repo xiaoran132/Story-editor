@@ -158,7 +158,7 @@ func (s *StoryService) Update(storyID, userID uuid.UUID, input *StoryUpdateInput
 	if input.Title != nil {
 		// 与 SetStatus 同理：world_config 校验管不到标题，已发布作品不能被改成空标题。
 		if strict && strings.TrimSpace(*input.Title) == "" {
-			return nil, pkg.BadRequest("已发布作品不能没有标题")
+			return nil, pkg.BadRequest("已发布的作品必须填写标题")
 		}
 		story.Title = *input.Title
 	}
@@ -246,9 +246,8 @@ func (s *StoryService) Delete(storyID, userID uuid.UUID) error {
 		return err
 	}
 	if story == nil || story.CreatorID != userID {
-		// 不复用 ownerOrNotFound：它的文案是英文 "not found"，会经 pkg.Error 直达
-		// 前端的 role="alert" 横幅，在全中文界面里冒一句英文。
-		return pkg.NotFound("作品不存在，或者它不属于你")
+		// 不复用 ownerOrNotFound：那句通用文案说不清是哪种资源，这里点名「作品」。
+		return pkg.NotFound("作品不存在或无权访问")
 	}
 
 	return s.repo.Delete(ctx, storyID)

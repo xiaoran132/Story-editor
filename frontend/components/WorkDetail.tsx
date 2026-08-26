@@ -306,7 +306,7 @@ export default function WorkDetail({ story, variant, open, onBack }: WorkDetailP
         {!user ? (
           <div className={styles.block}>
             <span>
-              <b>注册即赠 1 元体验额度</b>，可直接用平台模型开玩；也可以接自己的模型连接。
+              <b>注册即赠 1 元体验额度</b>，可直接使用平台模型开始游玩；也可以接入自有模型连接。
             </span>
           </div>
         ) : cfg && !cfg.ready ? (
@@ -365,8 +365,8 @@ export default function WorkDetail({ story, variant, open, onBack }: WorkDetailP
         </div>
 
         <p className={styles.hint}>
-          {lastSession ? "开新局不会覆盖存档，两条线各走各的。" : ""}
-          游玩消耗平台额度或你自己的模型连接；登录后可跨设备续玩。
+          {lastSession ? "另开一局不会覆盖原存档，两条线各自独立。" : ""}
+          游玩消耗平台额度或你的自有模型连接；登录后可跨设备继续。
         </p>
       </div>
     </div>

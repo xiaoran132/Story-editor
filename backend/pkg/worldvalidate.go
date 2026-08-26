@@ -53,23 +53,23 @@ func ValidateWorldConfig(raw []byte, strict bool) *AppError {
 	trimmed := trimSpace(raw)
 	if len(trimmed) == 0 || string(trimmed) == "{}" {
 		if strict {
-			return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig, "world_config 为空，发布前请先配置世界观")
+			return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig, "世界观配置为空，发布前请先完成世界观设置")
 		}
 		return nil
 	}
 
 	var w worldConfigShape
 	if err := json.Unmarshal(raw, &w); err != nil {
-		return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig, "world_config 不是合法 JSON："+err.Error())
+		return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig, "世界观配置不是合法 JSON："+err.Error())
 	}
 
 	// 规则 2：strict 下基本字段非空
 	if strict {
 		if w.Background == "" || w.Style == "" || w.Rules == "" || w.Outline == "" {
-			return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig, "background/style/rules/outline 均不得为空")
+			return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig, "「背景」「基调」「规则」「大纲」均不得为空")
 		}
 		if len(w.Characters) == 0 {
-			return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig, "至少需要一个角色（characters）")
+			return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig, "至少需要一个角色")
 		}
 	}
 
@@ -81,13 +81,13 @@ func ValidateWorldConfig(raw []byte, strict bool) *AppError {
 	for k := range w.InitialState {
 		if _, ok := w.Attributes[k]; !ok {
 			return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig,
-				fmt.Sprintf("属性 %q 在 initial_state 里有值却未在 attributes 声明", k))
+				fmt.Sprintf("属性「%s」有初值但未声明，请在「属性」表中补上该行", k))
 		}
 	}
 	for k := range w.Attributes {
 		if _, ok := w.InitialState[k]; !ok {
 			return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig,
-				fmt.Sprintf("属性 %q 已在 attributes 声明却不在 initial_state", k))
+				fmt.Sprintf("属性「%s」已声明但缺少初值，请在「属性」表中填写「初值」", k))
 		}
 	}
 
@@ -98,18 +98,18 @@ func ValidateWorldConfig(raw []byte, strict bool) *AppError {
 		case "number", "scalar", "set":
 		default:
 			return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig,
-				fmt.Sprintf("属性 %q 的 type 非法（应为 number/scalar/set）：%v", k, spec["type"]))
+				fmt.Sprintf("属性「%s」的「类型」无效（应为 number / scalar / set）：%v", k, spec["type"]))
 		}
 
 		initInSpec, hasInit := spec["initial"]
 		if !hasInit {
 			return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig,
-				fmt.Sprintf("属性 %q 缺 initial", k))
+				fmt.Sprintf("属性「%s」缺少「初值」", k))
 		}
 		initInState := w.InitialState[k]
 		if !reflect.DeepEqual(initInSpec, initInState) {
 			return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig,
-				fmt.Sprintf("属性 %q 的 attributes.initial(%v) 与 initial_state(%v) 不一致", k, initInSpec, initInState))
+				fmt.Sprintf("属性「%s」的两处初值不一致：声明处为 %v，初值表为 %v", k, initInSpec, initInState))
 		}
 
 		// 类型-取值匹配（JSON 反序列化：number→float64、scalar→string、set→[]any）
@@ -117,30 +117,30 @@ func ValidateWorldConfig(raw []byte, strict bool) *AppError {
 		case "number":
 			if _, ok := initInState.(float64); !ok {
 				return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig,
-					fmt.Sprintf("number 属性 %q 的初值应为数值", k))
+					fmt.Sprintf("number 类型的属性「%s」，其「初值」应为数值", k))
 			}
 		case "scalar":
 			if _, ok := initInState.(string); !ok {
 				return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig,
-					fmt.Sprintf("scalar 属性 %q 的初值应为字符串", k))
+					fmt.Sprintf("scalar 类型的属性「%s」，其「初值」应为文本", k))
 			}
 		case "set":
 			if _, ok := initInState.([]any); !ok {
 				return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig,
-					fmt.Sprintf("set 属性 %q 的初值应为数组", k))
+					fmt.Sprintf("set 类型的属性「%s」，其「初值」应为数组", k))
 			}
 		}
 
 		if v, ok := spec["hidden"]; ok {
 			if _, isBool := v.(bool); !isBool {
 				return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig,
-					fmt.Sprintf("属性 %q 的 hidden 应为布尔", k))
+					fmt.Sprintf("属性「%s」的「隐藏」应为布尔值", k))
 			}
 		}
 		if v, ok := spec["reveal"]; ok {
 			if _, isBool := v.(bool); !isBool {
 				return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig,
-					fmt.Sprintf("属性 %q 的 reveal 应为布尔", k))
+					fmt.Sprintf("属性「%s」的「门控」应为布尔值", k))
 			}
 		}
 
@@ -150,12 +150,12 @@ func ValidateWorldConfig(raw []byte, strict bool) *AppError {
 		if v, ok := spec["max"]; ok {
 			if typ != "number" {
 				return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig,
-					fmt.Sprintf("属性 %q 不是 number 类型，不能声明 max", k))
+					fmt.Sprintf("属性「%s」不是 number 类型，不能设置「上限」", k))
 			}
 			f, isNum := v.(float64)
 			if !isNum || f <= 0 {
 				return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig,
-					fmt.Sprintf("属性 %q 的 max 应为正数：%v", k, v))
+					fmt.Sprintf("属性「%s」的「上限」应为正数：%v", k, v))
 			}
 		}
 	}
@@ -163,26 +163,43 @@ func ValidateWorldConfig(raw []byte, strict bool) *AppError {
 	return nil
 }
 
-// trimSpace 去掉字节切片首尾的 ASCII 空白，避免为空判定误差。
+// styleProfileErr 拼一句作者能照着做的话：中文名 + 具体要求 + 唯一的出路。
+// 这一节没有编辑界面，指望作者去改某个 JSON 键是不现实的。
+func styleProfileErr(label, field, want string) string {
+	return "AI 生成的风格档中「" + label + "」" + want + "；请在第 2 段重新生成世界观（字段 style_profile." + field + "）"
+}
 
+func styleProfileLabel(field string) string {
+	switch field {
+	case "sensory_focus":
+		return "感官侧重"
+	case "avoid":
+		return "规避项"
+	}
+	return field
+}
+
+// ⚠️ style_profile 在编辑器里没有任何输入控件，只由 AI 生成世界观时写入。
+// 所以这些文案不能只报字段名——作者在界面上找不到那一栏。一律给中文名 +
+// 可执行的出路（重新生成世界观），字段路径留在括号里供排查。
 func validateStyleProfile(profile *styleProfileShape) *AppError {
 	if profile == nil {
 		return nil
 	}
 	if profile.NarrativeDistance != "" && profile.NarrativeDistance != "close" && profile.NarrativeDistance != "medium" && profile.NarrativeDistance != "distant" {
-		return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig, "style_profile.narrative_distance 必须为 close/medium/distant")
+		return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig, styleProfileErr("叙事距离", "narrative_distance", "必须为 close / medium / distant"))
 	}
 	if profile.Rhythm != "" && profile.Rhythm != "mixed" && profile.Rhythm != "tight" && profile.Rhythm != "relaxed" {
-		return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig, "style_profile.rhythm 必须为 mixed/tight/relaxed")
+		return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig, styleProfileErr("叙事节奏", "rhythm", "必须为 mixed / tight / relaxed"))
 	}
 	if len(profile.SensoryFocus) > 3 {
-		return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig, "style_profile.sensory_focus 最多 3 条")
+		return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig, styleProfileErr("感官侧重", "sensory_focus", "最多 3 条"))
 	}
 	if len(profile.Avoid) > 5 {
-		return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig, "style_profile.avoid 最多 5 条")
+		return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig, styleProfileErr("规避项", "avoid", "最多 5 条"))
 	}
 	if len([]rune(profile.DialogueRule)) > 160 || profile.DialogueRule != strings.TrimSpace(profile.DialogueRule) {
-		return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig, "style_profile.dialogue_rule 须为去除首尾空白后的短文本（最多 160 字）")
+		return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig, styleProfileErr("对白规则", "dialogue_rule", "须为不含首尾空格的短文本（最多 160 字）"))
 	}
 	for _, pair := range []struct {
 		name   string
@@ -190,7 +207,7 @@ func validateStyleProfile(profile *styleProfileShape) *AppError {
 	}{{"sensory_focus", profile.SensoryFocus}, {"avoid", profile.Avoid}} {
 		for _, value := range pair.values {
 			if len([]rune(value)) == 0 || len([]rune(value)) > 48 || value != strings.TrimSpace(value) {
-				return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig, "style_profile."+pair.name+" 每条须为去除首尾空白后的非空短文本（最多 48 字）")
+				return NewBusinessErrorWithMessage(BizCodeInvalidWorldConfig, styleProfileErr(styleProfileLabel(pair.name), pair.name, "每条须为不含首尾空格的非空短文本（最多 48 字）"))
 			}
 		}
 	}

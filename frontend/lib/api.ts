@@ -3,8 +3,8 @@
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8080/api/v1";
 
-const CONNECT_ERR = "无法连接后端服务，请确认后端已启动";
-const httpErr = (status: number) => `请求失败（HTTP ${status}）`;
+const CONNECT_ERR = "无法连接服务器，请稍后重试";
+const httpErr = (status: number) => `请求失败，请稍后重试（${status}）`;
 
 // 登录 token 存 localStorage；每次请求带上 Authorization（未登录则为空：只读接口照常，/play 一律 401）。
 function authHeaders(): Record<string, string> {
@@ -243,6 +243,6 @@ export async function postStream<T>(
   if (buf.trim()) handleFrame(buf); // 末帧无结尾空行时兜底
 
   if (streamErr) throw new Error(streamErr);
-  if (done === undefined) throw new Error("生成中断：未收到完整结果");
+  if (done === undefined) throw new Error("生成中断，请重试");
   return done;
 }

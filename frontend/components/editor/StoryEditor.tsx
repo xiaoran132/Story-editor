@@ -34,7 +34,7 @@ const SEGS = [
   { t: "属性", sub: "数值 · 隐藏 · 门控" },
   { t: "开场", sub: "第一段正文" },
   { t: "天空", sub: "主题 · 封面" },
-  { t: "发布", sub: "体检并上线" },
+  { t: "发布", sub: "检查并上线" },
 ] as const;
 const NAMES = SEGS.map((x) => x.t);
 
@@ -124,10 +124,10 @@ export default function StoryEditor() {
           <EditorSky theme={s.theme} ready={ready} attrs={s.attributes} reduced={reduced} />
           <p className={styles.skyLegend}>
             {missing.length === 0 ? (
-              <>这片天空齐了。<b>可以发布。</b></>
+              <>这片天空已完整。<b>可以发布。</b></>
             ) : (
               <>
-                天空还缺 <b>{missing.join(" · ")}</b> 这几层——写完那几段，它们会自己亮起来。
+                天空还缺 <b>{missing.join(" · ")}</b>：完成对应段落后会自动点亮。
               </>
             )}
           </p>
@@ -177,7 +177,7 @@ export default function StoryEditor() {
               disabled={anyBusy}
               onClick={() => s.save()}
             >
-              {s.saving ? "保存中…" : "存草稿"}
+              {s.saving ? "保存中…" : "保存草稿"}
             </button>
             {s.status === "published" ? (
               <button
@@ -194,7 +194,7 @@ export default function StoryEditor() {
                 className={styles.btnPublish}
                 type="button"
                 disabled={anyBusy || !canPublish}
-                title={canPublish ? undefined : "还有体检项没过，见第 6 段"}
+                title={canPublish ? undefined : "仍有检查项未通过，见第 6 段"}
                 onClick={() => s.publish()}
               >
                 发布

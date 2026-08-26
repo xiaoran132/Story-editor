@@ -114,7 +114,7 @@ export default function SettingsPage() {
         ) : !profile ? (
           <div className={styles.state}>
             <p className={styles.stateTitle}>先登录</p>
-            <p>资料与模型连接都挂在账号上。</p>
+            <p>资料与模型连接随账号保存。</p>
             <Link className={styles.btn} href="/login?next=/mine/settings">
               去登录
             </Link>
@@ -160,7 +160,7 @@ export default function SettingsPage() {
               </div>
 
               <p className={styles.hint}>
-                用户名 <b>@{profile.username}</b> 不可改——它是别人找到你的地址。
+                用户名 <b>@{profile.username}</b> 不可修改，它是他人找到你的地址。
               </p>
 
               {error && (
@@ -180,9 +180,9 @@ export default function SettingsPage() {
               <p className={styles.cardTitle}>AI 连接</p>
               <p className={styles.hint}>
                 平台体验额度剩余 <b>{formatCredit(profile.credit_micro_cny)}</b>
-                。额度按真实用量扣减；用尽后需要接一条自己的连接才能继续生成。
+                。额度按真实用量扣减；用尽后需接入一条自有连接才能继续生成。
                 <br />
-                连接是**账号级**的，具体哪部作品用哪条，在那部作品的详情页里选。
+                连接是<strong>账号级</strong>的，具体哪部作品使用哪条，在该作品的详情页选择。
               </p>
               <LLMSettings flash={flash} />
             </section>
@@ -190,8 +190,8 @@ export default function SettingsPage() {
             <section className={styles.card}>
               <p className={styles.cardTitle}>创作辅助模型</p>
               <p className={styles.hint}>
-                编辑器里的「AI 生成世界观 / 生成开场 / 精品润色 / 分支建议」用哪个模型。
-                在这里配一次，所有作品的创作过程都用它；不选连接就走平台额度。
+                编辑器中的「AI 生成世界观 / 生成开场 / 深度润色 / 分支建议」使用哪个模型。
+                在此设置一次即对所有作品生效；未选择连接时使用平台额度。
               </p>
               <AssistModelSettings flash={flash} />
             </section>
@@ -228,7 +228,7 @@ export default function SettingsPage() {
                   onChange={(e) => setScrim(setScrimAlpha(Number(e.target.value)))}
                 />
                 <p className={styles.hint}>
-                  下限锁 {(SCRIM_MIN / 100).toFixed(2)}。再低，正文与身后的天空就不足 4.5:1。
+                  下限锁 {(SCRIM_MIN / 100).toFixed(2)}。再低会影响正文可读性。
                 </p>
               </div>
             </section>
@@ -236,7 +236,7 @@ export default function SettingsPage() {
             <section className={styles.card}>
               <p className={styles.cardTitle}>账号</p>
               <p className={styles.hint}>
-                改密码还没有接口，所以这里不放一个点了没反应的入口。
+                修改密码功能尚未开放。
               </p>
               <div className={styles.row}>
                 {user?.role === "admin" && (

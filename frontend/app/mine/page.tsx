@@ -88,7 +88,7 @@ export default function MinePage() {
             </span>
           )}
           <div>
-            <p className={styles.name}>{profile?.nickname || profile?.username || "还没登录"}</p>
+            <p className={styles.name}>{profile?.nickname || profile?.username || "未登录"}</p>
             {profile?.username && <p className={styles.handle}>@{profile.username}</p>}
           </div>
           {profile && (
@@ -124,14 +124,14 @@ export default function MinePage() {
         {status === "error" && !user ? (
           <div className={styles.state}>
             <p className={styles.stateTitle}>先登录</p>
-            <p>作品与存档都挂在账号上。</p>
+            <p>作品与存档随账号保存。</p>
             <Link className={styles.btn} href="/login?next=/mine">
-              去登录
+              前往登录
             </Link>
           </div>
         ) : status === "error" ? (
           <div className={styles.state}>
-            <p className={styles.stateTitle}>资料取不回来</p>
+            <p className={styles.stateTitle}>暂时无法载入资料</p>
             <button className={styles.btn} type="button" onClick={load}>
               重新尝试
             </button>
@@ -143,9 +143,9 @@ export default function MinePage() {
             <p className={styles.stateTitle}>
               {works.length === 0 ? "还没有发布过作品" : `已发布 ${works.length} 部`}
             </p>
-            <p>草稿与已发布都在「我的作品」里，两类都能编辑、都能试玩。</p>
+            <p>草稿与已发布作品都在「我的作品」中，均可编辑与试玩。</p>
             <Link className={styles.btn} href="/mine/works">
-              {works.length === 0 ? "去写一个世界" : "打开我的作品"}
+              {works.length === 0 ? "写一个世界" : "打开我的作品"}
             </Link>
           </div>
         )}

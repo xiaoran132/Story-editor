@@ -50,7 +50,7 @@ func (s *UserService) Register(input *RegisterInput) (*model.UserResponse, error
 	// 先报「用户名被占」会让用户对着一个自己没填过的字段发懵。
 	existingCred, err := s.repo.FindCredential(ctx, "password", input.Email)
 	if err != nil {
-		return nil, pkg.Internal("database error")
+		return nil, pkg.InternalDefault()
 	}
 	if existingCred != nil {
 		return nil, pkg.Conflict("该邮箱已注册")
@@ -66,7 +66,7 @@ func (s *UserService) Register(input *RegisterInput) (*model.UserResponse, error
 	} else {
 		existing, err := s.repo.FindByUsername(ctx, input.Username)
 		if err != nil {
-			return nil, pkg.Internal("database error")
+			return nil, pkg.InternalDefault()
 		}
 		if existing != nil {
 			return nil, pkg.Conflict("该用户名已被占用")
@@ -76,7 +76,7 @@ func (s *UserService) Register(input *RegisterInput) (*model.UserResponse, error
 	// bcrypt 哈希
 	hash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
 	if err != nil {
-		return nil, pkg.Internal("failed to hash password")
+		return nil, pkg.InternalDefault()
 	}
 	secret := string(hash)
 
@@ -94,7 +94,7 @@ func (s *UserService) Register(input *RegisterInput) (*model.UserResponse, error
 	}
 
 	if err := s.repo.Create(ctx, user, credential); err != nil {
-		return nil, pkg.Internal("failed to create user")
+		return nil, pkg.InternalDefault()
 	}
 
 	return user.ToResponse(), nil
@@ -116,7 +116,7 @@ func (s *UserService) generateUsername(ctx context.Context, email string) (strin
 		}
 		existing, err := s.repo.FindByUsername(ctx, candidate)
 		if err != nil {
-			return "", pkg.Internal("database error")
+			return "", pkg.InternalDefault()
 		}
 		if existing == nil {
 			return candidate, nil
@@ -146,7 +146,7 @@ func (s *UserService) Login(input *LoginInput) (string, *model.UserResponse, err
 
 	cred, err := s.repo.FindCredential(ctx, "password", input.Email)
 	if err != nil {
-		return "", nil, pkg.Internal("database error")
+		return "", nil, pkg.InternalDefault()
 	}
 	if cred == nil {
 		return "", nil, pkg.Unauthorized("邮箱或密码不正确")
@@ -162,16 +162,16 @@ func (s *UserService) Login(input *LoginInput) (string, *model.UserResponse, err
 
 	user, err := s.repo.FindByID(ctx, cred.UserID)
 	if err != nil || user == nil {
-		return "", nil, pkg.Internal("user not found")
+		return "", nil, pkg.InternalDefault()
 	}
 
 	if user.Status != "active" {
-		return "", nil, pkg.Forbidden("account is not active")
+		return "", nil, pkg.Forbidden("账号已被停用")
 	}
 
 	token, err := pkg.GenerateToken(user.ID, user.Role, s.jwtSecret)
 	if err != nil {
-		return "", nil, pkg.Internal("failed to generate token")
+		return "", nil, pkg.InternalDefault()
 	}
 
 	return token, user.ToResponse(), nil
@@ -182,10 +182,10 @@ func (s *UserService) GetProfile(userID uuid.UUID) (*model.UserResponse, error) 
 
 	user, err := s.repo.FindByID(ctx, userID)
 	if err != nil {
-		return nil, pkg.Internal("database error")
+		return nil, pkg.InternalDefault()
 	}
 	if user == nil {
-		return nil, pkg.NotFound("user not found")
+		return nil, pkg.NotFound("用户不存在")
 	}
 
 	return user.ToResponse(), nil
@@ -196,10 +196,10 @@ func (s *UserService) UpdateProfile(userID uuid.UUID, input *UpdateProfileInput)
 
 	user, err := s.repo.FindByID(ctx, userID)
 	if err != nil {
-		return nil, pkg.Internal("database error")
+		return nil, pkg.InternalDefault()
 	}
 	if user == nil {
-		return nil, pkg.NotFound("user not found")
+		return nil, pkg.NotFound("用户不存在")
 	}
 
 	if input.Nickname != "" {
@@ -213,7 +213,7 @@ func (s *UserService) UpdateProfile(userID uuid.UUID, input *UpdateProfileInput)
 	}
 
 	if err := s.repo.Update(ctx, user); err != nil {
-		return nil, pkg.Internal("failed to update profile")
+		return nil, pkg.InternalDefault()
 	}
 
 	return user.ToResponse(), nil

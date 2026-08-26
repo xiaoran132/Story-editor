@@ -14,21 +14,21 @@ func AuthRequired(secret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
-			pkg.Error(c, pkg.Unauthorized("missing authorization header"))
+			pkg.Error(c, pkg.Unauthorized("未登录或登录已过期"))
 			c.Abort()
 			return
 		}
 
 		parts := strings.SplitN(authHeader, " ", 2)
 		if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
-			pkg.Error(c, pkg.Unauthorized("invalid authorization format"))
+			pkg.Error(c, pkg.Unauthorized("登录凭据格式无效，请重新登录"))
 			c.Abort()
 			return
 		}
 
 		claims, err := pkg.ParseToken(parts[1], secret)
 		if err != nil {
-			pkg.Error(c, pkg.Unauthorized("invalid or expired token"))
+			pkg.Error(c, pkg.Unauthorized("登录已过期，请重新登录"))
 			c.Abort()
 			return
 		}
@@ -63,7 +63,7 @@ func AuthOptional(secret string) gin.HandlerFunc {
 func RequirePermission(perm authz.Permission) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if !authz.Can(GetRole(c), perm) {
-			pkg.Error(c, pkg.Forbidden("permission denied"))
+			pkg.Error(c, pkg.Forbidden("无权执行此操作"))
 			c.Abort()
 			return
 		}

@@ -113,17 +113,6 @@
   box-shadow: var(--ring);
 }
 
-/* 如实说明。是一条细线上的小字，**不是一个方盒子**——它是脚注，
-   不该在版面上占一个块的分量。 */
-.foot {
-  margin-top: 34px;
-  padding-top: 14px;
-  border-top: 1px solid var(--border);
-  font-size: 11px;
-  line-height: 1.8;
-  color: oklch(0.58 0.015 265);
-}
-
 /* ================= 场景 ================= */
 .scenecol {
   flex: 0 0 46%;

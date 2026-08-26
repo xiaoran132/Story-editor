@@ -126,7 +126,7 @@ export default function StoryLLMConfigPanel({
           {error && <p className={`${styles.note} ${styles.err}`} role="alert">出错：{error}</p>}
 
           {!loggedIn ? (
-            <p className={styles.note}>登录即赠 1 元体验额度，可直接用平台模型开玩；也可以配置自己的连接。</p>
+            <p className={styles.note}>登录即赠 1 元体验额度，可直接使用平台模型开始游玩；也可以配置自有连接。</p>
           ) : loading || !cfg ? (
             <p className={`${styles.note} ${styles.pulse}`}>载入你的连接…</p>
           ) : (
@@ -134,13 +134,13 @@ export default function StoryLLMConfigPanel({
               <p className={styles.note}>
                 平台体验额度剩余 <b>{formatCredit(credit)}</b>
                 {credit > 0
-                  ? "。不选连接即用平台额度，按实际用量扣减；用尽后需配置自己的连接。"
-                  : "。已用尽——请为「续写」选择一条自己的连接后继续。"}
+                  ? "。未选择连接时使用平台额度，按实际用量扣减；用尽后需配置自有连接。"
+                  : "。额度已用尽，请为「续写」选择一条自有连接后继续。"}
               </p>
 
               {conns.length === 0 && (
                 <p className={styles.note}>
-                  你还没有自己的 LLM 连接。到「个人主页 → AI 连接」添加一条，额度用尽后就不会被打断。
+                  你还没有自有 LLM 连接。可在「个人主页 → AI 连接」添加一条，避免额度用尽后中断。
                 </p>
               )}
 
@@ -161,7 +161,7 @@ export default function StoryLLMConfigPanel({
                       {st.label}
                       {/* 只有平台档也兜不住时才是「必选」——平台 review 配好了就不必买自己的连接 */}
                       {st.key === "review" && !plat.ready && (
-                        <span className={styles.req}>（已开启审校，需选一条连接）</span>
+                        <span className={styles.req}>（已开启审校，需选择一条连接）</span>
                       )}
                     </label>
                     <div className={styles.row}>
@@ -215,14 +215,14 @@ export default function StoryLLMConfigPanel({
                   <Switch checked={reviewOn} onChange={setReviewOn} label="质量审校" />
                 </div>
                 <p className={styles.note}>
-                  开启后每段正文再过一遍低温校验，盯的是「属性变化与正文不符」「前情提要漏记新人物」
-                  这类会毁掉长剧情的问题（真实拒绝率约 18%）。代价是 token 大约翻倍，且需要为它单独选一条连接。
+                  开启后每段正文将额外校验一次，重点检查「属性变化与正文不符」「前情提要遗漏新人物」
+                  等影响长篇连贯性的问题（实测约 18% 的草稿会被退回重写）。代价是 token 消耗约翻倍，且需为其单独选择一条连接。
                 </p>
               </div>
 
               {reviewIncomplete && (
                 <p className={`${styles.note} ${styles.err}`} role="alert">
-                  开启了审校，但平台档在该环节不可用。请为它选一条自己的连接，或关掉这个开关。
+                  已开启审校，但平台模型在该环节不可用。请为其选择一条自有连接，或关闭该开关。
                 </p>
               )}
 

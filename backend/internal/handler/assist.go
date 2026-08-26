@@ -43,7 +43,7 @@ func (h *AssistHandler) resolveWorld(c *gin.Context) (*service.AgentLLMConfig, e
 
 func noModelErr() *pkg.AppError {
 	return pkg.NewBusinessErrorWithMessage(pkg.CodeNoLLMConfig,
-		"没有可用的模型：平台赠送额度已用尽或未开放。请在「个人主页 → AI 连接」添加一条连接，并在上方「使用连接」里选中它。")
+		"没有可用的模型：平台赠送额度已用尽或未开放。请在「个人主页 → AI 连接」添加一条连接，并在上方「使用连接」中选中它。")
 }
 
 func aiErr() *pkg.AppError {
@@ -67,7 +67,7 @@ func (h *AssistHandler) World(c *gin.Context) {
 		return
 	}
 	if req.Idea == "" {
-		pkg.Error(c, pkg.BadRequest("idea 不能为空"))
+		pkg.Error(c, pkg.BadRequest("请填写灵感描述"))
 		return
 	}
 	cfg, cfgErr := h.resolveWorld(c)
@@ -117,7 +117,7 @@ func (h *AssistHandler) Polish(c *gin.Context) {
 		return
 	}
 	if req.Text == "" {
-		pkg.Error(c, pkg.BadRequest("text 不能为空"))
+		pkg.Error(c, pkg.BadRequest("请填写待润色正文"))
 		return
 	}
 	cfg, cfgErr := h.resolveWorld(c)
@@ -143,7 +143,7 @@ func (h *AssistHandler) Branches(c *gin.Context) {
 		return
 	}
 	if req.Content == "" {
-		pkg.Error(c, pkg.BadRequest("content 不能为空"))
+		pkg.Error(c, pkg.BadRequest("请填写正文内容"))
 		return
 	}
 	cfg, cfgErr := h.resolveWorld(c)

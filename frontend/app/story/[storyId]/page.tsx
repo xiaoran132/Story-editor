@@ -60,7 +60,7 @@ export default function StoryDetailPage() {
           <WorkDetail story={story} variant="page" />
         ) : (
           <div className={styles.state}>
-            <p className={styles.stateTitle}>这个世界打不开</p>
+            <p className={styles.stateTitle}>暂时无法打开这个世界</p>
             <p className={styles.stateDesc}>
               {error || "它可能已经被作者收回，或者还是一份草稿。"}
             </p>

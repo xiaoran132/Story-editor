@@ -40,7 +40,7 @@ func (h *StoryHandler) Create(c *gin.Context) {
 func (h *StoryHandler) Get(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		pkg.Error(c, pkg.BadRequest("invalid story id"))
+		pkg.Error(c, pkg.BadRequest("无效的作品标识"))
 		return
 	}
 
@@ -51,7 +51,7 @@ func (h *StoryHandler) Get(c *gin.Context) {
 		return
 	}
 	if story == nil {
-		pkg.Error(c, pkg.NotFound("story not found"))
+		pkg.Error(c, pkg.NotFound("作品不存在"))
 		return
 	}
 
@@ -61,7 +61,7 @@ func (h *StoryHandler) Get(c *gin.Context) {
 func (h *StoryHandler) Update(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		pkg.Error(c, pkg.BadRequest("invalid story id"))
+		pkg.Error(c, pkg.BadRequest("无效的作品标识"))
 		return
 	}
 
@@ -78,7 +78,7 @@ func (h *StoryHandler) Update(c *gin.Context) {
 		return
 	}
 	if story == nil {
-		pkg.Error(c, pkg.NotFound("story not found"))
+		pkg.Error(c, pkg.NotFound("作品不存在"))
 		return
 	}
 
@@ -89,7 +89,7 @@ func (h *StoryHandler) Update(c *gin.Context) {
 func (h *StoryHandler) SetStatus(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		pkg.Error(c, pkg.BadRequest("invalid story id"))
+		pkg.Error(c, pkg.BadRequest("无效的作品标识"))
 		return
 	}
 
@@ -108,7 +108,7 @@ func (h *StoryHandler) SetStatus(c *gin.Context) {
 		return
 	}
 	if story == nil {
-		pkg.Error(c, pkg.NotFound("story not found"))
+		pkg.Error(c, pkg.NotFound("作品不存在"))
 		return
 	}
 
@@ -129,7 +129,7 @@ func (h *StoryHandler) ListMine(c *gin.Context) {
 func (h *StoryHandler) Delete(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		pkg.Error(c, pkg.BadRequest("invalid story id"))
+		pkg.Error(c, pkg.BadRequest("无效的作品标识"))
 		return
 	}
 
@@ -156,7 +156,7 @@ func (h *StoryHandler) Unlike(c *gin.Context) {
 func (h *StoryHandler) setLike(c *gin.Context, on bool) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		pkg.Error(c, pkg.BadRequest("invalid story id"))
+		pkg.Error(c, pkg.BadRequest("无效的作品标识"))
 		return
 	}
 

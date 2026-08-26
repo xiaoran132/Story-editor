@@ -18,8 +18,8 @@ export default function AttrTable() {
       <span className={styles.label}>
         属性
         <span className={styles.hint}>
-          number 数值累加 · scalar 覆盖 · set 集合；上限只对 number 有效，填了玩家端才画进度条；
-          hidden 仅 AI 参考、reveal 发现前不显示
+          number 数值累加 · scalar 覆盖 · set 集合；上限仅对 number 有效，填写后玩家端会显示进度条；
+          hidden 仅供 AI 参考、reveal 在揭示前不显示
         </span>
       </span>
       <div className={`${styles.list} ${styles.attrScroll}`}>
@@ -87,7 +87,7 @@ function AttrRow({
         aria-label={`${at} · 上限`}
         placeholder={a.type === "number" ? "如 100" : "—"}
         disabled={a.type !== "number"}
-        title={a.type === "number" ? "可选：填了玩家端才画进度条" : "仅 number 属性可设上限"}
+        title={a.type === "number" ? "可选：填写后玩家端会显示进度条" : "仅 number 属性可设上限"}
         value={a.max ?? ""}
         onChange={(e) => {
           const n = Number(e.target.value);

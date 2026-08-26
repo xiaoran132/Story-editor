@@ -54,16 +54,12 @@ export default function NotFound() {
               回到星海
             </Link>
             <Link className={styles.ghost} href="/works">
-              去作品馆找找
+              前往作品馆
             </Link>
             <Link className={styles.ghost} href="/community">
-              去社区看看
+              前往社区
             </Link>
           </div>
-
-          <p className={styles.foot}>
-            这一页由 Next.js 的 not-found 接管，站内任何取不到的地址都会落到这里。
-          </p>
         </div>
 
         <div className={styles.scenecol}>

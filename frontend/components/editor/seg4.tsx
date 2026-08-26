@@ -17,7 +17,7 @@ export default function Seg4({ go, names }: SegProps) {
     <>
           <>
             <p className={styles.desc}>
-              开场正文会在进入游玩时逐字流出。写一个把人拽进去的钩子，别做背景说明。写够 40 字，剪影就会落位。
+              开场正文会在进入游玩时逐字流出。建议以悬念开篇，而非交代背景。满 40 字后剪影落位。
             </p>
             <div className={styles.row}>
               <button
@@ -49,13 +49,13 @@ export default function Seg4({ go, names }: SegProps) {
                 disabled={anyBusy || !s.openingContent.trim()}
                 onClick={() => s.polishOpening()}
               >
-                {aiPolish ? "精品润色中…" : "精品润色"}
+                {aiPolish ? "深度润色中…" : "深度润色"}
               </button>
             </div>
 
             {s.polishDraft !== null && (
               <div className={styles.field}>
-                <span className={styles.label}>精品润色预览</span>
+                <span className={styles.label}>深度润色预览</span>
                 {s.polishFeedback.length > 0 && (
                   <div className={styles.preview}>
                     {s.polishFeedback.slice(0, 2).map((issue, i) => (
@@ -66,7 +66,7 @@ export default function Seg4({ go, names }: SegProps) {
                   </div>
                 )}
                 {!s.polishApplied ? (
-                  <p className={styles.hint}>未发现高置信改进，已保留原文。</p>
+                  <p className={styles.hint}>未发现明确的改进点，已保留原文。</p>
                 ) : (
                   <>
                     <TextArea label="改后正文" value={s.polishDraft} rows={8} readOnly />
@@ -96,7 +96,7 @@ export default function Seg4({ go, names }: SegProps) {
 
             {s.openingOptions.length > 0 && (
               <div className={styles.preview}>
-                <p className={styles.hint}>起始选项预览（不入库，游玩时由 AI 生成）</p>
+                <p className={styles.hint}>起始选项预览（不保存，游玩时由 AI 生成）</p>
                 {s.openingOptions.map((o, i) => (
                   <p className={styles.previewItem} key={i}>
                     {o.text}

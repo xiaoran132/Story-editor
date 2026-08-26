@@ -19,7 +19,7 @@ export default function Seg1({ go, names }: SegProps) {
     <>
           <>
             <p className={styles.desc}>
-              先写下最模糊的那点冲动——一个场景、一句台词、一种氛围。AI 会把它扩写成完整世界观，你再回来改。
+              写下最初的构想——一个场景、一句台词、一种氛围。AI 会据此扩写为完整世界观，之后可继续修改。
             </p>
             <TextArea
               label="灵感"
@@ -49,7 +49,7 @@ export default function Seg1({ go, names }: SegProps) {
               </button>
             </div>
             <p className={styles.desc}>
-              这一段的完成判定是<strong>钩子 ≥8 字且已选题材</strong>——它点亮地平线。钩子写在下一段的「简介」。
+              本段完成条件是<strong>钩子 ≥8 字且已选题材</strong>，达成后点亮地平线。钩子写在下一段的「一句话钩子」。
             </p>
             <NavBtns index={0} names={names} onGo={go} />
           </>

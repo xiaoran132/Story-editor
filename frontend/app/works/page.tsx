@@ -127,7 +127,7 @@ export default function WorksPage() {
           都能抵达一个世界。
         </h1>
         <p className={styles.lede}>
-          这里是全部已发布的作品。挑一片颜色走进去，或者用左边的条件把范围收窄。
+          这里是全部已发布的作品。挑一片颜色走进去，或用筛选条件缩小范围。
         </p>
 
         <div className={styles.tools}>
@@ -212,7 +212,7 @@ export default function WorksPage() {
                   service/access.go 的 sanitizeWorldConfig 对非作者是整条 delete(attrs, k)，
                   他根本看不到这个键存在——能筛出来就等于泄露了它的存在。 */}
               <p className={styles.note}>
-                渐显属性 = 剧情推进到某处才会显现的状态。隐藏属性对读者不可见，因此也无法筛。
+                渐显属性指剧情推进到某处才会显现的状态。隐藏属性对读者不可见，因此无法筛选。
               </p>
             </div>
           </aside>
@@ -223,18 +223,18 @@ export default function WorksPage() {
                 ? "正在翻检档案…"
                 : status === "error"
                   ? ""
-                  : `${filtered.length} 部作品${genre ? ` · ${genre}` : ""}${q.trim() ? ` · 搜「${q.trim()}」` : ""}`}
+                  : `${filtered.length} 部作品${genre ? ` · ${genre}` : ""}${q.trim() ? ` · 搜索「${q.trim()}」` : ""}`}
               {truncated && status === "ok" && (
                 <span className={styles.note}>
-                  档案里共有 {total} 部，这一页只取回了前 {stories.length} 部——超出的还没接上浏览。
+                  档案里共有 {total} 部，这一页只取回了前 {stories.length} 部，其余暂不支持浏览。
                 </span>
               )}
             </p>
 
             {status === "error" ? (
               <div className={styles.state}>
-                <p className={styles.stateTitle}>档案暂时打不开</p>
-                <p>没能取到作品列表，检查一下后端是否在跑。</p>
+                <p className={styles.stateTitle}>暂时无法载入作品列表</p>
+                <p>请稍后重试。</p>
                 <button className={styles.clearBtn} type="button" onClick={load}>
                   重新尝试
                 </button>
@@ -244,12 +244,12 @@ export default function WorksPage() {
             ) : shown.length === 0 ? (
               <div className={styles.state}>
                 <p className={styles.stateTitle}>
-                  {stories.length === 0 ? "档案还是空的" : "没有符合条件的作品"}
+                  {stories.length === 0 ? "档案暂时是空的" : "没有符合条件的作品"}
                 </p>
                 <p>
                   {stories.length === 0
                     ? "作品发布后会出现在这里。"
-                    : "换个题材，或清空搜索词试试。"}
+                    : "可更换题材，或清空搜索词。"}
                 </p>
                 {filtering && (
                   <button className={styles.clearBtn} type="button" onClick={clear}>

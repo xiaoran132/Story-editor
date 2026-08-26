@@ -21,13 +21,13 @@ const (
 // 与 ownerOrNotFound 同一套语义。viewer 为 uuid.Nil（未登录）自然落入非作者分支。
 func canViewStory(s *model.Story, viewer uuid.UUID) error {
 	if s == nil {
-		return pkg.NotFound("story not found")
+		return pkg.NotFound("作品不存在")
 	}
 	if s.CreatorID == viewer && viewer != uuid.Nil {
 		return nil
 	}
 	if s.Status != statusPublished {
-		return pkg.NotFound("story not found")
+		return pkg.NotFound("作品不存在")
 	}
 	return nil
 }
@@ -43,7 +43,7 @@ func canPlay(s *model.Story, player uuid.UUID) error {
 // 用 403 而不是 canViewStory 的 404：草稿返 404 是为了不泄露存在性，但走到这里的玩家
 // 早就玩过这部作品，藏它没有意义——给一句能看懂的话比一个 404 有用得多。
 func readOnlyErr() error {
-	return pkg.Forbidden("作者已取消发布这部作品，这一局可以读完，但不能再推进")
+	return pkg.Forbidden("作者已取消发布这部作品，当前进度可继续阅读，但无法再推进")
 }
 
 // sanitizeWorldConfig 把 world_config 脱敏成「非作者可见」的版本：

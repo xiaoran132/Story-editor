@@ -46,7 +46,7 @@ func (h *LLMHandler) CreateConnection(c *gin.Context) {
 func (h *LLMHandler) UpdateConnection(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		pkg.Error(c, pkg.BadRequest("invalid connection id"))
+		pkg.Error(c, pkg.BadRequest("无效的连接标识"))
 		return
 	}
 	var in service.ConnectionInput
@@ -65,7 +65,7 @@ func (h *LLMHandler) UpdateConnection(c *gin.Context) {
 func (h *LLMHandler) DeleteConnection(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		pkg.Error(c, pkg.BadRequest("invalid connection id"))
+		pkg.Error(c, pkg.BadRequest("无效的连接标识"))
 		return
 	}
 	if err := h.svc.DeleteConnection(middleware.GetUserID(c), id); err != nil {
@@ -112,7 +112,7 @@ func (h *LLMHandler) ProbeModels(c *gin.Context) {
 func (h *LLMHandler) ListModels(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		pkg.Error(c, pkg.BadRequest("invalid connection id"))
+		pkg.Error(c, pkg.BadRequest("无效的连接标识"))
 		return
 	}
 	models, err := h.svc.ListModels(middleware.GetUserID(c), id)
@@ -153,7 +153,7 @@ func (h *LLMHandler) SetAssistConfig(c *gin.Context) {
 func (h *LLMHandler) GetStoryConfig(c *gin.Context) {
 	storyID, err := uuid.Parse(c.Param("storyId"))
 	if err != nil {
-		pkg.Error(c, pkg.BadRequest("invalid story id"))
+		pkg.Error(c, pkg.BadRequest("无效的作品标识"))
 		return
 	}
 	b, err := h.svc.GetStoryConfig(middleware.GetUserID(c), storyID)
@@ -167,7 +167,7 @@ func (h *LLMHandler) GetStoryConfig(c *gin.Context) {
 func (h *LLMHandler) SetStoryConfig(c *gin.Context) {
 	storyID, err := uuid.Parse(c.Param("storyId"))
 	if err != nil {
-		pkg.Error(c, pkg.BadRequest("invalid story id"))
+		pkg.Error(c, pkg.BadRequest("无效的作品标识"))
 		return
 	}
 	var in service.StoryLLMConfigInput

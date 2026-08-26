@@ -30,7 +30,7 @@ export default function Seg2({ go, names }: SegProps) {
     <>
           <>
             <p className={styles.desc}>
-              这段会作为系统设定注入每一次生成，写清楚世界怎么运转、玩家是谁、什么不可违背。
+              这段会作为系统设定用于每一次生成，请写清世界如何运转、玩家是谁、哪些不可违背。
             </p>
             <TextField label="标题" value={s.title} onChange={(v) => s.setField("title", v)} />
             <TextArea
@@ -53,7 +53,7 @@ export default function Seg2({ go, names }: SegProps) {
 
             <div className={styles.field}>
               <span className={styles.label}>
-                题材 <span className={styles.hint}>可多选；第一个决定作品在星海与作品馆里归到哪类</span>
+                题材 <span className={styles.hint}>可多选；第一个决定作品在星海与作品馆中的分类</span>
               </span>
               <div className={styles.chips}>
                 {GENRES.map((g) => (
@@ -70,7 +70,7 @@ export default function Seg2({ go, names }: SegProps) {
               </div>
               {extraTags.length > 0 && (
                 <p className={styles.hint}>
-                  另有自定义标签：{extraTags.join("、")}（AI 生成或手填，原样保留）
+                  另有自定义标签：{extraTags.join("、")}（AI 生成或手动输入，原样保留）
                 </p>
               )}
             </div>

@@ -172,7 +172,7 @@ export default function MyWorksPage() {
         <h1 className={styles.h1}>你写过的每一片天空。</h1>
         <p className={styles.lede}>
           {works.length > 0
-            ? `已发布 ${nPub} · 草稿 ${nDraft}。缩略图只画写完的那几层——缺哪层，就是那一段还没写。`
+            ? `已发布 ${nPub} · 草稿 ${nDraft}。缩略图只绘制已完成的层级，缺失的层级即为尚未完成的段落。`
             : "写完的世界会出现在这里，也会出现在星海里。"}
         </p>
 
@@ -201,8 +201,8 @@ export default function MyWorksPage() {
 
         {status === "error" ? (
           <div className={styles.state}>
-            <p className={styles.stateTitle}>作品列表打不开</p>
-            <p>没能取到你的作品。</p>
+            <p className={styles.stateTitle}>暂时无法载入作品列表</p>
+            <p>请稍后重试。</p>
             <button className={styles.btn} type="button" onClick={load}>
               重新尝试
             </button>
@@ -212,17 +212,17 @@ export default function MyWorksPage() {
         ) : !user ? (
           <div className={styles.state}>
             <p className={styles.stateTitle}>先登录</p>
-            <p>作品都挂在账号上。</p>
+            <p>作品随账号保存。</p>
             <Link className={styles.btn} href="/login?next=/mine/works">
-              去登录
+              前往登录
             </Link>
           </div>
         ) : shown.length === 0 ? (
           <div className={styles.state}>
             <p className={styles.stateTitle}>
-              {works.length === 0 ? "还没有作品" : "这一类下面是空的"}
+              {works.length === 0 ? "还没有作品" : "该分类下暂无作品"}
             </p>
-            <p>{works.length === 0 ? "写一个世界，它会从这里长出来。" : "换个筛选看看。"}</p>
+            <p>{works.length === 0 ? "写一个世界，它会从这里长出来。" : "可更换筛选条件。"}</p>
             {works.length === 0 && (
               <Link className={styles.btn} href="/create">
                 写一个世界
@@ -271,9 +271,9 @@ export default function MyWorksPage() {
                     </p>
                     <p className={styles.gaps}>
                       {published ? (
-                        <>已经在星海里了，改完记得再看一眼发布体检。</>
+                        <>已在星海中；修改后请重新检查发布项。</>
                       ) : missing.length === 0 ? (
-                        <>六层都齐了，去发布体检看看。</>
+                        <>六层已齐，可前往发布检查。</>
                       ) : (
                         <>
                           还缺 <b>{missing.map((g) => g.label).join(" · ")}</b>
@@ -283,7 +283,7 @@ export default function MyWorksPage() {
 
                     <div className={styles.acts}>
                       <Link className={styles.btn} href={`/edit/${s.id}`}>
-                        {published ? "编辑" : "接着写"}
+                        {published ? "编辑" : "继续编辑"}
                       </Link>
                       <button
                         className={styles.btn}

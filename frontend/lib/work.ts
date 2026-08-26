@@ -51,7 +51,7 @@ export function storyTags(story: Story): string[] {
  * 角标是卡片版式的一部分，渲染成空白会让那张卡看起来是坏的。
  */
 export function workKicker(story: Story): string {
-  return storyTags(story)[0] || "未标题材";
+  return storyTags(story)[0] || "未分类";
 }
 
 /**

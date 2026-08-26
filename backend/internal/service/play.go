@@ -62,7 +62,7 @@ func (s *PlayService) finish(sessionID uuid.UUID, fl *openingFlight) {
 	// 判断成败，漏填一处它就会把失败当成功，转身去读 fl.root.Content（nil）。
 	// 漏填只是少写一行，所以这条不变量落在唯一的收尾处兜底，而不是指望每个分支都记得。
 	if fl.err == nil && (fl.session == nil || fl.root == nil) {
-		fl.err = pkg.Internal("opening finished without result")
+		fl.err = pkg.InternalDefault()
 	}
 	s.flights.Delete(sessionID)
 	close(fl.done)
@@ -117,7 +117,7 @@ func (s *PlayService) resolvePlay(ctx context.Context, playerID, storyID uuid.UU
 	}
 	if review == nil {
 		return nil, nil, pkg.NewBusinessErrorWithMessage(pkg.CodeNoLLMConfig,
-			"你为本作品开启了质量审校，但该环节现在解析不出模型：平台额度已用尽或未开放，也没绑自己的连接。请在作品详情页的「生成设置」里补上，或关闭审校。")
+			"本作品已开启质量审校，但该环节当前无法解析出可用模型：平台额度已用尽或未开放，且未绑定自有连接。请在作品详情页的「生成设置」中补充配置，或关闭审校。")
 	}
 	return write, review, nil
 }
@@ -133,7 +133,7 @@ const aiUnavailableMsg = "AI 服务暂时不可用，请稍后重试"
 // noLLMConfigErr 是"没有可用模型"的统一文案。放一处，免得三个调用点各写一句。
 func noLLMConfigErr() error {
 	return pkg.NewBusinessErrorWithMessage(pkg.CodeNoLLMConfig,
-		"没有可用的模型：平台赠送额度已用尽或未开放。请在「个人主页 → AI 连接」添加你自己的模型连接，再回来游玩。")
+		"没有可用的模型：平台赠送额度已用尽或未开放。请在「个人主页 → AI 连接」添加自有模型连接后即可继续游玩。")
 }
 
 // SessionResult 是游玩接口返回的组合 DTO：会话 + 当前节点（+ 可选整局节点列表）。
@@ -215,7 +215,7 @@ func (s *PlayService) StartOpeningStream(
 		return nil, err
 	}
 	if session == nil {
-		return nil, pkg.NotFound("session not found")
+		return nil, pkg.NotFound("存档不存在")
 	}
 	if err := checkSessionOwner(session, playerID); err != nil {
 		return nil, err
@@ -276,7 +276,7 @@ func (s *PlayService) runOpening(
 		return nil, err
 	}
 	if session == nil {
-		fl.err = pkg.NotFound("session not found")
+		fl.err = pkg.NotFound("存档不存在")
 		return nil, fl.err
 	}
 	if session.CurrentNodeID != nil {
@@ -393,12 +393,12 @@ func (s *PlayService) adoptExistingOpening(
 		}
 	}
 	if root == nil {
-		fl.err = pkg.Internal("opening claimed but root node missing")
+		fl.err = pkg.InternalDefault()
 		return nil, fl.err
 	}
 	story, err := s.stories.FindByID(ctx, session.StoryID)
 	if err != nil || story == nil {
-		fl.err = pkg.Internal("story not found for existing opening")
+		fl.err = pkg.InternalDefault()
 		return nil, fl.err
 	}
 	world := parseWorld(story.WorldConfig)
@@ -417,16 +417,16 @@ func (s *PlayService) loadChoiceContext(ctx context.Context, sessionID, playerID
 		return nil, nil, nil, nil, err
 	}
 	if session == nil {
-		return nil, nil, nil, nil, pkg.NotFound("session not found")
+		return nil, nil, nil, nil, pkg.NotFound("存档不存在")
 	}
 	if err := checkSessionOwner(session, playerID); err != nil {
 		return nil, nil, nil, nil, err
 	}
 	if session.Status != "active" {
-		return nil, nil, nil, nil, pkg.BadRequest("session already ended")
+		return nil, nil, nil, nil, pkg.BadRequest("该存档已结束")
 	}
 	if session.CurrentNodeID == nil {
-		return nil, nil, nil, nil, pkg.BadRequest("session has no current node")
+		return nil, nil, nil, nil, pkg.BadRequest("该存档没有当前进度")
 	}
 
 	story, err := s.stories.FindByID(ctx, session.StoryID)
@@ -672,7 +672,7 @@ func (s *PlayService) Backtrack(ctx context.Context, playerID, sessionID, nodeID
 		return nil, err
 	}
 	if session == nil {
-		return nil, pkg.NotFound("session not found")
+		return nil, pkg.NotFound("存档不存在")
 	}
 	if err := checkSessionOwner(session, playerID); err != nil {
 		return nil, err
@@ -683,7 +683,7 @@ func (s *PlayService) Backtrack(ctx context.Context, playerID, sessionID, nodeID
 		return nil, err
 	}
 	if node == nil || node.SessionID != session.ID {
-		return nil, pkg.NotFound("node not found in this session")
+		return nil, pkg.NotFound("该存档中不存在此节点")
 	}
 
 	// 闸要在写库**之前**：回溯不生成内容，但它改写 current_node_id / current_state /
@@ -719,7 +719,7 @@ func (s *PlayService) storyGate(ctx context.Context, session *model.PlaySession)
 		return attrView{}, false, err
 	}
 	if story == nil {
-		return attrView{}, false, pkg.NotFound("story not found")
+		return attrView{}, false, pkg.NotFound("作品不存在")
 	}
 	isAuthor := story.CreatorID == session.PlayerID
 	return newAttrView(parseWorld(story.WorldConfig), isAuthor), canPlay(story, session.PlayerID) == nil, nil
@@ -734,7 +734,7 @@ func (s *PlayService) DeleteSession(ctx context.Context, playerID, sessionID uui
 		return err
 	}
 	if session == nil {
-		return pkg.NotFound("session not found")
+		return pkg.NotFound("存档不存在")
 	}
 	if err := checkSessionOwner(session, playerID); err != nil {
 		return err
@@ -757,7 +757,7 @@ func (s *PlayService) GetSession(ctx context.Context, playerID, sessionID uuid.U
 		return nil, err
 	}
 	if session == nil {
-		return nil, pkg.NotFound("session not found")
+		return nil, pkg.NotFound("存档不存在")
 	}
 	if err := checkSessionOwner(session, playerID); err != nil {
 		return nil, err

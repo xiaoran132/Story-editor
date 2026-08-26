@@ -13,7 +13,7 @@ export default function Seg6({ go, names }: SegProps) {
     <>
           <>
             <p className={styles.desc}>
-              发布会做严格校验，全部通过后「发布」才可用；未通过的项点「去补」直接跳到出问题的那一段。
+              发布前会做严格校验，全部通过后「发布」才可用；未通过的项可点击「前往修改」跳转到对应段落。
             </p>
             <div className={styles.checks}>
               {checks.map((c) => (
@@ -35,14 +35,14 @@ export default function Seg6({ go, names }: SegProps) {
                       type="button"
                       onClick={() => go(c.step)}
                     >
-                      去补 →
+                      前往修改 →
                     </button>
                   )}
                 </div>
               ))}
             </div>
             <DraftSlot>
-              发布成功后作品会出现在星海里。这里不跳转——你可能还要接着改。
+              发布成功后作品会出现在星海里。发布后仍停留在本页，可继续修改。
             </DraftSlot>
             <NavBtns index={5} names={names} onGo={go} />
           </>
