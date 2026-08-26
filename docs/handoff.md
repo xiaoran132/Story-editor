@@ -167,7 +167,7 @@ handler → service → repository
   → done 帧携带持久化后的 SessionResult
 ```
 
-流式与审校共存（Writer / Structurer 分责）：Agent 先由 Writer 流式输出纯正文，结束后由复用同一 `llm_write` 配置的 Structurer 生成 options、state_delta、summary 等元数据；再规整并执行可选 review。拒绝则发 revise，并完整重跑 Writer → Structurer → Reviewer（上限同 `AI_REVIEW_MAX_RETRIES`）。Writer + Structurer 的累计用量回传为 `usage.write`，不新增模型配置或计费阶段。**语义**去重只能在流结束后做（依赖完整 delta/options）；逐字相同的选择则在生成之前就被 `reuseExistingChild` 截住，一个 token 都不烧（两级机制见 `docs/design.md`「分支复用与节点去重」）。前端游玩页 `load()` 见 `current_node=null` 即触发 `startOpening()`，有按 sessionId 的去重守卫防严格模式双触发。
+流式与审校共存（Writer / Structurer 分责）：Agent 先由 Writer 流式输出纯正文，结束后由复用同一 `llm_write` 配置的 Structurer 生成 options、state_delta、summary 等元数据；再规整并执行可选 review。拒绝则发 revise，并完整重跑 Writer → Structurer → Reviewer（上限同 `AI_REVIEW_MAX_RETRIES`）。Writer + Structurer 的累计用量回传为 `usage.write`，不新增模型配置或计费阶段。⚠️ **Structurer 与 Reviewer 必须跑在工作线程里**（`await asyncio.to_thread(...)`）：`_stream_pipeline` 是 async generator，由 `StreamingResponse` 在事件循环里迭代，而它们走的 `chat_json` 是同步阻塞 I/O——直接调用会卡住整个 uvicorn worker，一个玩家在结构化，其他玩家的逐字流全部停摆（也会让 §9.1 的 `elapsed_ms`/`ttfb_ms` 混进别人的排队时间）。并发上限由 loop 默认 executor 决定，是 `min(32, cpu+4)`，不是 anyio 的 40。**语义**去重只能在流结束后做（依赖完整 delta/options）；逐字相同的选择则在生成之前就被 `reuseExistingChild` 截住，一个 token 都不烧（两级机制见 `docs/design.md`「分支复用与节点去重」）。前端游玩页 `load()` 见 `current_node=null` 即触发 `startOpening()`，有按 sessionId 的去重守卫防严格模式双触发。
 
 ### 6.2 Agent 质量闭环
 

@@ -166,6 +166,7 @@ Standalone process at `AGENT_URL` (default `http://localhost:8001`); see `agent/
 | **Reports token usage, never money** | per-stage `usage` in the `done` frame; Go owns pricing, credit and deduction |
 | **Not internet-facing** — no CORS, no auth | Go is the only caller |
 | **`_stream_pipeline` in `app/graph/story_graph.py` is the only generation orchestration** | the old non-streaming langgraph graph is retired; `run_start`/`run_continue` are synchronous adapters draining the same stream. Don't add a second path |
+| **Every synchronous LLM call inside `_stream_pipeline` must be wrapped in `await asyncio.to_thread(...)`** | it is an async generator iterated on the event loop by `StreamingResponse`, and `chat_json` → `llm.invoke()` is blocking network I/O. Call it directly and one player's structure/review stage freezes every other player's token stream in that worker. `chat_stream` is already async and must NOT be wrapped |
 | **Quality review must never fail the player's turn** | a rejected draft is revised by a memory-equipped writer at most `AI_REVIEW_MAX_RETRIES` times, then **delivered anyway** with `degraded=1`. Attributes are auxiliary; a flawed turn beats a blocked one |
 | **`normalize` passes through keys whose type isn't declared** | lets Go's `mergeState` infer — this is what keeps pre-`attributes` works playable |
 

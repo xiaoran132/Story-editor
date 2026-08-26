@@ -1,4 +1,6 @@
 """覆盖玩家流式流水线：纯正文写作、同配置结构化、审校修订与分阶段 usage。"""
+import asyncio
+import time
 import unittest
 from unittest.mock import patch
 
@@ -181,6 +183,45 @@ class StreamPipelineTest(unittest.IsolatedAsyncioTestCase):
         done = [event for event in events if event["type"] == "done"][0]
         self.assertEqual(done["result"]["content"], "首稿。")
         self.assertEqual(done["usage"]["review"]["completion_tokens"], 0)
+
+
+    async def test_llm_stages_do_not_block_event_loop(self) -> None:
+        """结构化与审校必须跑在工作线程里，否则会卡死整个事件循环。
+
+        _stream_pipeline 是 async generator，由 StreamingResponse 在事件循环里迭代；
+        而 Structurer/Reviewer 走的 chat_json 是同步阻塞网络 I/O。直接调用会卡住整个
+        uvicorn worker——一个玩家在结构化，其他玩家的逐字流全部停摆。
+
+        用 REVIEW_CFG 是为了**两处改动都覆盖到**：关掉审校的话 review() 一次都不执行。
+        每条流水线各 2 次 chat_json（结构化 + 审校）：阻塞事件循环时四次串行 ≈4×stall，
+        跑在工作线程里则两条流水线重叠 ≈2×stall。
+        """
+        stall = 0.25
+
+        async def fake_stream(_messages, **_kw):
+            # 不复用 make_stream：它内部共享 counter，并发下哪条流水线拿哪组 chunk
+            # 取决于调度顺序，今天恰好安全不等于明天安全。
+            yield "稿。"
+
+        def slow_json(system, _user, **_kwargs):
+            time.sleep(stall)  # 模拟 llm.invoke 的阻塞网络 I/O
+            if system == STRUCTURE_SYSTEM:
+                return dict(STRUCTURE)
+            return {"passed": True, "issues": []}
+
+        with patch.object(sg, "chat_stream", fake_stream), \
+             patch.object(sg, "chat_json", slow_json):
+            started = time.perf_counter()
+            await asyncio.gather(
+                collect(run_continue_stream(WORLD, [], STATE, "a", None, WRITE_CFG, REVIEW_CFG)),
+                collect(run_continue_stream(WORLD, [], STATE, "b", None, WRITE_CFG, REVIEW_CFG)),
+            )
+            elapsed = time.perf_counter() - started
+
+        self.assertLess(elapsed, stall * 3, "两处 LLM 调用阻塞了事件循环，并发流被串行化")
+        # 下界防假绿：同一条流水线里结构化与审校本来就是串行的，跑不到 2×stall 以下
+        # 说明它们被整个短路了，这条用例就不再证明任何事。
+        self.assertGreater(elapsed, stall * 1.5, "耗时低到不合理，两个阶段可能压根没执行")
 
 
 if __name__ == "__main__":

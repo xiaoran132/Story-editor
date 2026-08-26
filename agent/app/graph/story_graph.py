@@ -396,7 +396,10 @@ async def _stream_pipeline(mode: str, base_state: dict[str, Any]) -> AsyncIterat
                 yield {"type": "delta", "text": chunk}
 
             prose = "".join(prose_chunks).strip()
-            tail = _structure(state, prose, llm_write, usage_write)
+            # ⚠️ 必须丢进工作线程：本函数是 async generator，由 StreamingResponse 在
+            # 事件循环里迭代，而 chat_json 走的 llm.invoke 是同步阻塞网络 I/O。
+            # 直接调用会卡住整个 uvicorn worker——一个玩家在结构化，其他玩家的逐字流全停。
+            tail = await asyncio.to_thread(_structure, state, prose, llm_write, usage_write)
             raw = {**tail, "content": prose}  # Writer 正文是唯一权威，不能被 Structurer 的意外字段覆盖
             result = normalize(
                 {"raw": raw, "known_keys": state["known_keys"], "attr_types": state["attr_types"],
@@ -404,9 +407,12 @@ async def _stream_pipeline(mode: str, base_state: dict[str, Any]) -> AsyncIterat
             )["result"]
 
             if review_on:
-                rv = review({"user_prompt": state["user_prompt"], "raw": raw,
-                             "review_failures": failures, "llm_cfg": llm_review,
-                             "usage_out": usage_review})
+                # 同上：审校也是同步阻塞调用，留在事件循环里会把整个 worker 锁住。
+                rv = await asyncio.to_thread(review, {
+                    "user_prompt": state["user_prompt"], "raw": raw,
+                    "review_failures": failures, "llm_cfg": llm_review,
+                    "usage_out": usage_review,
+                })
             else:
                 rv = {"review_passed": True, "review_failures": failures, "review_feedback": ""}
             failures = rv["review_failures"]
