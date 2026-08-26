@@ -470,3 +470,82 @@ func TestIsRootConflict_RequiresConstraintName(t *testing.T) {
 		}
 	}
 }
+
+// ---------- ④ leader 的失败必须传达给 follower ----------
+
+// fakeStoriesErr 把 leader 钉在 stories.FindByID 上（gate 关闭前一直阻塞），
+// 好让 follower 有机会加入同一个 flight；放行后返回一个存储故障。
+//
+// ⚠️ 不给现有 fakeStories 加字段：newOpeningFixture 用位置字面量 fakeStories{story}
+// 构造它，多一个字段就编译不过。
+type fakeStoriesErr struct {
+	gate chan struct{}
+	err  error
+}
+
+func (f *fakeStoriesErr) FindByID(context.Context, uuid.UUID) (*model.Story, error) {
+	<-f.gate
+	return nil, f.err
+}
+
+// leader 中途失败时，**每一条 return 都必须把原因填进 flight**——follower 只看 fl.err
+// 判断成败。漏填一处，follower 就会把「失败」当成「成功」，转身去读 fl.root.Content，
+// 而那是个 nil。这条用例守的就是这个：follower 必须拿到 error，而不是 panic。
+func TestStartOpeningStream_LeaderErrorReachesFollower(t *testing.T) {
+	playerID, storyID := uuid.New(), uuid.New()
+	session := &model.PlaySession{
+		ID: uuid.New(), StoryID: storyID, PlayerID: playerID,
+		CurrentState: `{}`, RevealedAttrs: `[]`, Status: "active",
+	}
+	sessions := newFakeSessions(session)
+	stories := &fakeStoriesErr{gate: make(chan struct{}), err: errors.New("db is down")}
+	svc := NewPlayService(sessions, &fakeNodes{}, stories, &fakeAI{},
+		fakeResolver{}, &fakeCredit{}, &fakeCounter{})
+
+	// leader 先进去，卡在 stories.FindByID 上。
+	leaderErr := make(chan error, 1)
+	joined := make(chan struct{})
+	go func() {
+		close(joined)
+		_, err := svc.StartOpeningStream(context.Background(), session.ID, playerID, nil, nil)
+		leaderErr <- err
+	}()
+	<-joined
+
+	// follower 随后加入同一个 flight（等 leader 抢到注册表里的位置）。
+	followerErr := make(chan error, 1)
+	followerPanic := make(chan any, 1)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				followerPanic <- r
+			}
+		}()
+		for { // 等 leader 建好 flight，再让 follower 进去当 follower
+			if _, ok := svc.flights.Load(session.ID); ok {
+				break
+			}
+			time.Sleep(time.Millisecond)
+		}
+		_, err := svc.StartOpeningStream(context.Background(), session.ID, playerID, func(string) {}, nil)
+		followerErr <- err
+	}()
+
+	// 两边都就位后放行，让 leader 拿到存储故障。
+	time.Sleep(30 * time.Millisecond)
+	close(stories.gate)
+
+	if err := <-leaderErr; err == nil {
+		t.Fatal("leader 应当上抛存储故障")
+	}
+	select {
+	case r := <-followerPanic:
+		t.Fatalf("follower 不该 panic（leader 的失败没有填进 flight）：%v", r)
+	case err := <-followerErr:
+		if err == nil {
+			t.Fatal("leader 失败了，follower 不该拿到成功")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("follower 既没返回也没 panic —— 它被永久挂起了")
+	}
+}

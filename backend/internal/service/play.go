@@ -58,6 +58,12 @@ type openingFlight struct {
 // Delete 必须在事务提交之后（调用方保证）：提前删掉的话，新来的请求会创建新 flight
 // 当上新 leader，而此刻 current_node_id 还没写，它的幂等检查看不到，于是重新生成一遍。
 func (s *PlayService) finish(sessionID uuid.UUID, fl *openingFlight) {
+	// ⚠️ leader 的每条 return 都必须**要么填结果、要么填 err**——follower 只看 fl.err
+	// 判断成败，漏填一处它就会把失败当成功，转身去读 fl.root.Content（nil）。
+	// 漏填只是少写一行，所以这条不变量落在唯一的收尾处兜底，而不是指望每个分支都记得。
+	if fl.err == nil && (fl.session == nil || fl.root == nil) {
+		fl.err = pkg.Internal("opening finished without result")
+	}
 	s.flights.Delete(sessionID)
 	close(fl.done)
 }
@@ -270,6 +276,7 @@ func (s *PlayService) runOpening(
 
 	story, err := s.stories.FindByID(ctx, session.StoryID)
 	if err != nil {
+		fl.err = err // 存储故障也要填进 flight，否则等着的 follower 拿不到原因
 		return nil, err
 	}
 	if canPlay(story, playerID) != nil {
