@@ -1,7 +1,7 @@
 # Story Editor 开发交接手册
 
 > **用途**：帮助新的开发者或 AI 在一次阅读后理解“现在能做什么、代码在哪里、哪些约束不能破、下一步该做什么”。
-> **状态快照日期**：2026 年 7 月 28 日。若本手册与运行代码冲突，优先以代码和测试为准，并在修正后同步本手册。
+> **状态快照日期**：2026 年 8 月 27 日。若本手册与运行代码冲突，优先以代码和测试为准，并在修正后同步本手册。
 
 ## 1. 一句话定位与当前边界
 
@@ -35,14 +35,15 @@ PRD 写愿景、`infa/sql` 写蓝图、GORM 建真表、API/UI 才是玩家摸�
 | 游玩会话 | §1.1 游玩 | `play.sql` ✅ 同步 | `PlaySession` | 全链路 ✅，需登录 | §6 |
 | BYOK 连接 | —（工程需求） | `llm.sql` ✅ | `LLMConnection` | `/llm/connections` ✅ | §12 |
 | 作品级模型绑定 | — | `llm.sql` ✅ | `UserStoryLLMConfig` | `/llm/story-config/:storyId` ✅ | §12 |
+| 账号级创作辅助配置 | — | `llm.sql` ✅ | `UserAssistLLMConfig` | `/llm/assist-config` ✅ | §12 |
 | 平台模型设置 | — | `llm.sql` ✅ | `PlatformLLMSetting` | `/admin/llm/platform` ✅（需 admin） | §12 |
 | 用量与额度 | §1.4 商业化 | `llm.sql` + `users.credit_micro_cny` ✅ | `LLMUsageLog` + `User.CreditMicroCNY` | 按 token 计费扣减 ✅；**充值未做** | §12 |
 | 上传素材 | §1.1 | **无表**（文件落磁盘） | 无 | `/uploads/image` ✅；孤儿文件无回收（§9.2） | §14 |
-| 点赞 | §1.2 | `community.sql` 仅蓝图；实际表由 `AutoMigrate` 从 `StoryLike` 建 | `StoryLike` | `POST/DELETE /stories/:id/like` ✅（幂等，`AuthRequired`） | §7.1 |
+| 点赞 | §1.2 | `community.sql` 仅蓝图（复合主键 `(user_id, story_id)`、无 id 列）；实际表由 `AutoMigrate` 从 `StoryLike` 建（独立 `id` 主键 + `uniq_story_user_like` 唯一索引，结构不同） | `StoryLike` | `POST/DELETE /stories/:id/like` ✅（幂等，`AuthRequired`） | §7.1 |
 | 社区（评论/收藏/关注） | §1.2 | `community.sql` **仅蓝图** | **无** | **路由未注册**，访问 404 | §9.2 |
 | 付费 / 打赏 / 成就 | §1.4 | 仅 `stories.price_config` 字段 | 无 | 无 | `prd.md` §1.4 |
 
-**运行中的模型就是这 10 个**：`User`、`UserCredential`、`Story`、`StoryLike`、`StoryNode`、`PlaySession`、`LLMConnection`、`PlatformLLMSetting`、`UserStoryLLMConfig`、`LLMUsageLog`。⚠️ `AutoMigrate` 之外还有一条**显式 DDL**：部分唯一索引 `uniq_root_per_session`（GORM 的模型标签表达不了 `WHERE parent_id IS NULL`），由 `main.go` 在 `AutoMigrate` 之后调 `EnsureRootIndex` 建，见 §9.2。`infa/sql/` 里其余表（community 全部、素材/关注等）**没有任何一张进入运行库**——该目录不参与建表，见其文件头声明。
+**运行中的模型就是这 11 个**：`User`、`UserCredential`、`Story`、`StoryLike`、`StoryNode`、`PlaySession`、`LLMConnection`、`PlatformLLMSetting`、`UserStoryLLMConfig`、`UserAssistLLMConfig`、`LLMUsageLog`。⚠️ `AutoMigrate` 之外还有一条**显式 DDL**：部分唯一索引 `uniq_root_per_session`（GORM 的模型标签表达不了 `WHERE parent_id IS NULL`），由 `main.go` 在 `AutoMigrate` 之后调 `EnsureRootIndex` 建，见 §9.2。`infa/sql/` 里其余表（community 全部、素材/关注等）**没有任何一张进入运行库**——该目录不参与建表，见其文件头声明。
 
 ## 3. 系统架构与职责
 
@@ -100,7 +101,7 @@ handler → service → repository
 | `StoryNode` | 邻接表剧情树。`parent_id`、`depth`、`choice_text`、`content`、`suggested_options`、`state_delta`、`state_snapshot`、`revealed_snapshot`(截至本节点已揭示的门控属性,供回溯恢复可见性)、`summary` |
 | `PlaySession` | 会话归属与当前指针；`current_node_id`、`current_state`、`revealed_attrs`(本会话已揭示的门控属性键集)、`node_count`、`status` |
 
-上表只列游玩链路的四个核心模型；**运行中共 9 个**，与 SQL 蓝图、API 的对应关系见 §2.1 实现矩阵。
+上表只列游玩链路的四个核心模型；**运行中共 11 个**，与 SQL 蓝图、API 的对应关系见 §2.1 实现矩阵。
 
 ### 5.2 状态规则
 
@@ -183,7 +184,7 @@ prepare
 
 `AI_REVIEW_MAX_RETRIES` 默认是 `2`：最多初稿加两次重写。**超限不再硬失败**，而是**降级交付最后一稿**（`deliver_degraded` 节点）——理由：属性/`state_delta` 只是辅助 AI 分析与玩家参考的手段，轻微不精确可容忍，宁可交付略有瑕疵也绝不让玩家操作失败。仅 LLM 非法 JSON（重试耗尽）或网络异常才是真失败、转 HTTP 502。
 
-审校采**分级**：只拦**阻断级硬伤**——正文与设定/前情/选择直接矛盾、正文无实质推进、非结局无选项或选项雷同、`summary` 篡改关键不可逆事实、JSON 结构坏；而 `state_delta` 数值精度、未遂动作是否记账等模糊情形一律放行（`STORY_SYSTEM` 已加"未遂动作不记账"规则消歧）。
+审校采**分级**：只拦**阻断级硬伤**——正文与设定/前情/选择直接矛盾、正文无实质推进、非结局无选项或选项雷同、`summary` 篡改关键不可逆事实、JSON 结构坏；而 `state_delta` 数值精度、未遂动作是否记账等模糊情形一律放行（`STORY_WRITER_SYSTEM` 已加"未遂动作不记账"规则消歧）。
 
 ### 6.3 长程记忆
 
@@ -202,7 +203,7 @@ prepare
 | 域 | 接口 |
 |---|---|
 | 鉴权 | `POST /auth/register`、`POST /auth/login`、`GET/PUT /auth/profile`（登录签发的 JWT 现携带 `role` 快照） |
-| 作品 | `POST/GET /stories`（列表收 `sort=recent\|plays`、`limit`(默认 50，>100 夹到 100)、`offset`(默认 0) 三个查询参数；**非法值一律回落默认、不返 400**——展示参数不该让一个拼错的 query 打死首页，且负 `offset` 会让 Postgres 的 `OFFSET -1` 直接语法错变 500。排序带稳定次级键 `play_count DESC, created_at DESC, id`）、`GET/PUT/DELETE /stories/:id`（`GET` 挂 `AuthOptional`：作者可读自己的草稿，其他人只读 published、越权返 **404 不返 403**；非作者拿到脱敏 `world_config`。`DELETE` 对「不存在」与「非属主」给**同一个 404**——此前两者都静默 204，handler 回「删除成功」而一行都没删；两条必须同答案，只改非属主那条会变成「别人的作品→404、不存在→204」，反把存在性泄露出去）。`POST/DELETE /stories/:id/like` 点赞与取消（`AuthRequired`，两条都幂等，返回 `{liked, like_count}`；可见性同 `GET`，别人的草稿一律 404）。**节点 CRUD 已整组下线**，见 §9.2 |
+| 作品 | `POST/GET /stories`（列表收 `sort=recent\|plays`、`limit`(默认 50，>100 夹到 100)、`offset`(默认 0) 三个查询参数；**非法值一律回落默认、不返 400**——展示参数不该让一个拼错的 query 打死首页，且负 `offset` 会让 Postgres 的 `OFFSET -1` 直接语法错变 500。排序带稳定次级键 `play_count DESC, created_at DESC, id`）、`GET /stories/mine`（我的作品列表，`AuthRequired`）、`GET/PUT/DELETE /stories/:id`（`GET` 挂 `AuthOptional`：作者可读自己的草稿，其他人只读 published、越权返 **404 不返 403**；非作者拿到脱敏 `world_config`。`DELETE` 对「不存在」与「非属主」给**同一个 404**——此前两者都静默 204，handler 回「删除成功」而一行都没删；两条必须同答案，只改非属主那条会变成「别人的作品→404、不存在→204」，反把存在性泄露出去）。`PUT /stories/:id/status` 发布态切换（发布与更新已发布作品走同一把校验尺子，见 §2）。`POST/DELETE /stories/:id/like` 点赞与取消（`AuthRequired`，两条都幂等，返回 `{liked, like_count}`；可见性同 `GET`，别人的草稿一律 404）。**节点 CRUD 已整组下线**，见 §9.2 |
 | 游玩（全组 AuthRequired） | `POST /play/sessions`（建空会话）、`POST /play/sessions/:id/opening/stream`（SSE 流式开局，幂等）、`GET /play/sessions`、`GET/DELETE /play/sessions/:id`、`POST /play/sessions/:id/choice/stream`（SSE 流式续写）、`POST /play/sessions/:id/backtrack`（**所有按 sessionID 访问的接口均校验 `session.PlayerID` 归属**） |
 | 图片上传（AuthRequired） | `POST /uploads/image`（multipart：`file` + `kind`∈{avatar,cover}，返回 `{url}`）；静态直出 `GET /uploads/*`（见 §14） |
 | `POST /assist/world`、`/opening`、`/polish`、`/branches` | 创作辅助；**经 Go `/api/v1/assist/*` 转发**给创作编辑器消费（agent 无鉴权/CORS，前端不直连；Go 侧用 180s `assistClient`）。四个成功响应均回传已知 `usage` 供 Go 统一计费 |
@@ -376,7 +377,7 @@ cd agent
 - 社区路由**未注册**（2026-08-11），访问一律 404。此前空壳 handler 返 `success:true`，会让调用方误判操作成功。
 - **开场并发有三层保护，各管各的（2026-08-21）**：① **进程内单飞**（`PlayService.flights sync.Map`，key 是 `sessionID`）——唯一能省掉重复生成与重复扣费的一层；leader 身份取 `LoadOrStore` 的第二个返回值（**不是 `singleflight.Shared`**，那个对所有调用方都为 true，照它判会让 leader 把正文播两遍），抢到之后**先重读会话**再决定生不生成，收尾三步「填结果 → `Delete` → `close`」且 `Delete` 必须在事务提交之后，`defer` 带 recover（leader panic 而没 close 会让 follower 永久挂起）；**`finish` 兜底断言「要么填了结果、要么填了 `err`」**，否则统一置 `Internal`——leader 的某条 return 忘写 `fl.err` 时，follower 会把失败当成功、转身去读 `fl.root.Content`（nil）而 panic，漏写只是少一行，所以这条不变量落在唯一的收尾处而不是指望每个分支都记得；follower 不接自己的 `onDelta` 进共享工作，拿到结果用 `streamFixedText` 回放。② **部分唯一索引** `uniq_root_per_session`（`repository.RootIdxName`，`NodeRepository.EnsureRootIndex` 建，`main.go` 在 `AutoMigrate` 之后调、失败即 `log.Fatalf`）——跨实例、跨重启的兜底；撞上它翻成**幂等成功**（`adoptExistingOpening`）而不是 500。⚠️ 判定必须**连约束名一起判**，只看 SQLSTATE 23505 会把将来任何一条唯一冲突都吞成「根节点已存在」，把真实错误埋掉；也不能用 `gorm.ErrDuplicatedKey`——`main.go` 的 `gorm.Open` 没开 `TranslateError`，那个哨兵永远不会产生。③ **阅读量自增**放在事务提交之后，经 `StoryCounter` 窄接口走 SQL 表达式（`play_count = play_count + 1`，不读改写），失败只记日志不上抛——计数绝不能弄砸玩家这一回合。**⚠️ ② 挡不住那个请求已经花掉的生成与扣费，那是 ① 的职责，而 ① 只在单实例内有效**；多实例化时换成数据库层认领（给 `play_sessions` 加 `opening_claimed_at` + TTL）。
 - **`play_count` 的口径是「产生过开场」，不是「建过会话」**：计数点在 `StartOpeningStream` 根节点落库成功之后，`POST /play/sessions` 只插一行空会话不算。用计数器而非 `COUNT(play_sessions)` 派生：删存档不该抹掉「读过」这件事。老会话不追认，一次性手工回填（**别写进启动流程**，`seed()` 正是因为在生产库上跑启动期夹具代码才被整个删掉）：`UPDATE stories s SET play_count = (SELECT COUNT(*) FROM play_sessions WHERE story_id = s.id AND current_node_id IS NOT NULL);`
-- **本轮审核发现、刻意未修的四项（2026-08-25）**：① `LLMService.fetchModels` / `TestConnection` 用完全由用户填的 `base_url` 发请求、且回显连接错误原文 —— BYOK 天然需要这个能力，加内网地址段拦截会一并挡掉本地自建端点（127.0.0.1、局域网 Ollama），得配一个放行开关才动。② 前端 `StoryLLMConfigPanel` / `AssistModelSettings` 的 orphan 判定写成 `!!bound && ...`，连接被**删除**时 `bound` 为 undefined、判不出孤儿，下拉静默显示成「平台预设」而草稿里那条死绑定还在，保存才吃 400。③ `PlayService.Backtrack` 无条件 `session.Status = "active"`，回溯到结局节点会让那一局重新可推进。④ `runOpening` 里 `story == nil`（作品被硬删）走的是 `readOnlyErr()`，把「作品不存在」说成「已取消发布」。⑤ **删作品不级联删 `user_story_llm_configs`**（真机验收时发现：作品与会话都删干净后，那张表仍留着一行该作品的模型绑定）——与「上传孤儿文件无回收」同一类数据卫生问题，孤儿行不影响任何读路径（解析时连不上作品就走不到），0 用户阶段不值得治。
+- **本轮审核发现、刻意未修的五项（2026-08-25）**：① `LLMService.fetchModels` / `TestConnection` 用完全由用户填的 `base_url` 发请求、且回显连接错误原文 —— BYOK 天然需要这个能力，加内网地址段拦截会一并挡掉本地自建端点（127.0.0.1、局域网 Ollama），得配一个放行开关才动。② 前端 `StoryLLMConfigPanel` / `AssistModelSettings` 的 orphan 判定写成 `!!bound && ...`，连接被**删除**时 `bound` 为 undefined、判不出孤儿，下拉静默显示成「平台预设」而草稿里那条死绑定还在，保存才吃 400。③ `PlayService.Backtrack` 无条件 `session.Status = "active"`，回溯到结局节点会让那一局重新可推进。④ `runOpening` 里 `story == nil`（作品被硬删）走的是 `readOnlyErr()`，把「作品不存在」说成「已取消发布」。⑤ **删作品不级联删 `user_story_llm_configs`**（真机验收时发现：作品与会话都删干净后，那张表仍留着一行该作品的模型绑定）——与「上传孤儿文件无回收」同一类数据卫生问题，孤儿行不影响任何读路径（解析时连不上作品就走不到），0 用户阶段不值得治。
 - **`runOpening` 的 leader 重读分支零测试覆盖**：`TestStartOpeningStream_LeaderRereadsSessionBeforeGenerating` 名不副实——它在调用前就 `setRoot`，走的是 `StartOpeningStream` 开头那条**前置幂等**分支，根本没进 `runOpening`。真正的 leader 重读（抢到 flight 后再查一次会话）要让根节点在两次 `sessions.FindByID` 之间出现才测得到。
 - `AutoMigrate` 适合当前 demo，不等同于生产级迁移治理。
 - Go 侧的 context 透传、优雅关闭等工程化问题记在 [prd.md](prd.md) 开放问题里（seed 开关已不再是问题：整个 seed 于 2026-08-12 删除）。
@@ -398,6 +399,7 @@ cd agent
 | `CLAUDE.md` | 开发规范、分层边界、实现约定、**不放进度状态** | 修改工程规则或运行方式 |
 | 模块 README | 模块接口、配置、目录、测试 | 修改模块契约/流程/配置 |
 | `docs/design.md` | 技术选择、演进和权衡 | 修改架构/数据/Agent 方案 |
+| `docs/context-strategy.md` | 续写上下文构建方案（摘要打底 + 窗口兜底 + RAG 演进） | 修改历史注入、摘要或窗口策略 |
 | `docs/prd.md` | 产品愿景、范围、开放决策 | 修改产品目标或优先级 |
 | `infa/sql/` | 完整数据模型设计 | 新增持久化模块或改变长期 schema |
 
@@ -457,7 +459,7 @@ cd agent
 
 **深空墨底 + 纯黑剪影 + CSS/SVG 生成的天空**，每部作品一个 `--hue`(0–360) 驱动整套 `oklch()` 派生色。**没有模式切换这回事**——深色底是「每部作品的颜色能读成光」的物理前提。被它取代的那条旧方向（白底 + 管理态/阅读态双态）存档在 `docs/design/wanxiang-design-brief.md` §1，代码于 P4 删净。
 
-**样式只有两个去处**：`app/globals.css`（全站唯一一份全局表，1081 行）+ 每页/每组件一份 CSS Module。全局表只放三类东西：① token（`:root` 全局 + `.world-scope` 角色 token + `@property --hue`）；② reset、`.sr-only`、减动效；③ 全站共享组件层（背景栈 / 天空 / 剪影 / 顶栏 / 二级导航 / 表单件 / 按钮 / 开关 / 对话框 / Toast + 五个 `wx-` 关键帧）。**token 的真源是 `docs/design/DESIGN.md` §3–§4，全局表是它的实现，不是第二份真源。**
+**样式只有两个去处**：`app/globals.css`（全站唯一一份全局表）+ 每页/每组件一份 CSS Module。全局表只放三类东西：① token（`:root` 全局 + `.world-scope` 角色 token + `@property --hue`）；② reset、`.sr-only`、减动效；③ 全站共享组件层（背景栈 / 天空 / 剪影 / 顶栏 / 二级导航 / 表单件 / 按钮 / 开关 / 对话框 / Toast + 五个 `wx-` 关键帧）。**token 的真源是 `docs/design/DESIGN.md` §3–§4，全局表是它的实现，不是第二份真源。**
 
 字体：`layout.tsx` 经 `next/font` 注入 Inter(`--font-sans-inter`) + Noto Serif SC(`--font-serif-noto`)，`globals.css` 的 `--font-ui`/`--font-display` 引用它们并接系统回退栈。**两边变量名必须错开**——同名时 `:root` 与 next/font 注入的 class 权重相同(0,1,0)，后加载的 `globals.css` 会覆盖掉真实字体名，webfont 白下载不生效（已踩过一次）。
 

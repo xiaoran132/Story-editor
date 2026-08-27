@@ -14,7 +14,7 @@
   --muted: oklch(0.72 0.020 265);
   --border: oklch(1 0 0 / 0.11);
   --accent: oklch(0.82 0.125 85);
-  --font-display: "Noto Serif SC", "Songti SC", serif;
+  --font-display: "Noto Serif SC", Georgia, "Songti SC", serif;
   --font-ui: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "SFMono-Regular", Consolas, monospace;
 }

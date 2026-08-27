@@ -1,6 +1,6 @@
 > 📖 **本文为技术设计（思路 / 实现）**：技术选型、剧情树与 JSONB、属性类型、数据流、扩展。产品需求见 [prd.md](prd.md)，仓库总览见 [README.md](../README.md)。
 >
-> **阅读提示（2026 年 7 月 28 日）**：本文保留了早期架构设想与后续演进方案。当前可运行事实、代码入口和接手优先级以 [handoff.md](handoff.md) 与 `CLAUDE.md` 为准；尤其“前端尚未搭建”“未来多 Agent”等早期表述不能直接视为现状。
+> **阅读提示（2026 年 8 月 27 日）**：本文保留了早期架构设想与后续演进方案。当前可运行事实、代码入口和接手优先级以 [handoff.md](handoff.md) 与 `CLAUDE.md` 为准；尤其“前端尚未搭建”“未来多 Agent”等早期表述不能直接视为现状。
 初期的话，先做一个最小的MVP，内容为剧情游玩
 具体功能设计详见 **prd.md**。
 首先是技术选型
@@ -295,7 +295,7 @@ LIMIT 20;
 
 ### 分支复用与节点去重（两级）
 
-`service/agent_client.go` 是独立 HTTP 客户端，调 agent 的 `/generate`、`/continue`、`/merge-check`，不依赖 repository 层；`CheckMerge` 走通用的 `postInto`（`post` 是它针对 `AIResult` 的特化包装）。
+`service/agent_client.go` 是独立 HTTP 客户端，调 agent 的 `/generate/stream`、`/continue/stream`、`/merge-check`，不依赖 repository 层；`CheckMerge` 走通用的 `postInto`（`post` 是它针对 `AIResult` 的特化包装）。
 
 同一个父节点下的重复分支在**两个不同的时机**被拦，因为它们判的不是同一件事：
 
