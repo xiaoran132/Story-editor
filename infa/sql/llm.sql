@@ -10,7 +10,7 @@
 --   - 支持任意 OpenAI 兼容端点（base_url + api_key + model）。
 --   - 连接（key/base_url）是**用户级**（llm_connections，账号里管一次）。
 --   - 「用哪个模型」是**作品级**：每玩家在每作品各配各的（user_story_llm_configs）。
---   - 按环节分模型：write(续写/开场) / review(审校)；world(创作辅助)走编辑器临时连接。
+--   - 按环节分模型：write(续写/开场) / review(审校)（user_story_llm_configs）；world(创作辅助)是账号级配置（user_assist_llm_configs）。
 --   - api_key 一律 AES-256-GCM 密文落库（Go pkg.Encrypt），读接口只回打码 hint。
 --   - agent 不碰库；Go 按环节解析出有效配置后经请求体下发给 agent。
 --   - 游玩烧玩家自己的 key，未配回退平台设置。
@@ -58,6 +58,10 @@ CREATE TABLE user_story_llm_configs (
     --   仅 write/review（world 属创作侧，见上面的 user_assist_llm_configs）。
     --   用 TEXT 而非 JSONB（无需 JSON 查询，整行取用；规避 jsonb 拒绝空串）。
     bindings    TEXT        NOT NULL DEFAULT '{}',
+    -- review_enabled：本作品的「质量审校」开关，默认关。关=不下发 llm_review，agent 整段
+    -- 跳过审校；开=review 环节必须解析得出配置，否则保存被拒（不静默降级成关闭）。
+    -- 独立成列而非塞进 bindings——bindings 的类型是 map[string]StageBinding，硬塞布尔会污染类型。
+    review_enabled BOOLEAN     NOT NULL DEFAULT FALSE,
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
     PRIMARY KEY (user_id, story_id)

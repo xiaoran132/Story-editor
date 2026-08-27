@@ -50,6 +50,8 @@ CREATE TABLE stories (
     --     -- 未声明类型的键由 Go 侧兜底推断（两侧皆数值则累加，否则覆盖），保证老作品兼容。
     --     -- 可选 "hidden": true —— 该属性仅供 AI 参考（导演/走向计算），玩家端不展示；
     --     --   适合"针对玩家的压力表"（如 怀疑度、处分风险、警戒度）。仍进 current_state、仍喂给 AI。
+    --     -- 可选 "reveal": true —— 揭示门控属性：剧情让玩家发现前不显示、发现后显示，由 AI 动态揭示。
+    --     --   已揭示键集存 play_sessions.revealed_attrs / story_nodes.revealed_snapshot，回溯时恢复可见性。
     --     "hp":       {"type": "number", "initial": 100},
     --     "怀疑度":    {"type": "number", "initial": 0, "hidden": true},
     --     "location": {"type": "scalar", "initial": "村口"},
@@ -59,11 +61,8 @@ CREATE TABLE stories (
     --     "default_name": "旅行者",
     --     "description":  "一名身份不明的流浪者"
     --   },
-    --   "llm": {
-    --     "model":       "deepseek-chat",
-    --     "temperature": 0.8,
-    --     "allow_free_input": true
-    --   }
+    --   "recommended_models": { "write": {"model": "..."}, "review": {...} }
+    --   -- 作者推荐模型，仅标注展示；游玩侧「用哪个模型」由每玩家自行配置（见 005_llm.sql）
     -- }
 
     -- 初始剧情（玩家进入时看到的第一段文字）

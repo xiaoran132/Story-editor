@@ -152,6 +152,12 @@ CREATE TABLE story_nodes (
 -- 递归 CTE 展开树时走此索引
 CREATE INDEX idx_nodes_session_parent ON story_nodes(session_id, parent_id);
 
+-- 每会话至多一个根节点（开局幂等的跨实例兜底）：部分唯一索引。GORM 的模型标签
+-- 表达不了 WHERE parent_id IS NULL，运行库由 main.go 在 AutoMigrate 之后调
+-- NodeRepository.EnsureRootIndex 显式建（约束名 repository.RootIdxName）。
+CREATE UNIQUE INDEX uniq_root_per_session ON story_nodes(session_id)
+    WHERE parent_id IS NULL;
+
 -- 核心索引2：向上回溯路径
 -- WHERE id = ? 走主键，WHERE parent_id = ? 走上面的索引，已覆盖
 
