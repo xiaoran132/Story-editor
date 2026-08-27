@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 880 448" role="img" aria-labelledby="runtime-arch-title runtime-arch-desc" xmlns="http://www.w3.org/2000/svg">
+  <title id="runtime-arch-title">Story Editor 三进程运行时架构</title>
+  <desc id="runtime-arch-desc">图示三进程数据流：Next.js 前端经 HTTP 与 SSE 调用 Go 后端的 /api/v1；后端经 GORM 读写 PostgreSQL，并经 HTTP 与 SSE 调用 FastAPI Agent 的流式生成接口；Agent 以 OpenAI 兼容接口调用 LLM。Go 后端是唯一写库入口。</desc>
+  <defs>
+    <marker id="arch-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="oklch(0.72 0.020 265)"/>
+    </marker>
+  </defs>
+
+  <rect width="100%" height="100%" fill="oklch(0.13 0.022 265)"/>
+
+  <!-- 连接线（先画，压在节点下层） -->
+  <line x1="256" y1="164" x2="344" y2="164" stroke="oklch(0.72 0.020 265)" stroke-width="1.2" marker-end="url(#arch-arrow)"/>
+  <rect x="260" y="144" width="80" height="12" rx="2" fill="oklch(0.13 0.022 265)"/>
+  <text x="300" y="154" fill="oklch(0.72 0.020 265)" font-size="8" font-family="ui-monospace,'SFMono-Regular',Consolas,monospace" text-anchor="middle" letter-spacing="0.06em">/api/v1</text>
+
+  <line x1="440" y1="216" x2="440" y2="280" stroke="oklch(0.72 0.020 265)" stroke-width="1.2" marker-end="url(#arch-arrow)"/>
+  <rect x="448" y="240" width="48" height="12" rx="2" fill="oklch(0.13 0.022 265)"/>
+  <text x="452" y="250" fill="oklch(0.72 0.020 265)" font-size="8" font-family="ui-monospace,'SFMono-Regular',Consolas,monospace">GORM</text>
+
+  <line x1="528" y1="164" x2="616" y2="164" stroke="oklch(0.72 0.020 265)" stroke-width="1.2" marker-end="url(#arch-arrow)"/>
+  <rect x="532" y="144" width="80" height="12" rx="2" fill="oklch(0.13 0.022 265)"/>
+  <text x="572" y="154" fill="oklch(0.72 0.020 265)" font-size="8" font-family="ui-monospace,'SFMono-Regular',Consolas,monospace" text-anchor="middle" letter-spacing="0.06em">HTTP + SSE</text>
+
+  <line x1="708" y1="216" x2="708" y2="280" stroke="oklch(0.72 0.020 265)" stroke-width="1.2" marker-end="url(#arch-arrow)"/>
+  <rect x="716" y="240" width="72" height="12" rx="2" fill="oklch(0.13 0.022 265)"/>
+  <text x="720" y="250" fill="oklch(0.72 0.020 265)" font-size="8" font-family="ui-monospace,'SFMono-Regular',Consolas,monospace">OpenAI 兼容</text>
+
+  <!-- 节点：前端 -->
+  <rect x="88" y="112" width="168" height="104" rx="6" fill="oklch(0.19 0.030 265)" stroke="oklch(1 0 0 / .20)" stroke-width="1"/>
+  <rect x="96" y="118" width="24" height="12" rx="2" fill="transparent" stroke="oklch(1 0 0 / .20)" stroke-width="0.8"/>
+  <text x="108" y="127" fill="oklch(0.72 0.020 265)" font-size="7" font-family="ui-monospace,'SFMono-Regular',Consolas,monospace" text-anchor="middle" letter-spacing="0.08em">UI</text>
+  <text x="172" y="164" fill="oklch(0.96 0.010 90)" font-size="12" font-weight="600" font-family="'Inter','Segoe UI',system-ui,sans-serif" text-anchor="middle">Next.js 前端</text>
+  <text x="172" y="184" fill="oklch(0.72 0.020 265)" font-size="9" font-family="ui-monospace,'SFMono-Regular',Consolas,monospace" text-anchor="middle">:3000 · 游玩 + 创作 UI</text>
+
+  <!-- 节点：Go 后端（核心，暖金焦点） -->
+  <rect x="352" y="112" width="176" height="104" rx="6" fill="oklch(0.82 0.125 85 / .10)" stroke="oklch(0.82 0.125 85)" stroke-width="1"/>
+  <rect x="360" y="118" width="36" height="12" rx="2" fill="transparent" stroke="oklch(0.82 0.125 85 / .40)" stroke-width="0.8"/>
+  <text x="378" y="127" fill="oklch(0.82 0.125 85)" font-size="7" font-family="ui-monospace,'SFMono-Regular',Consolas,monospace" text-anchor="middle" letter-spacing="0.08em">CORE</text>
+  <text x="440" y="164" fill="oklch(0.96 0.010 90)" font-size="12" font-weight="600" font-family="'Inter','Segoe UI',system-ui,sans-serif" text-anchor="middle">Go + Gin 后端</text>
+  <text x="440" y="184" fill="oklch(0.72 0.020 265)" font-size="9" font-family="ui-monospace,'SFMono-Regular',Consolas,monospace" text-anchor="middle">:8080 · 唯一写库入口</text>
+
+  <!-- 节点：Agent -->
+  <rect x="624" y="112" width="168" height="104" rx="6" fill="oklch(0.19 0.030 265)" stroke="oklch(1 0 0 / .20)" stroke-width="1"/>
+  <rect x="632" y="118" width="22" height="12" rx="2" fill="transparent" stroke="oklch(1 0 0 / .20)" stroke-width="0.8"/>
+  <text x="643" y="127" fill="oklch(0.72 0.020 265)" font-size="7" font-family="ui-monospace,'SFMono-Regular',Consolas,monospace" text-anchor="middle" letter-spacing="0.08em">AI</text>
+  <text x="708" y="164" fill="oklch(0.96 0.010 90)" font-size="12" font-weight="600" font-family="'Inter','Segoe UI',system-ui,sans-serif" text-anchor="middle">FastAPI Agent</text>
+  <text x="708" y="184" fill="oklch(0.72 0.020 265)" font-size="9" font-family="ui-monospace,'SFMono-Regular',Consolas,monospace" text-anchor="middle">:8001 · 流式生成 + 审校</text>
+
+  <!-- 节点：PostgreSQL -->
+  <rect x="352" y="288" width="176" height="84" rx="6" fill="oklch(0.235 0.030 265)" stroke="oklch(0.72 0.020 265)" stroke-width="1"/>
+  <rect x="360" y="294" width="36" height="12" rx="2" fill="transparent" stroke="oklch(0.72 0.020 265 / .40)" stroke-width="0.8"/>
+  <text x="378" y="303" fill="oklch(0.72 0.020 265)" font-size="7" font-family="ui-monospace,'SFMono-Regular',Consolas,monospace" text-anchor="middle" letter-spacing="0.08em">DATA</text>
+  <text x="440" y="330" fill="oklch(0.96 0.010 90)" font-size="12" font-weight="600" font-family="'Inter','Segoe UI',system-ui,sans-serif" text-anchor="middle">PostgreSQL</text>
+  <text x="440" y="348" fill="oklch(0.72 0.020 265)" font-size="9" font-family="ui-monospace,'SFMono-Regular',Consolas,monospace" text-anchor="middle">剧情树 · 会话 · JSONB</text>
+
+  <!-- 节点：LLM（外部） -->
+  <rect x="624" y="288" width="168" height="84" rx="6" fill="oklch(1 0 0 / .04)" stroke="oklch(1 0 0 / .30)" stroke-width="1"/>
+  <rect x="632" y="294" width="26" height="12" rx="2" fill="transparent" stroke="oklch(1 0 0 / .30)" stroke-width="0.8"/>
+  <text x="645" y="303" fill="oklch(0.72 0.020 265)" font-size="7" font-family="ui-monospace,'SFMono-Regular',Consolas,monospace" text-anchor="middle" letter-spacing="0.08em">EXT</text>
+  <text x="708" y="330" fill="oklch(0.96 0.010 90)" font-size="12" font-weight="600" font-family="'Inter','Segoe UI',system-ui,sans-serif" text-anchor="middle">LLM</text>
+  <text x="708" y="348" fill="oklch(0.72 0.020 265)" font-size="9" font-family="ui-monospace,'SFMono-Regular',Consolas,monospace" text-anchor="middle">DeepSeek · BYOK 端点</text>
+
+  <!-- 图例（底部横条，不在图区内） -->
+  <line x1="88" y1="400" x2="792" y2="400" stroke="oklch(1 0 0 / .11)" stroke-width="0.8"/>
+  <text x="88" y="420" fill="oklch(0.72 0.020 265)" font-size="8" font-family="ui-monospace,'SFMono-Regular',Consolas,monospace" letter-spacing="0.14em">LEGEND</text>
+  <rect x="160" y="412" width="10" height="10" rx="2" fill="oklch(0.82 0.125 85 / .10)" stroke="oklch(0.82 0.125 85)" stroke-width="1"/>
+  <text x="176" y="421" fill="oklch(0.72 0.020 265)" font-size="8" font-family="ui-monospace,'SFMono-Regular',Consolas,monospace">核心枢纽</text>
+  <rect x="248" y="412" width="10" height="10" rx="2" fill="oklch(0.19 0.030 265)" stroke="oklch(1 0 0 / .20)" stroke-width="1"/>
+  <text x="264" y="421" fill="oklch(0.72 0.020 265)" font-size="8" font-family="ui-monospace,'SFMono-Regular',Consolas,monospace">服务进程</text>
+  <rect x="336" y="412" width="10" height="10" rx="2" fill="oklch(0.235 0.030 265)" stroke="oklch(0.72 0.020 265)" stroke-width="1"/>
+  <text x="352" y="421" fill="oklch(0.72 0.020 265)" font-size="8" font-family="ui-monospace,'SFMono-Regular',Consolas,monospace">存储</text>
+  <rect x="400" y="412" width="10" height="10" rx="2" fill="oklch(1 0 0 / .04)" stroke="oklch(1 0 0 / .30)" stroke-width="1"/>
+  <text x="416" y="421" fill="oklch(0.72 0.020 265)" font-size="8" font-family="ui-monospace,'SFMono-Regular',Consolas,monospace">外部服务</text>
+  <line x1="488" y1="417" x2="516" y2="417" stroke="oklch(0.72 0.020 265)" stroke-width="1.2" marker-end="url(#arch-arrow)"/>
+  <text x="524" y="421" fill="oklch(0.72 0.020 265)" font-size="8" font-family="ui-monospace,'SFMono-Regular',Consolas,monospace">调用</text>
+</svg>

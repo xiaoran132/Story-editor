@@ -4,161 +4,141 @@
 
 项目的最终目标是希望通过做出一款能够通过人的一个灵感，去不断衍生创造后续的故事。
 
-不必是大作家，人人都可以把自己想象中的世界展示出来。
-
 ---
 
 # Story Editor · AI 互动剧情共创社区
 
-> **当前目标：先验证“AI 互动剧情是否足够好玩、值得继续玩”。**
-> 这是一个仍处于 Demo 阶段的全栈项目：玩家可游玩（正文逐字流式）、自由输入、回溯、读档，可选登录；创作前端、社区、付费等愿景已完成设计，但尚未进入 MVP 主链路。
+> **当前阶段：Demo（0 用户）。** 游玩与创作两条闭环已打通：玩家可以逐字流式地玩一部 AI 互动剧情，回溯任意节点重开分支；作者可以用一句灵感生成完整世界观，经六段式编辑器打磨并发布。社区（评论/收藏/关注）、付费、多人共创是已完成设计、尚未实现的愿景。
 
-**最后梳理：2026 年 7 月 31 日。** 本 README 是项目入口；要接手开发，请按下方“推荐阅读顺序”进入，而不是只读某一份设计稿。
+**最后梳理：2026 年 8 月 27 日。** 本 README 是项目主入口，文档索引见文末「文档地图」。
 
-## 先读什么
+## 这是什么
 
-| 顺序 | 文档 | 用途 | 权威性 |
-|---|---|---|---|
-| 1 | [开发交接手册](docs/handoff.md) | 当前实现、代码入口、数据契约、运行/验证、风险和下一步 | **当前事实总览** |
-| 2 | [CLAUDE.md](CLAUDE.md) | 仓库规则、分层边界、实现约定、可执行命令 | **开发规范** |
-| 3 | [视觉化技术导览](docs/visual-guide.html) | 当前运行时架构、玩家续写数据流、Agent 质量闭环的图解 | 快速理解；不替代源码与交接手册 |
-| 4 | 本 README | 项目定位、架构、快速启动、当前优先级 | 项目入口 |
-| 5 | [后端 README](backend/README.md) / [Agent README](agent/README.md) / [前端 README](frontend/README.md) | 分别接手 后端中枢 / AI 链路 / 游玩前端时阅读 | 模块事实 |
-| 6 | [设计思路](docs/design.md) | 剧情树、JSONB、Agent 演进等技术决策与扩展方案 | 技术设计 |
-| 7 | [功能设计](docs/prd.md) | 产品愿景、功能边界、长期路线 | PRD；不等于已实现 |
-| 8 | [infa/sql](infa/sql/) | 完整数据模型蓝本；部分表尚未在 GORM 中落地 | 数据设计蓝本 |
+一个 AI 驱动的互动剧情平台。核心体验由两条链路构成：
 
-> **判定冲突时的顺序**：运行中的代码 / 测试 > `docs/handoff.md` > `CLAUDE.md` > 模块 README > 技术设计 > PRD。设计文档中保留了早期设想，不能据此假定功能已存在。
+**游玩。** 选择一部已发布作品进入会话，开场与续写的正文以 SSE **逐字流式**呈现（首字约 1s，不等结构化结果）。每一回合可以选 AI 推荐选项、**自由输入任意行动**（"假装投降然后偷钥匙"），或在无选项的叙事段直接「继续」。每次选择都会落成一个剧情树节点：属性随 `state_delta` 变化，滚动摘要持续沉淀前情。玩家可以**回溯到任意历史节点**重开分支——已有分支永不删除，逐字相同的选择直接复用旧节点、不重新生成；同层语义等价的新选择会被合并。属性系统支持三种类型（`number` 累加 / `scalar` 覆盖 / `set` 增删）和两种可见性标记：`hidden` 属性仅供 AI 幕后参考（怀疑度、警戒度），`reveal` 属性由剧情动态揭示（清点物资前不显示"物资"）。
 
-## 产品现状
+**创作。** 从一句灵感开始：`/assist/world` 生成结构化世界观（背景/规则/大纲/角色/属性表，含文风档案 `style_profile`），作者在六段式编辑器里逐段微调——世界观、属性、开场正文（可 AI 起草 + 深度润色预览）、主题色相与天空剪影、发布体检。发布走严格校验（草稿宽松），发布后作品即出现在首页星系与作品馆，可被任何登录玩家游玩。
 
-### 已可用的主链路
+支撑两条链路的工程底座：
 
-```text
-选择作品
-  → 建空会话（需登录；草稿仅作者可开）
-  → 游玩页流式生成开场（正文逐字 SSE）
-  → 推荐选项 / 自由输入 / 纯叙事「继续」推进
-  → 流式生成 + 质量审校（拒绝则有记忆写手修订，超限降级交付、绝不让操作失败）
-  → 属性快照、节点树、滚动摘要持久化（同层语义合并去重）
-  → 回溯历史节点 / 读档续玩 / 删除会话
-```
+- **质量闭环**：Writer 流式写正文 → Structurer 生成选项/状态增量/摘要 → 可选审校（分级，只拦阻断级硬伤）。拒绝时有记忆写手在上一稿上修订，超限**降级交付**——绝不让玩家的回合失败。
+- **BYOK 与计费**：任意 OpenAI 兼容端点。连接是账号级、模型是作品级、创作辅助是账号级；注册赠 1 元平台额度，按真实 token 用量计费扣减，用尽自带 key。Agent 服务不持有任何凭据，配置由 Go 随请求下发。
+- **万象设计体系**：深空墨底 + 每作品一个色相（`--hue` 驱动整套 `oklch()` 派生色）+ 纯黑剪影，前端 14 条路由全部落在这套体系上。
 
-| 模块 | 当前状态 | 说明 |
+## 已实现的能力
+
+| 域 | 状态 | 内容 |
 |---|---|---|
-| 游玩后端 | 已完成 | 开局、续写、回溯、读档、删档、同层语义合并 |
-| 游玩前端 | 已完成 | 作品列表、会话列表、星图剧情树、选项/自由输入、正文逐字流式 |
-| AI Agent | 已完成阶段一 + 流式 | 叙事生成、属性入戏（含隐藏属性）、故事大纲导演、节点摘要、质量审校分级 + 有记忆修订 + 超限降级交付；**开局/续写全流式（SSE）**，首字延迟 ~1s |
-| 用户系统 | 已完成 | 注册/登录/JWT/资料 + **前端登录接入**（游玩需登录，匿名游玩已下线） |
-| 创作辅助 | Agent 接口已完成 | `/assist/*` 已有，但没有创作前端消费者 |
-| 社区 | 未完成 | **路由未注册**（访问 404），浏览/点赞/评论尚未实现 |
-| 付费、成就 | 未完成 | 仅作为后续方向 |
+| 游玩 | ✅ | 流式开局/续写、推荐选项/自由输入、回溯、读档、删档、剧情树、状态合并、属性三态 |
+| 创作编辑器 | ✅ MVP | 一句灵感生成世界观、表单微调、AI 开场起草、深度润色预览（显式采纳）、发布严格校验 |
+| 账号 | ✅ | 注册/登录/JWT/资料/头像上传；游玩全组需登录 |
+| BYOK 与计费 | ✅ | 连接管理（AES-GCM 加密）、作品级/账号级模型绑定、平台档（admin）与 token 计费流水 |
+| 作品管理 | ✅ | CRUD、发布态切换、我的作品、参数化列表（排序/分页）、封面上传、点赞（幂等） |
+| 社区 | 🚧 仅点赞 | 评论、收藏、关注、搜索、榜单未实现，`/community/*` 路由未注册（访问 404） |
+| 付费、成就 | ❌ | 愿景设计见 [PRD](docs/prd.md) |
+
+逐领域的「PRD 愿景 / SQL 蓝图 / 运行模型 / API+UI」四态对照见 [handoff §2.1](docs/handoff.md)。
 
 ## 架构
 
-> 想先建立全局心智模型：打开 [视觉化技术导览](docs/visual-guide.html#runtime)。其中的“玩家续写数据流”和“Agent 质量闭环”分别补足了下方静态结构图无法表达的时序与重试语义。
+![三进程运行时架构](docs/img/runtime-architecture.svg)
 
-```text
-Next.js 前端 :3000
-      │ HTTP（/api/v1）+ SSE（流式续写/开局）
-      ▼
-Go + Gin 后端 :8080
-  ├─ 账号、作品、游玩会话、节点树、属性合并
-  ├─ JWT 鉴权（游玩需登录；作品详情 AuthOptional，草稿仅作者可读）
-  ├─ PostgreSQL / GORM
-  └─ HTTP / SSE 调用 Agent 服务（流式转发给前端）
-      │
-      ▼
-Python FastAPI :8001（单 _stream_pipeline 编排）
-  ├─ Writer 流式输出正文；同一 llm_write 配置的 Structurer 生成结构化结果
-  ├─ 审校分级；拒绝则有记忆修订，超限降级交付
-  └─ 不直接访问数据库
-      │
-      ▼
-DeepSeek（OpenAI 兼容接口）
-```
+三进程全栈 + PostgreSQL，进程边界即信任边界：
 
-**职责边界不可跨越：**
+| 进程 | 职责 |
+|---|---|
+| **Next.js 前端** `:3000` | 游玩/创作 UI，Zustand 状态机；只消费 Go 的 `/api/v1` |
+| **Go + Gin 后端** `:8080` | 账号、作品、游玩会话、节点树、状态合并、BYOK 解析与计费；唯一的业务编排与持久化入口（`handler → service → repository` 单向分层） |
+| **Python FastAPI Agent** `:8001` | 唯一编排 `_stream_pipeline`：Writer 流式正文 → Structurer 元数据 → 可选审校；**不碰数据库、不持有任何 LLM 凭据** |
+| **LLM** | DeepSeek 等 OpenAI 兼容端点；凭据在 Go 侧解密后随请求下发 |
 
-- 前端只消费 Go 后端的 `/api/v1`；不直接调用 Agent 或数据库。
-- Go 后端是会话、剧情节点、状态快照的唯一持久化编排者。
-- Agent 只接收世界观、路径、当前状态和选择，返回结构化结果；**不碰数据库**。
-- `play_sessions.current_state` 是会话当前状态的唯一事实来源；节点的 `state_delta` 是增量，`state_snapshot` 用于节点级回溯。
+**边界铁律**：浏览器绝不直连 Agent（无 CORS 无鉴权）；`play_sessions.current_state` 是会话当前状态的唯一事实来源（节点 `state_delta` 是增量、`state_snapshot` 用于回溯）；剧情树查询用 Postgres 递归 CTE，不在 Go 里递归。完整约束见 [CLAUDE.md](CLAUDE.md)。
+
+## 技术栈
+
+| 层 | 技术 |
+|---|---|
+| 前端 | Next.js 14 · React 18 · Zustand · CSS Modules（`oklch()` token 体系，无 UI 框架） |
+| 后端 | Go · Gin · GORM（AutoMigrate 构建运行 schema）· JWT |
+| Agent | Python FastAPI · openai SDK · logfmt 埋点 |
+| 数据 | PostgreSQL（JSONB 世界观/状态、递归 CTE、部分唯一索引） |
+| 部署 | nginx 反代（`/api/v1/ → 8080`，`/ → 3000`）+ docker compose |
 
 ## 快速启动（Windows）
 
 ### 前置条件
 
-- Go 1.25+
-- Python 3.12+
-- Node.js 18+
+- Go 1.25+ / Python 3.12+ / Node.js 18+
 - PostgreSQL（已创建 `story_editor` 数据库）
-- DeepSeek API Key（没有 Key 时服务可启动，但生成接口会返回 502）
+- 任一 OpenAI 兼容 LLM Key（DeepSeek 等）：三进程无 Key 也能启动，但生成类接口需要配置——注册后在 `/mine/settings` 添加自己的 BYOK 连接，或由 admin 在 `/admin` 配置平台档（注册赠 1 元平台额度，按 token 扣减）
 
-### 推荐：一键启动
-
-在仓库根目录执行：
+### 一键启动
 
 ```powershell
-.\scripts\dev.ps1
-
-# 只启动一个进程
-.\scripts\dev.ps1 -Only agent
-.\scripts\dev.ps1 -Only backend
-.\scripts\dev.ps1 -Only frontend
+.\scripts\dev.ps1              # 三进程各开一窗：Agent :8001 / 后端 :8080 / 前端 :3000
+.\scripts\dev.ps1 -Only backend   # 单进程：agent | backend | frontend
 ```
 
-脚本会在独立窗口启动：Agent `:8001`、后端 `:8080`、前端 `:3000`，并在首次运行时复制示例环境文件、安装前端或 Agent 依赖。
+首次运行自动复制示例环境文件并安装依赖。⚠️ 后端必须以 `backend/` 为工作目录（模板与配置路径是相对的），`dev.ps1` 已处理。
 
 ### 必需配置
 
 | 文件 | 关键变量 |
 |---|---|
-| `agent/.env` | 无必填项（agent 不持有 LLM 凭据，由 Go 随请求下发）；可选 `AI_REVIEW_MAX_RETRIES`（默认 `2`） |
-| `backend/.env` | `DB_*`、`JWT_SECRET`、`AGENT_URL` |
+| `agent/.env` | 无必填项（不持有 LLM 凭据）；可选 `AI_REVIEW_MAX_RETRIES`（默认 `2`） |
+| `backend/.env` | `DB_*`、`JWT_SECRET`、`AGENT_URL`；可选 `UPLOAD_DIR`、`UPLOAD_MAX_MB` |
 | `frontend/.env.local` | `NEXT_PUBLIC_API_BASE`，默认 `http://localhost:8080/api/v1` |
 
 ### 常用地址
 
-- 游玩前端：http://localhost:3000/
-- 后端 API 根：http://localhost:8080/api/v1
-- Agent 健康检查：http://localhost:8001/health
-- Agent OpenAPI：http://localhost:8001/docs
+- 游玩前端 <http://localhost:3000/> · 后端 API 根 <http://localhost:8080/api/v1>
+- Agent 健康检查 <http://localhost:8001/health> · OpenAPI <http://localhost:8001/docs>
+
+## 验证
+
+没有 CI；以下本地门禁等价于提交前检查（前端 lint 是 `--max-warnings 0`，警告即失败）：
+
+```powershell
+cd backend;  go build ./...; go vet ./...; go test -race ./...    # 默认无需 PostgreSQL
+cd frontend; npm.cmd run lint; npm.cmd run typecheck
+cd agent;    .\.venv\Scripts\python.exe -m compileall -q app tests
+             .\.venv\Scripts\python.exe -m unittest discover -s tests -v
+```
+
+属性类型与状态合并的语义由 Go `mergeState` 与 Python `normalize` 的契约测试（`play_merge_test.go`）锁定。离线测试不能证明叙事好玩——真实质量靠多回合试玩与埋点观测，见 [handoff](docs/handoff.md) §8–§9。
+
+## 仓库布局
+
+| 目录 | 内容 |
+|---|---|
+| `backend/` | Go 后端（账号/作品/游玩会话/节点树/BYOK 计费） |
+| `frontend/` | Next.js 游玩与创作前端（万象设计体系） |
+| `agent/` | AI 生成服务（唯一编排在 `app/graph/story_graph.py` 的 `_stream_pipeline`） |
+| `docs/` | handoff（当前事实）、design（技术设计）、prd（产品愿景）、context-strategy（长程记忆）、design/（UI 规范与静态原型） |
+| `infa/sql/` | 数据模型蓝本，**启动时不执行**；运行 schema 只由 AutoMigrate 构建 |
+| `scripts/` | `dev.ps1` 一键启动 |
+| `templates/` | Gin 占位遗留，已被 `frontend/` 取代 |
 
 ## 关键实现决策
 
-1. **剧情树而非线性文本**：每次选择生成 `story_nodes` 子节点；回溯只移动会话的 `current_node_id`，不删除分支。
-2. **状态采用 JSONB 的“增量 + 快照”**：`state_delta` 表示一次变化，`state_snapshot` 和会话 `current_state` 代表完整状态；属性类型为 `number`、`scalar`、`set`，另可标 `hidden`（仅供 AI 参考、玩家端不显示）。
-3. **长程记忆采用节点摘要优先**：每个节点保存滚动 `summary`；续写时注入最新摘要与最近两段原文；旧数据没有摘要时回退滑动窗口。
-4. **真流式 + 质量兜底**：Writer 以 SSE 逐字流出纯正文，首字延迟不等待后续结构化；随后复用同一 `llm_write` 配置的 Structurer 根据已写正文生成 `options`、`state_delta`、`summary` 等结果。审校**分级**（只挡硬伤），拒绝则完整重跑“Writer → Structurer”并由**有记忆写手在上一稿上修订**，超限则**降级交付最后一稿**——绝不让玩家操作失败（属性瑕疵可容忍）。
-5. **先留存、后扩张**：流式与登录已落地；下一阶段用真实试玩打磨叙事质量，再做创作前端、社区；完整多 Agent/RAG 排后。
+1. **剧情树而非线性文本**：每次选择生成 `story_nodes` 子节点；回溯只移动会话指针，不删除分支。
+2. **状态 = JSONB 的「增量 + 快照」**：`state_delta` 记变化、`state_snapshot` 供节点级回溯、`current_state` 是唯一事实来源；属性类型由 `world_config.attributes` 声明，Go 与 Python 两侧语义由契约测试锁定。
+3. **长程记忆 = 节点摘要打底 + 窗口兜底**：每节点存滚动 `summary`，续写注入最新摘要 + 最近两段原文，上下文长度与剧情深度近似无关。
+4. **真流式 + 质量兜底**：正文逐字 SSE 先行，结构化元数据后置生成；审校分级只拦硬伤，超限降级交付，绝不阻断玩家回合。
+5. **先留存、后扩张**：当前第一优先级是用真实多回合试玩给叙事质量结账（埋点已就位），社区 MVP 与付费排在其后。
 
-## 验证命令
+## 文档地图
 
-```powershell
-# Go 后端
-cd backend
-go test ./...
+| 文档 | 用途 |
+|---|---|
+| [开发交接手册](docs/handoff.md) | **当前事实总览**：实现状态、代码入口、数据契约、运行/验证、风险与下一步 |
+| [CLAUDE.md](CLAUDE.md) | 开发规范：分层边界、实现约定、可执行命令 |
+| [视觉化技术导览](docs/visual-guide.html) | 运行时架构、续写数据流、质量闭环的图解 |
+| [backend](backend/README.md) / [agent](agent/README.md) / [frontend](frontend/README.md) README | 模块事实 |
+| [技术设计](docs/design.md) | 剧情树、JSONB、属性类型、Agent 演进等设计决策 |
+| [上下文方案](docs/context-strategy.md) | 续写上下文构建（摘要 + 窗口 + RAG 演进） |
+| [产品需求](docs/prd.md) | 愿景与长期路线；**不等于已实现** |
+| [infa/sql](infa/sql/) | 数据模型蓝本（部分表未落地） |
 
-# Python Agent：质量复查循环的离线单元测试
-cd ..\agent
-.\.venv\Scripts\python.exe -m compileall -q app tests
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
-
-# 前端生产构建（PowerShell 下用 .cmd，裸 npm 受执行策略限制）
-cd ..\frontend
-npm.cmd run build
-npx.cmd tsc --noEmit
-```
-
-> Agent 的真实端到端验证仍依赖可用的 PostgreSQL 与 DeepSeek Key。离线测试不能替代多回合试玩：必须检查摘要是否漂移、选择后果是否兑现、审校重写率和实际延迟。
-
-## 接手后的首要工作
-
-（流式、登录、冗余清理已完成；见 [handoff](docs/handoff.md) §9 的最新优先级。）
-
-1. **创作前端 / 编辑器**：消费已就绪的 `/assist/*`，让作品的世界观/大纲/属性/隐藏标记可视化编辑，打通「创作 → 游玩」。
-2. **社区 MVP**：发布、浏览、详情、点赞/评论（路由目前未注册）。
-4. 持续用真实多回合试玩打磨叙事质量：摘要漂移、选择后果、审校降级率、p95 与 ttfb。
-
-更多细节见 [开发交接手册](docs/handoff.md)。
+> **冲突判定顺序**：运行中的代码/测试 > `docs/handoff.md` > `CLAUDE.md` > 模块 README > `docs/design.md` > `docs/prd.md`。
