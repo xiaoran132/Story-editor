@@ -429,6 +429,7 @@ type WorldDraft struct {
 	Characters   []any          `json:"characters"`
 	InitialState map[string]any `json:"initial_state"`
 	Attributes   map[string]any `json:"attributes"`
+	StyleProfile *StyleProfile  `json:"style_profile,omitempty"`
 	Usage        TokenUsage     `json:"usage"`
 }
 

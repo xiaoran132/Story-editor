@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import time
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
@@ -170,6 +171,46 @@ def polish_with_style_review(req: PolishRequest) -> PolishDraft:
     )
 
 
+_DISTANCES = {"close", "medium", "distant"}
+_RHYTHMS = {"mixed", "tight", "relaxed"}
+
+
+def _coerce_style_profile(raw: Any) -> dict[str, Any] | None:
+    """把模型吐出的 style_profile 夹到合法范围；非法就丢，绝不抛。
+
+    ⚠️ WorldDraft 其余字段都是宽容默认值，今天几乎不可能因模型输出而校验失败。
+    但 StyleProfile 是严格模型（Literal 枚举 + max_length + 会 raise 的 item 校验器），
+    直接塞进 WorldDraft(**data) 的话，模型多吐一条 sensory_focus 就是未捕获异常、
+    整个世界观生成 500。文风档案只是可选精修，不该让主功能挂掉，所以这里夹取而不报错。
+    夹完天然满足 Go 的发布校验（pkg/worldvalidate.go）。
+    语义对齐前端 editorStore.loadStyleProfile。
+    """
+    if not isinstance(raw, dict):
+        return None
+
+    def _items(key: str, limit: int) -> list[str]:
+        value = raw.get(key)
+        if not isinstance(value, list):
+            return []
+        cleaned = [str(v).strip()[:48] for v in value if str(v).strip()]
+        return cleaned[:limit]
+
+    distance = raw.get("narrative_distance")
+    rhythm = raw.get("rhythm")
+    rule = raw.get("dialogue_rule")
+    out = {
+        "narrative_distance": distance if distance in _DISTANCES else None,
+        "rhythm": rhythm if rhythm in _RHYTHMS else None,
+        "sensory_focus": _items("sensory_focus", 3),
+        "dialogue_rule": (str(rule).strip()[:160] if isinstance(rule, str) else ""),
+        "avoid": _items("avoid", 5),
+    }
+    # 全空等于没给：别写一个空壳进 world_config。
+    if not any(out.values()):
+        return None
+    return out
+
+
 @router.post("/world", response_model=WorldDraft)
 def generate_world(req: GenerateWorldRequest) -> WorldDraft:
     if not req.idea.strip():
@@ -183,6 +224,7 @@ def generate_world(req: GenerateWorldRequest) -> WorldDraft:
         data = chat_json(WORLD_SYSTEM, user, temperature=0.9, llm_cfg=_cfg(req.llm), usage_out=usage)
     except Exception as error:  # noqa: BLE001
         raise _fail("generate world", error) from error
+    data["style_profile"] = _coerce_style_profile(data.get("style_profile"))
     return WorldDraft(**data, usage=_stage_usage(usage))
 
 

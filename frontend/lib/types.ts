@@ -295,6 +295,7 @@ export interface WorldDraft {
   characters: unknown[];
   initial_state: Record<string, unknown>;
   attributes: Record<string, Record<string, unknown>>;
+  style_profile?: StyleProfile | null;
 }
 
 // /assist/opening 响应

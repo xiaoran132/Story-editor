@@ -163,14 +163,10 @@ func ValidateWorldConfig(raw []byte, strict bool) *AppError {
 	return nil
 }
 
-// styleProfileErr 拼一句作者能照着做的话：中文名 + 具体要求 + 真正管用的出路。
-//
-// ⚠️ 出路**不是**「重新生成世界观」——`/assist/world` 的 WorldDraft 里根本没有
-// style_profile 这个字段，重生成不会碰它。管用的是让它过一遍编辑器的序列化：
-// `editorStore.serializeStyleProfile` 会丢掉非法枚举、按上限截断数组与文本、
-// 去首尾空白，所以在编辑器里重新保存一次就能把存量值规范成合法的。
+// styleProfileErr 拼一句作者能照着做的话：中文名 + 具体要求 + 去哪儿改。
+// 字段路径留在括号里供排查，但主语是界面词——作者认的是「文风档案」那一栏。
 func styleProfileErr(label, field, want string) string {
-	return "风格档「" + label + "」" + want + "；该字段在编辑器中没有对应控件，重新打开本作品并保存一次即可自动规范化（字段 style_profile." + field + "）"
+	return "文风档案的「" + label + "」" + want + "；请在第 2 段「世界观」的文风档案中修改（字段 style_profile." + field + "）"
 }
 
 func styleProfileLabel(field string) string {
@@ -183,10 +179,12 @@ func styleProfileLabel(field string) string {
 	return field
 }
 
-// ⚠️ style_profile 在本产品里**没有任何写入方**：编辑器无控件，`/assist/world`
-// 的响应也不含该字段。它只会来自直接写库/直调 API 的数据或存量数据，读侧则由
-// agent_client 透传给润色管线。这几条校验因此是防御性的，对编辑器建出来的作品
-// 恒为 nil、恒通过。文案不能只报 JSON 键名——作者在界面上找不到那一栏。
+// style_profile 有两个写入方：`/assist/world` 生成世界观时产出，作者在段 2 微调。
+// 读侧进玩家写手提示词（story_graph._style_profile_block）与作者侧润色。
+//
+// 正常路径下越界值到不了这里：agent 的 _coerce_style_profile 与前端的
+// serializeStyleProfile 各夹一道。这几条仍是必要的守门——直调 API 或存量数据
+// 会绕开那两道。整个档案缺省合法，全部约束都是「填了才校验」的上界。
 func validateStyleProfile(profile *styleProfileShape) *AppError {
 	if profile == nil {
 		return nil

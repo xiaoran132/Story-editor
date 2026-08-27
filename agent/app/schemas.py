@@ -160,6 +160,7 @@ class WorldDraft(BaseModel):
     characters: list[dict[str, Any]] = Field(default_factory=list)
     initial_state: dict[str, Any] = Field(default_factory=dict)
     attributes: dict[str, Any] = Field(default_factory=dict)
+    style_profile: StyleProfile | None = None
     usage: StageUsage = Field(default_factory=StageUsage)
 
 

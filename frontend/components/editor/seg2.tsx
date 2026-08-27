@@ -2,6 +2,7 @@
 
 import { useEditorStore } from "@/store/editorStore";
 import { GENRES, TONES } from "@/lib/types";
+import type { StyleProfile } from "@/lib/types";
 import CharacterList from "./CharacterList";
 import { NavBtns, SelectField, TextArea, TextField } from "./fields";
 import styles from "./editor.module.css";
@@ -13,6 +14,13 @@ import type { SegProps } from "./segTypes";
 // 排序约定：题材在前（tags[0] 决定归类）、自定义居中、基调置尾。
 export default function Seg2({ go, names }: SegProps) {
   const s = useEditorStore();
+  // styleProfile 是嵌套对象，而 setField 只能整键替换（editorStore.setField），
+  // 所以走 seg5 setTheme 那套 spread-patch，不必给 store 加专用 action。
+  const sp = (patch: Partial<StyleProfile>) =>
+    s.setField("styleProfile", { ...s.styleProfile, ...patch });
+  // 逗号分隔 ↔ string[]，同吃中英文逗号——沿用 AttrTable 里 set 型初值的写法。
+  const toList = (text: string) =>
+    text.split(/[,，]/).map((x) => x.trim()).filter(Boolean);
   const isGenre = (t: string) => (GENRES as readonly string[]).includes(t);
   const isTone = (t: string) => (TONES as readonly string[]).includes(t);
   const extraTags = s.tags.filter((t) => !isGenre(t) && !isTone(t));
@@ -42,6 +50,52 @@ export default function Seg2({ go, names }: SegProps) {
             />
             <TextArea label="背景" value={s.background} onChange={(v) => s.setField("background", v)} />
             <TextField label="基调" value={s.style} onChange={(v) => s.setField("style", v)} />
+
+            {/* 文风档案：玩家每回合的正文都按它写（agent 侧只喂写手，不喂结构化与审校）。
+                全部可选、全空则整个键不写入 world_config，所以不参与完成度与发布校验。 */}
+            <div className={styles.field}>
+              <span className={styles.label}>
+                文风档案 <span className={styles.hint}>（可选）约束玩家读到的正文；AI 生成世界观时会一并给出，可在此微调</span>
+              </span>
+            </div>
+            <SelectField
+              label="叙事距离"
+              value={s.styleProfile.narrative_distance ?? ""}
+              onChange={(v) => sp({ narrative_distance: (v || undefined) as StyleProfile["narrative_distance"] })}
+            >
+              <option value="">（不指定）</option>
+              <option value="close">紧贴 · 贴近主角内心与感官</option>
+              <option value="medium">适中</option>
+              <option value="distant">疏离 · 冷眼旁观的镜头感</option>
+            </SelectField>
+            <SelectField
+              label="叙事节奏"
+              value={s.styleProfile.rhythm ?? ""}
+              onChange={(v) => sp({ rhythm: (v || undefined) as StyleProfile["rhythm"] })}
+            >
+              <option value="">（不指定）</option>
+              <option value="mixed">张弛交替</option>
+              <option value="tight">紧凑推进</option>
+              <option value="relaxed">舒缓铺陈</option>
+            </SelectField>
+            <TextField
+              label="感官侧重"
+              hint="逗号分隔，最多 3 条，每条 ≤48 字。如 听觉, 气味"
+              value={(s.styleProfile.sensory_focus ?? []).join("，")}
+              onChange={(v) => sp({ sensory_focus: toList(v) })}
+            />
+            <TextField
+              label="对白规则"
+              hint="≤160 字。如 对白短促，多留白，不解释动机"
+              value={s.styleProfile.dialogue_rule ?? ""}
+              onChange={(v) => sp({ dialogue_rule: v })}
+            />
+            <TextField
+              label="避免"
+              hint="逗号分隔，最多 5 条，每条 ≤48 字。写具体的写法，如 上帝视角, 形容词堆砌"
+              value={(s.styleProfile.avoid ?? []).join("，")}
+              onChange={(v) => sp({ avoid: toList(v) })}
+            />
             <TextArea label="规则" value={s.rules} onChange={(v) => s.setField("rules", v)} />
             <TextArea
               label="大纲"

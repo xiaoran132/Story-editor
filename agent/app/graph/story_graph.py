@@ -105,6 +105,57 @@ def _write_hidden(lines: list[str], world: dict[str, Any]) -> None:
     )
 
 
+_DISTANCE_LABELS = {"close": "紧贴（贴近主角的内心与感官）",
+                    "medium": "适中", "distant": "疏离（冷眼旁观的镜头感）"}
+_RHYTHM_LABELS = {"mixed": "张弛交替", "tight": "紧凑推进", "relaxed": "舒缓铺陈"}
+
+
+def _style_profile_block(world: dict[str, Any]) -> str:
+    """把结构化文风档案渲染成写手侧的硬约束段；无档案时返回空串。
+
+    ⚠️ 只给 Writer，**不进 prepare 的 user_prompt**。user_prompt 每回合会被完整重发给
+    Writer / Structurer / Reviewer 三个调用（重写一轮再乘一遍），而 Structurer 只产选项、
+    delta 与摘要，Reviewer 的判据里没有任何文风维度——两者拿到这段纯属烧 token。
+    对应的回归断言在 tests/test_stream.py。
+
+    入参是 model_dump() 后的 dict（routers/generate.py），不是 pydantic 对象，所以
+    None/空列表/空串都得自己裁；不能复用 assist.py 的 _profile_context（那个用了 exclude_none）。
+    """
+    profile = world.get("style_profile")
+    if not isinstance(profile, dict):
+        return ""
+
+    items: list[str] = []
+    distance = _DISTANCE_LABELS.get(profile.get("narrative_distance") or "")
+    if distance:
+        items.append(f"叙事距离：{distance}")
+    rhythm = _RHYTHM_LABELS.get(profile.get("rhythm") or "")
+    if rhythm:
+        items.append(f"叙事节奏：{rhythm}")
+
+    def _clean(key: str) -> list[str]:
+        raw = profile.get(key)
+        return [s.strip() for s in raw if isinstance(s, str) and s.strip()] if isinstance(raw, list) else []
+
+    focus = _clean("sensory_focus")
+    if focus:
+        items.append("感官侧重：" + "、".join(focus) + "（优先用这几类感官落笔，不要面面俱到）")
+    rule = (profile.get("dialogue_rule") or "").strip() if isinstance(profile.get("dialogue_rule"), str) else ""
+    if rule:
+        items.append(f"对白规则：{rule}")
+
+    # avoid 单独成条并加重语气：否定约束混在散文里最容易被模型忽略，
+    # 这也是结构化档案相对自由文本 world.style 的主要增量价值。
+    avoid = _clean("avoid")
+    if avoid:
+        items.append("**必须避免**：" + "、".join(avoid))
+
+    if not items:
+        return ""
+    return ("\n\n【文风档案】本作品的文风硬约束，与上文「风格」一并遵守；"
+            "冲突时以本档案为准：\n- " + "\n- ".join(items))
+
+
 def _reveal_gated_attrs(world: dict[str, Any]) -> list[str]:
     """从 world.attributes 提取标了 reveal:true 的「揭示门控」属性键。
 
@@ -252,6 +303,8 @@ def prepare(state: StoryState) -> dict[str, Any]:
 
     return {
         "user_prompt": "\n".join(lines),
+        # 只给 Writer 的文风块：见 _style_profile_block 的说明，不并进 user_prompt。
+        "style_block": _style_profile_block(world),
         "known_keys": known,
         "attr_types": attr_types,
         "reveal_gated": _reveal_gated_attrs(world),  # normalize 据此白名单校验 revealed
@@ -382,7 +435,7 @@ async def _stream_pipeline(mode: str, base_state: dict[str, Any]) -> AsyncIterat
     # 自己上一稿基础上修订而非从头重写。Structurer 和 Reviewer 都是按当前版本单独调用。
     writer_msgs = [
         SystemMessage(content=STORY_WRITER_SYSTEM),
-        HumanMessage(content=state["user_prompt"]),
+        HumanMessage(content=state["user_prompt"] + state.get("style_block", "")),
     ]
 
     try:

@@ -16,7 +16,7 @@ Story Editor 的长期愿景是“AI 驱动的互动剧情共创社区”：用�
 | 域 | 已完成 | 未完成或限制 |
 |---|---|---|
 | 用户 | 后端注册/登录/JWT/资料、凭证分表；**前端登录接入完成**（游玩需登录，匿名与会话迁移已移除，见 §9.2）；**我的空间 `/mine`（空间/我的作品/历史记录/消息/设置五页）**，设置页含资料 + 头像 + BYOK 连接管理；**BYOK 已接入生成**（连接=账号级、模型=作品级，见 §12）；**注册赠 1 元平台额度 + 按 token 计费扣减**；头像上传 | OAuth/密码找回未做；**充值服务未做**（额度用尽只能自带 key）；单价需 admin 手填；旧 `User.LLMKeyCipher`（单 key）已废弃、列留孤儿 |
-| 作品 | Story CRUD（列表/详情 LEFT JOIN users 带出 `creator_name` 作者昵称，只读投影）、作品列表、世界观/初始状态 JSON；**创作编辑器(MVP)**：`world_config`/`opening_content` 可写入、运行时校验(`pkg.ValidateWorldConfig`，**草稿宽松、已发布严格**——发布时校验，且**更新已发布作品走同一把尺子**，否则改一次就能把线上作品改成连发布都过不了的状态)、发布态切换、我的作品列表、assist Go 转发；**完整开场深度润色预览**（文风档案 `style_profile` 是它的可选输入，但目前无任何写入方，见 §9.2）；**封面上传（`/uploads/image` + `cover_url`，见 §14）**；**`GET /stories` 参数化**（`sort`/`limit`/`offset`，见 §7.1）；**`play_count` 有写入路径了**（开场落库成功时经 `StoryCounter` 窄接口自增，见 §9.2） | `/assist/branches` 编辑内接入未做 |
+| 作品 | Story CRUD（列表/详情 LEFT JOIN users 带出 `creator_name` 作者昵称，只读投影）、作品列表、世界观/初始状态 JSON；**创作编辑器(MVP)**：`world_config`/`opening_content` 可写入、运行时校验(`pkg.ValidateWorldConfig`，**草稿宽松、已发布严格**——发布时校验，且**更新已发布作品走同一把尺子**，否则改一次就能把线上作品改成连发布都过不了的状态)、发布态切换、我的作品列表、assist Go 转发；**完整开场深度润色预览**；**文风档案 `style_profile`**（`/assist/world` 产出 + 段 2 可改，写进玩家侧写手提示词，见 §9.2）；**封面上传（`/uploads/image` + `cover_url`，见 §14）**；**`GET /stories` 参数化**（`sort`/`limit`/`offset`，见 §7.1）；**`play_count` 有写入路径了**（开场落库成功时经 `StoryCounter` 窄接口自增，见 §9.2） | `/assist/branches` 编辑内接入未做 |
 | 游玩 | 开局、续写、自由输入、回溯、读档、删档、剧情树、状态合并；质量审校可开关（默认关）；**全组需登录，草稿仅作者可玩**；**hidden/未揭示 reveal 的数值不外发**（§9.2） | **匿名不能玩**（额度挂账号，详情页拦截并引导登录）；真实环境下的多回合质量/延迟指标尚未沉淀 |
 | Agent | **流式生成(SSE)**、属性类型规整（含 hidden）、故事大纲导演、滚动摘要、审校分级 + 有记忆修订 + 超限降级交付 | RAG、多 Agent fan-out、独立 director/recall/write 子图未做 |
 | 前端 | **万象设计体系全量落地（见 §13）**，14 条路由全在新体系上：`/` 3D CSS 星系(四种排布 + 拖拽惯性 + 2.6s 开屏)、`/works` 作品馆、`/story/[id]`、`/play/[id]`(三栏舞台 + 状态轨 + 选项坞 1/2/3 快捷键 + 星图抽屉)、`/create`·`/edit/[id]` 六段式编辑器(天空即完成度)、`/login` 天空阶梯、`/mine` 五页、`/admin`、`not-found`，以及 `/community`·`/mine/inbox` 两个**零假数据**的开发中页。正文逐字流式(无首字下沉)、属性三态可见性(hidden 全程不露面)、进度条按 `max` 声明画、按作品配模型、每作品一个 `--hue` 染色 | 社区功能未做；**无前端自动化测试、无 CI**（`.github/` 只剩 ESLint），闸门是本地 lint/typecheck/build + 真机走查 |
@@ -187,7 +187,7 @@ prepare
 
 ### 6.3 长程记忆
 
-续写优先注入：**最近一条非空 `summary` + 最近两段原文 + 当前状态/选择**。这让上下文长度与剧情深度近似无关；老会话无摘要时回退为“开局 + 最近窗口”的滑动窗口。详细方案见 [context-strategy.md](context-strategy.md)。
+续写优先注入：**最近一条非空 `summary` + 最近两段原文 + 当前状态/选择**。写手另比结构化/审校多收一段**文风档案**（`style_block`，只拼进 Writer 的 HumanMessage，原因见 §9.2）。这让上下文长度与剧情深度近似无关；老会话无摘要时回退为“开局 + 最近窗口”的滑动窗口。详细方案见 [context-strategy.md](context-strategy.md)。
 
 ## 7. 对外接口地图
 
@@ -261,7 +261,7 @@ cd ..\agent
 
 ESLint 用 `next/core-web-vitals`，只关了 `@next/next/no-img-element` 一条（项目刻意用原生 `<img>`，理由见 `frontend/.eslintrc.json` 与 `components/ImageUpload.tsx`）。
 
-当前 Python 测试精简为十一个关键回归：`test_stream.py` 覆盖正常流式回合、审校重写、耗尽降级、关闭审校，以及**结构化/审校不阻塞事件循环**（并发两条流水线，串行化就超时；用 `REVIEW_CFG` 才能同时覆盖到两处调用），且在正常路径一并校验 reveal 门控与 usage 归属；`test_llm_parse_retry.py` 覆盖 JSON 重试和无默认凭据；`test_assist_polish.py` 覆盖润色闭环的未触发、采用、复审回退与预调用预算保护。Go 有 `play_merge_test.go`（节点语义合并契约）、`access_test.go` / `ownership_test.go`（可见性与归属）、`player_view_test.go`（玩家可见投影）、`llm_resolver_test.go`（BYOK 解析优先级）、`worldvalidate_test.go`（含 style_profile 发布校验）、`crypto_test.go` / `upload_test.go`、`response_test.go`（`SafeDetail`：只有 `AppError.Message` 能外发，裸 DB 错误换固定文案，`context.Canceled` 不当故障），`play_opening_test.go`（开场并发：AI 只生成一次、只扣一次费、后到者复用而非报错；leader 重读；唯一冲突翻幂等；约束名判定；**leader 中途失败时 follower 拿到错误而不是 panic**），以及 `play_reuse_test.go`（逐字相同的选择不生成不扣费不建节点；`CheckMerge` 必须收到模型连接；语义命中复用既有节点；判定失败仍照常推进）。
+当前 Python 测试精简为十五个关键回归：`test_stream.py` 覆盖正常流式回合、审校重写、耗尽降级、关闭审校、**文风档案只进 Writer 不进 Structurer/Reviewer**（§9.2 的成本决策回归锁）与无档案时零增量，以及**结构化/审校不阻塞事件循环**（并发两条流水线，串行化就超时；用 `REVIEW_CFG` 才能同时覆盖到两处调用），且在正常路径一并校验 reveal 门控与 usage 归属；`test_llm_parse_retry.py` 覆盖 JSON 重试和无默认凭据；`test_assist_polish.py` 覆盖润色闭环的未触发、采用、复审回退、预调用预算保护，以及 **`/assist/world` 产出的 style_profile 越界时被夹取而非抛异常**（`WorldDraft(**data)` 在 try 之外，不夹会 500）。Go 有 `play_merge_test.go`（节点语义合并契约）、`access_test.go` / `ownership_test.go`（可见性与归属）、`player_view_test.go`（玩家可见投影）、`llm_resolver_test.go`（BYOK 解析优先级）、`worldvalidate_test.go`（含 style_profile 发布校验）、`crypto_test.go` / `upload_test.go`、`response_test.go`（`SafeDetail`：只有 `AppError.Message` 能外发，裸 DB 错误换固定文案，`context.Canceled` 不当故障），`play_opening_test.go`（开场并发：AI 只生成一次、只扣一次费、后到者复用而非报错；leader 重读；唯一冲突翻幂等；约束名判定；**leader 中途失败时 follower 拿到错误而不是 panic**），以及 `play_reuse_test.go`（逐字相同的选择不生成不扣费不建节点；`CheckMerge` 必须收到模型连接；语义命中复用既有节点；判定失败仍照常推进）。
 
 **可选的一档**（默认不编译）：`play_opening_integration_test.go` 带 `//go:build integration`，测的是替身测不出来的 Postgres 特性——部分唯一索引真的拒绝第二个根节点、23505 翻成幂等成功、脏库上 `EnsureRootIndex` 必须报错。⚠️ 这是刻意隔离的：现有 `go test -race ./...` 不需要 PostgreSQL 就能跑，一刀切加 PG 集成测试会让没装 PG 的人连 `go test ./...` 都过不了。
 
@@ -346,10 +346,11 @@ cd agent
 
 ### 9.2 已知技术债
 
-**`style_profile` 是一个没有写入方的字段**
-- `pkg/worldvalidate.go` 对它有六条发布校验（叙事距离/节奏/感官侧重/规避项/对白规则），`agent_client` 也会把它透传给润色管线——但**产品里没有任何地方写它**：编辑器无输入控件，`/assist/world` 的 `WorldDraft` 也不含该字段（`style_profile` 挂在 `WorldConfigObj` 上，两者别搞混）。它只会来自直接写库/直调 API 或存量数据。
-- 后果：对编辑器建出来的作品，这几条校验恒为 nil、恒通过，属防御性校验。真触发时作者在界面上找不到那一栏，**且「重新生成世界观」不管用**（重生成根本不产出该字段）；管用的出路是让它过一遍 `editorStore.serializeStyleProfile`——重新打开作品保存一次即自动规范化，错误文案已按此指引。
-- 要真正补齐，得在段 2 加一组控件（或只读展示）并让 `/assist/world` 产出它；在那之前这是一条「有校验、有消费方、无生产方」的悬空链路。
+**文风档案 `style_profile` 只喂写手，不喂结构化与审校**
+- 这是成本决策，不是疏漏。`prepare` 产出的 `user_prompt` 每回合被**完整重发给三个 LLM 调用**（Writer / Structurer / Reviewer，`story_graph.py` 三处），被审校拒绝再重写一轮又乘一遍。而 Structurer 只产选项/delta/摘要，`REVIEW_SYSTEM` 的判据里没有任何文风维度——这两个拿到文风档案是纯烧 token。
+- 所以档案走 `prepare` 返回的独立键 `style_block`，只在 `_stream_pipeline` 组装 `writer_msgs` 时拼进 Writer 的 HumanMessage。实测增量：只进 Writer 典型 +5~7%，若并进 `user_prompt` 则 +15~20%（最坏 +35%）。
+- **回归锁**：`tests/test_stream.py::test_style_profile_reaches_writer_only` 断言 Structurer 与 Reviewer 的 prompt 里不含文风块。谁把它挪回 `_write_world` 都会红——`_write_world` 还有第二个调用点 `complete_opening`（给已写定的开场补选项/摘要，根本不写正文），改它会一并污染。
+- 审校**刻意没加**文风判据：`REVIEW_SYSTEM` 的基调是「只拦阻断级硬伤」，文风偏差不是硬伤，拦进去会抬高拒绝率、让重写轮次和费用翻倍。要改先读 §9.1 的埋点结论。
 
 **质量审校（review）**
 - review 是同一模型的二次调用：能抬下限，不保证事实正确，且加延迟与费用。真实样本拒绝率约 18%，**不是橡皮图章**。两类主要拒因：`state_delta` 与正文不一致、`summary` 漏记新增实体。（第三类「选项 hint 无后果」已随 hint 移除而作废。）

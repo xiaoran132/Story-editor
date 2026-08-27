@@ -185,6 +185,66 @@ class StreamPipelineTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(done["usage"]["review"]["completion_tokens"], 0)
 
 
+    async def test_style_profile_reaches_writer_only(self) -> None:
+        """文风档案只进 Writer，不进 Structurer / Reviewer。
+
+        这是成本决策的回归锁：prepare 的 user_prompt 每回合被完整重发给三个调用
+        （Writer/Structurer/Reviewer），重写一轮再乘一遍。而 Structurer 只产选项、
+        delta 与摘要，Reviewer 的判据里没有任何文风维度——把文风塞进 user_prompt
+        等于按 3 倍烧 token 换零收益。谁要是日后把它挪回 _write_world，这条会红。
+        """
+        styled = {**WORLD, "style_profile": {
+            "narrative_distance": "close", "rhythm": "tight",
+            "sensory_focus": ["听觉"], "dialogue_rule": "对白短促",
+            "avoid": ["上帝视角"],
+        }}
+        seen_writer = []
+        seen_json_users = []
+
+        async def fake_stream(messages, **kwargs):
+            seen_writer.append(messages)
+            kwargs["usage_out"].add(Usage(1, 1))
+            yield "正文。"
+
+        def fake_json(system, user, **kwargs):
+            seen_json_users.append((system, user))
+            kwargs["usage_out"].add(Usage(1, 1))
+            if system == STRUCTURE_SYSTEM:
+                return STRUCTURE
+            return {"passed": True, "issues": []}
+
+        with patch.object(sg, "chat_stream", fake_stream),              patch.object(sg, "chat_json", fake_json):
+            await collect(run_continue_stream(
+                styled, [], STATE, "go", None, WRITE_CFG, REVIEW_CFG,
+            ))
+
+        writer_prompt = seen_writer[0][-1].content
+        self.assertIn("【文风档案】", writer_prompt)
+        self.assertIn("上帝视角", writer_prompt)          # avoid 是结构化档案的主要增量
+        self.assertIn("紧凑推进", writer_prompt)          # 枚举渲染成中文标签而非原值
+
+        self.assertEqual(len(seen_json_users), 2)         # Structurer + Reviewer 各一次
+        for system, user in seen_json_users:
+            self.assertNotIn("【文风档案】", user)
+            self.assertNotIn("上帝视角", user)
+
+    async def test_no_style_profile_adds_nothing(self) -> None:
+        """没有文风档案的作品，writer prompt 不多出任何字节——存量作品零增量。"""
+        seen = []
+
+        async def fake_stream(messages, **kwargs):
+            seen.append(messages)
+            kwargs["usage_out"].add(Usage(1, 1))
+            yield "正文。"
+
+        with patch.object(sg, "chat_stream", fake_stream),              patch.object(sg, "chat_json", lambda *a, **k: STRUCTURE):
+            await collect(run_continue_stream(WORLD, [], STATE, "go", None, WRITE_CFG))
+
+        prep = sg.prepare({"mode": "continue", "world": WORLD,
+                           "current_state": STATE, "choice": "go", "revealed_attrs": []})
+        self.assertEqual(seen[0][-1].content, prep["user_prompt"])
+        self.assertEqual(prep["style_block"], "")
+
     async def test_llm_stages_do_not_block_event_loop(self) -> None:
         """结构化与审校必须跑在工作线程里，否则会卡死整个事件循环。
 

@@ -152,9 +152,9 @@ copy .env.example .env  # Windows；可选，全部变量都有默认值
 | `POST` | `/continue/stream` | Go `ContinueStream`：流式续写 |
 | `POST` | `/opening/complete` | Go `StartSession` 预设开场：补起始选项 + summary |
 | `POST` | `/merge-check` | Go `tryMerge`：候选分支语义等价判断 |
-| `POST` | `/assist/world` | 创作辅助：灵感 → 世界观/属性声明 |
+| `POST` | `/assist/world` | 创作辅助：灵感 → 世界观/属性声明/文风档案 |
 | `POST` | `/assist/opening` | 创作辅助：世界观 → 开场草稿 |
-| `POST` | `/assist/polish` | 创作辅助：完整开场正文的精品润色闭环 |
+| `POST` | `/assist/polish` | 创作辅助：完整开场正文的深度润色闭环 |
 | `POST` | `/assist/branches` | 创作辅助：分支建议 |
 | `GET` | `/health` | 运行状态和模型配置检查 |
 

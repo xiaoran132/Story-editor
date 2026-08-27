@@ -65,7 +65,8 @@ WORLD_SYSTEM = """你是互动小说的世界观设计助手。根据用户给�
   "outline": "故事大纲（150-300字）：核心悬念/主线目标 + 大致三幕走向 + 2-4 个关键剧情锚点 + 若干可能结局",
   "characters": [{"name": "角色名", "personality": "性格", "role": "定位"}],
   "initial_state": {"属性键": 初始值},
-  "attributes": {"属性键": {"type": "number|scalar|set", "initial": 初始值, "hidden": false}}
+  "attributes": {"属性键": {"type": "number|scalar|set", "initial": 初始值, "hidden": false}},
+  "style_profile": {"narrative_distance": "close|medium|distant", "rhythm": "mixed|tight|relaxed", "sensory_focus": ["感官通道"], "dialogue_rule": "对白写法约束", "avoid": ["要避免的写法"]}
 }
 要求：
 - outline 是给 AI 导演的**走向锚点**，不是线性脚本：给出主线脊柱与关键节点/结局方向即可，具体路径仍由玩家选择决定；要与 background/characters 自洽。
@@ -76,6 +77,11 @@ WORLD_SYSTEM = """你是互动小说的世界观设计助手。根据用户给�
   - set：集合属性（如背包 items），initial 给数组。
 - **hidden（可选，默认 false）**：把"针对玩家的暗数值/压力表"标为 `"hidden": true`——它只供 AI 把控走向、不展示给玩家（如 怀疑度、警戒度、命运值、暗好感、堕落度）。玩家该直接感知的属性（hp、金币、物品、体力等）保持可见（false 或省略）。可以主动设计 0-2 个隐藏属性来制造"看不见的紧张感"。
 - initial_state 与 attributes 的键必须一致，initial_state 每个键的值等于其在 attributes 里的 initial（hidden 属性也要有 initial_state 值）。
+- **style_profile**：这部作品的文风档案，玩家每一回合的正文都会按它来写，务必与 style/background 自洽。
+  - narrative_distance 只能取 close/medium/distant，rhythm 只能取 mixed/tight/relaxed，各选一个。
+  - sensory_focus：最多 3 条，每条不超过 48 字，挑最贴合本作品的感官通道（如 听觉、气味、触感）。
+  - dialogue_rule：不超过 160 字，一句话说清对白该怎么写（如"对白短促，多留白，不解释动机"）。
+  - avoid：最多 5 条，每条不超过 48 字，写明本作品**要避免**的具体写法（如 上帝视角、形容词堆砌、总结陈词）。这一条对文风的作用最大，务必具体、可执行，不要写"避免不好的文笔"这种空话。
 - 内容自洽、可玩，避免空泛。"""
 
 # 创作辅助：文本润色

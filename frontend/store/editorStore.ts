@@ -366,6 +366,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         outline: d.outline || "",
         characters: coerceCharacters(d.characters || []),
         attributes: attrsToRows(d.attributes || {}, d.initial_state || {}),
+        // 文风档案与其余字段同批回填；loadStyleProfile 会夹掉越界值（agent 侧也清洗过一遍）。
+        styleProfile: loadStyleProfile(d.style_profile),
         aiBusy: null,
         toast: "已生成世界观草稿，请审阅微调",
       });

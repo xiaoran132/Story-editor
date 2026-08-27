@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from app.llm import Usage
 from app.routers import assist
-from app.schemas import PolishRequest
+from app.schemas import GenerateWorldRequest, PolishRequest
 
 
 SOURCE = "雨落在站台上。林舟非常难过，他知道自己失去了最后一次机会。"
@@ -85,6 +85,51 @@ class PolishLoopTests(unittest.TestCase):
         self.assertEqual(draft.text, SOURCE)
         self.assertEqual(len(calls), 0)
         self.assertEqual(draft.usage.prompt_tokens, 0)
+
+
+class GenerateWorldStyleProfileTests(unittest.TestCase):
+    """/assist/world 产出 style_profile 时必须容错。
+
+    WorldDraft 其余字段都是宽容默认值，唯独 StyleProfile 是严格模型（Literal 枚举 +
+    max_length + 会 raise 的条目校验器），而 WorldDraft(**data) 在 generate_world 的
+    try/except 之外——模型多吐一条 sensory_focus 就是未捕获异常、整个世界观生成 500。
+    文风档案只是可选精修，绝不该让主功能挂掉。
+    """
+
+    BASE = {"background": "b", "style": "s", "rules": "r", "outline": "o",
+            "characters": [], "initial_state": {}, "attributes": {}}
+    REQ = GenerateWorldRequest(
+        idea="一个灵感",
+        llm={"base_url": "https://example.test", "api_key": "key", "model": "m"},
+    )
+
+    def _run(self, profile):
+        def fake(_system, _user, *, usage_out=None, **_kwargs):
+            if usage_out is not None:
+                usage_out.add(Usage(1, 1))
+            return {**self.BASE, "style_profile": profile}
+
+        with patch.object(assist, "chat_json", fake):
+            return assist.generate_world(self.REQ)
+
+    def test_malformed_profile_is_clamped_not_raised(self) -> None:
+        draft = self._run({
+            "narrative_distance": "far",          # 越界枚举 → 丢弃
+            "rhythm": "tight",
+            "sensory_focus": ["a", "b", "c", "d"],  # 4 条 → 截到 3
+            "dialogue_rule": "y" * 200,             # 200 字 → 截到 160
+            "avoid": ["x" * 60],                    # 60 字 → 截到 48
+        })
+        self.assertIsNone(draft.style_profile.narrative_distance)
+        self.assertEqual(draft.style_profile.rhythm, "tight")
+        self.assertEqual(draft.style_profile.sensory_focus, ["a", "b", "c"])
+        self.assertEqual(len(draft.style_profile.dialogue_rule), 160)
+        self.assertEqual(len(draft.style_profile.avoid[0]), 48)
+
+    def test_absent_or_empty_profile_stays_none(self) -> None:
+        self.assertIsNone(self._run(None).style_profile)
+        self.assertIsNone(self._run("垃圾").style_profile)
+        self.assertIsNone(self._run({"sensory_focus": [], "dialogue_rule": ""}).style_profile)
 
 
 if __name__ == "__main__":
