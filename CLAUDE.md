@@ -18,7 +18,7 @@
 
 | Where | Holds |
 |---|---|
-| `README.md` | session entry point: "先读什么" reading order, product snapshot, run and verification commands |
+| `README.md` | project entry point: what the product is, capability overview, architecture, quick start, verification; doc map at the end |
 | `docs/handoff.md` | current facts: status §2, endpoints §7.1, known gaps §9.2, next §9.3, BYOK §12, theming §13, upload §14 |
 | `docs/design.md` | technical design & rationale: attribute system, data flow, node merge, scaling |
 | `docs/context-strategy.md` | why and how generation context uses summaries, recent raw turns, and future recall/RAG evolution |
@@ -152,7 +152,7 @@ Registered in route groups in `main.go`. **The endpoint list lives in `docs/hand
 | Source | Status |
 |---|---|
 | `AutoMigrate` over `internal/model/` | **the only thing that builds the running schema** |
-| `infa/sql/` | design blueprint, **runs at no point in startup**, ahead of the Go implementation. `users` (001), `stories` (002), `play` (003), `community` (004, unimplemented). Check the relevant file before adding a module; don't mistake it for applied migrations |
+| `infa/sql/` | design blueprint, **runs at no point in startup**. `users` (001), `stories` (002), `play` (003), `community` (004, unimplemented), `llm` (005, mostly implemented). Check the relevant file before adding a module; don't mistake it for applied migrations |
 
 Note `play_sessions.current_state` holds the full snapshot — complementary to the node tree's deltas, not a duplicate.
 
@@ -178,7 +178,7 @@ Standalone process at `AGENT_URL` (default `http://localhost:8001`); see `agent/
 | `schemas.py` | contract mirror of the Go DTOs |
 | `llm.py` | OpenAI-compatible client. `chat_json` forces `response_format=json_object`, `chat_stream` doesn't; `_build_ephemeral` is the only constructor — per-request, uncached, no defaults |
 
-Pipeline internals (writer beats, `<<<META>>>` JSON tail, tiered review, incremental summary + recap window): `docs/handoff.md` §6.1–6.3. Rationale and unbuilt phases: `docs/design.md`「AI agent」, `docs/context-strategy.md`.
+Pipeline internals (streaming writer + separate structurer pass, memory-equipped revision loop, tiered review, incremental summary + recap window): `docs/handoff.md` §6.1–6.3. Rationale and unbuilt phases: `docs/design.md`「AI agent」, `docs/context-strategy.md`.
 
 ## Frontend design system (the UI source of truth)
 

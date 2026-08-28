@@ -222,7 +222,7 @@ prepare
 | `POST /merge-check` | 在 Go 的 `state_delta` 硬过滤之后判断同层候选是否语义等价。**必须带 `llm` 下发**（Go 侧 `judgeCfg`：优先审校档，未开审校退到写作档）——agent 无默认凭据，缺了每次 502 |
 | `POST /assist/world`、`/opening`、`/polish`、`/branches` | 创作辅助；**经 Go `/api/v1/assist/*` 转发**给创作编辑器消费（agent 无鉴权/CORS，前端不直连；Go 侧用 180s `assistClient`） |
 | `POST /assist/validate-key` | 校验某 LLM key 是否可用（一次性 ping，**独立于 `_build_llm` 缓存与生成管线**，不落库）；经 Go 的 `/llm/connections/test`、`/admin/llm/platform/test` 复用 |
-| `GET /health` | 检查模型配置状态 |
+| `GET /health` | 进程存活探针（不报告模型配置——agent 不持有任何凭据） |
 
 **BYOK（LLMConfig 下发）**：`/generate/stream`、`/continue/stream`、`/opening/complete` 及 `/assist/*` 请求体可携带 `llm_write`/`llm_review`（play）或 `llm`（assist 单次），字段 `{provider,base_url,api_key,model}`。Go 侧按环节解密解析后下发；agent 用它构造**临时** `ChatOpenAI`（`_build_ephemeral`，不进全局缓存），缺字段/未下发即报错，绝不回退 agent `.env`。写手用 `llm_write`、审校用 `llm_review`。**agent 不碰数据库**，所有 key/策略在 Go。
 

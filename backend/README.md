@@ -54,7 +54,7 @@ go get <pkg> && go mod tidy   # 加依赖
 
 Windows 下可用仓库根的 `.\scripts\dev.ps1`（默认一并拉起 Agent/后端/前端；`-Only backend` 只起后端）。
 
-启动时会依次：启用 `pgcrypto` 扩展 → `AutoMigrate`（`User`/`UserCredential`/`Story`/`StoryNode`/`PlaySession`/`LLMConnection`/`PlatformLLMSetting`/`UserStoryLLMConfig`/`LLMUsageLog`，共 9 个模型）。**不预置任何数据**：干净数据库启动后既没有用户也没有作品，注册一个账号自行创作。
+启动时会依次：启用 `pgcrypto` 扩展 → `AutoMigrate`（`User`/`UserCredential`/`Story`/`StoryLike`/`StoryNode`/`PlaySession`/`LLMConnection`/`PlatformLLMSetting`/`UserStoryLLMConfig`/`UserAssistLLMConfig`/`LLMUsageLog`，共 11 个模型），随后显式建开局唯一索引 `uniq_root_per_session`（GORM 标签表达不了 `WHERE parent_id IS NULL`，见 `main.go` 的 `EnsureRootIndex`）。**不预置任何数据**：干净数据库启动后既没有用户也没有作品，注册一个账号自行创作。
 
 ## 配置
 
@@ -78,7 +78,7 @@ Windows 下可用仓库根的 `.\scripts\dev.ps1`（默认一并拉起 Agent/后
 | 分组 | 鉴权 | 端点 |
 |---|---|---|
 | `/auth` | 部分 | `POST /register`、`POST /login`、`GET·PUT /profile`（AuthRequired） |
-| `/stories` | 写需登录 | `POST·PUT·DELETE /`·`/:id`（AuthRequired）、`GET /`、`GET /:id`（AuthOptional：作者可读自己的草稿，其他人只读 published、越权 404） |
+| `/stories` | 写需登录 | `POST·PUT·DELETE /`·`/:id`、`PUT /:id/status`（发布态切换，发布严格校验）、`GET /`、`GET /mine`（AuthRequired）、`GET /:id`（AuthOptional：作者可读自己的草稿，其他人只读 published、越权 404）、`POST·DELETE /:id/like`（AuthRequired，幂等点赞） |
 | `/play` | **AuthRequired** | 见下方 |
 
 > 创作侧节点 CRUD（`/stories/:id/nodes`、`/nodes/*`）与社区路由已下线，不再注册；原因见 `docs/handoff.md` §9.2。
@@ -108,7 +108,7 @@ Windows 下可用仓库根的 `.\scripts\dev.ps1`（默认一并拉起 Agent/后
 
 ## 数据模型现状
 
-GORM 目前只 `AutoMigrate` 五个模型：`User`、`UserCredential`、`Story`、`StoryNode`、`PlaySession`。完整数据蓝本在 [infa/sql](../infa/sql/)（领先于实现，社区的点赞/收藏/评论/计数字段等尚未落地）。修改数据契约时需同步核对对应 SQL。
+GORM `AutoMigrate` 共 11 个模型（清单见上方「快速开始」）。逐领域的「PRD 愿景 / SQL 蓝图 / 运行模型 / API+UI」四态对照见 [handoff §2.1](../docs/handoff.md)。蓝本在 [infa/sql](../infa/sql/)：已实现表与蓝图对齐，`community.sql` 的评论/收藏/关注等仍是纯蓝图。修改数据契约时需同步核对对应 SQL。
 
 ## 修改后须同步的文档
 

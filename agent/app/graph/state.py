@@ -1,4 +1,4 @@
-"""LangGraph 剧情生成工作流的共享状态。"""
+"""剧情生成流水线（_stream_pipeline）的共享状态。"""
 from __future__ import annotations
 
 from typing import Any, Literal, TypedDict

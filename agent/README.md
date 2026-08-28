@@ -25,7 +25,7 @@ agent/
 ├── app/
 │   ├── main.py                  # FastAPI 装配、/health
 │   ├── config.py                # .env / 环境变量配置
-│   ├── llm.py                   # DeepSeek（OpenAI 兼容）JSON 调用
+│   ├── llm.py                   # OpenAI 兼容客户端：chat_stream 流式 + chat_json；凭据随请求下发
 │   ├── prompts.py               # 生成、审校、创作辅助、合并判断提示词
 │   ├── schemas.py               # 与 Go 对齐的 Pydantic 请求/响应模型
 │   ├── graph/
@@ -37,7 +37,7 @@ agent/
 ├── tests/
 │   ├── test_stream.py          # 流式管线与 reveal 门控：正文写作/结构化/审校/降级
 │   ├── test_llm_parse_retry.py # parse 重试恢复/耗尽
-│   └── test_assist_polish.py   # 精品润色：审校/一次润色/复审/关键回退
+│   └── test_assist_polish.py   # 深度润色：审校/一次润色/复审/关键回退
 ├── .env.example
 └── requirements.txt
 ```
@@ -128,6 +128,7 @@ copy .env.example .env  # Windows；可选，全部变量都有默认值
 | `AI_TEMPERATURE` | `0.8` | 正文生成随机性 |
 | `AI_TIMEOUT` | `60` | 单次 LLM 调用超时（秒） |
 | `AI_REVIEW_MAX_RETRIES` | `2` | 审校拒绝后的额外重写/修订次数 |
+| `AI_PARSE_MAX_RETRIES` | `1` | LLM 返回非法 JSON 时的附加重试次数 |
 | `HISTORY_WINDOW` | `8` | 老数据无摘要时的滑动窗口大小；`<=0` 为全量历史 |
 
 ### 启动与检查
@@ -150,13 +151,13 @@ copy .env.example .env  # Windows；可选，全部变量都有默认值
 |---|---|---|
 | `POST` | `/generate/stream` | Go `StartStoryStream`：流式开场（AI 生成开局的作品） |
 | `POST` | `/continue/stream` | Go `ContinueStream`：流式续写 |
-| `POST` | `/opening/complete` | Go `StartSession` 预设开场：补起始选项 + summary |
+| `POST` | `/opening/complete` | Go `StartOpeningStream`（预设 `opening_content` 的作品）：补起始选项 + summary |
 | `POST` | `/merge-check` | Go `tryMerge`：候选分支语义等价判断 |
 | `POST` | `/assist/world` | 创作辅助：灵感 → 世界观/属性声明/文风档案 |
 | `POST` | `/assist/opening` | 创作辅助：世界观 → 开场草稿 |
 | `POST` | `/assist/polish` | 创作辅助：完整开场正文的深度润色闭环 |
 | `POST` | `/assist/branches` | 创作辅助：分支建议 |
-| `GET` | `/health` | 运行状态和模型配置检查 |
+| `GET` | `/health` | 进程存活探针（不报告模型配置——agent 不持有任何凭据） |
 
 `/generate` 与 `/continue` 的成功响应：
 
@@ -191,7 +192,7 @@ event: error   data: {"detail":"..."}         # 流已开始，异常只能以 e
 
 实现：Writer 先流式输出纯正文；结束后由复用同一 `llm_write` 配置的 Structurer 生成 JSON 元数据，再规整并执行可选 review。拒绝时发 `revise`，并完整重跑 Writer → Structurer → Reviewer（上限 `AI_REVIEW_MAX_RETRIES`）；Writer/Structurer 的累计用量回传为 `usage.write`。见 `graph/story_graph.py` 的 `_stream_pipeline`。埋点在成功时多打 `stream=1 ttfb_ms=<首字延迟>`。
 
-### 作者侧精品润色
+### 作者侧深度润色
 
 `POST /assist/polish` 是独立、非流式的作者工具，不能调用 `story_graph` 或影响玩家 SSE / Hard Review。请求只从 `world.style_profile` 读取可选档案，不接受顶层 `style_profile`：
 
@@ -244,7 +245,7 @@ cd agent
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-当前 `tests/test_stream.py`、`tests/test_llm_parse_retry.py` 与 `tests/test_assist_polish.py` 保留十个关键回归测试：
+当前 `tests/test_stream.py`、`tests/test_llm_parse_retry.py` 与 `tests/test_assist_polish.py` 保留十五个关键回归测试：
 
 - 正常流式回合、审校重写、耗尽降级与关闭审校；
 - JSON 重试和无默认凭据；
