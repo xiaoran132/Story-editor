@@ -22,8 +22,11 @@
 | `docs/handoff.md` | current facts: status §2, endpoints §7.1, known gaps §9.2, next §9.3, BYOK §12, theming §13, upload §14 |
 | `docs/design.md` | technical design & rationale: attribute system, data flow, node merge, scaling |
 | `docs/context-strategy.md` | why and how generation context uses summaries, recent raw turns, and future recall/RAG evolution |
+| `docs/external-lessons.md` | design references mined from MaiBot & DeepSeek Harness (2026-08): recall-cue memory, fact ledger, zero-LLM scheduling, cache-token billing, streaming contracts — read before designing Phase 2/3 or touching `llm.py` billing/SSE |
+| `docs/product-analysis.md` | thinking notes (2026-08): positioning, competitive map (星野/橙光/AI Dungeon), PM risks, validation design — **not commitments**; distill into `docs/prd.md` and delete once settled |
 | `docs/prd.md` | product scope, MVP priorities, roles, and open product/architecture decisions |
 | `frontend/README.md` | frontend module entry: pages, state, components, API contracts, and frontend verification |
+| `AGENTS.md` | ZCode's auto-loaded session entry: condensed Chinese mirror of this file's invariants; on conflict this file wins |
 | this file §Frontend design system | UI design-system source of truth: modes, themes, tokens, component, and accessibility constraints |
 | this file | invariants, boundaries, conventions — **never status** |
 

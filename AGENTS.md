@@ -68,5 +68,6 @@ cd agent; .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 |---|---|
 | 属性类型 / 状态合并 / 游玩管线 | `docs/design.md`「属性类型分类」「节点语义合并与去重」 |
 | 上下文与长程记忆 | `docs/context-strategy.md` |
+| Agent 阶段二/三（记忆/导演/NPC）设计、`llm.py` 计费与 SSE 处理 | `docs/external-lessons.md` |
 | 任何 UI 表面 | `CLAUDE.md` §Frontend design system + `docs/design/DESIGN.md` |
 | BYOK / 计费 / 平台额度 | `docs/handoff.md` §12 |

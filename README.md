@@ -134,11 +134,14 @@ cd agent;    .\.venv\Scripts\python.exe -m compileall -q app tests
 |---|---|
 | [开发交接手册](docs/handoff.md) | **当前事实总览**：实现状态、代码入口、数据契约、运行/验证、风险与下一步 |
 | [CLAUDE.md](CLAUDE.md) | 开发规范：分层边界、实现约定、可执行命令 |
+| [AGENTS.md](AGENTS.md) | ZCode 会话自动加载的入口：CLAUDE.md 规则的中文精简镜像 |
 | [视觉化技术导览](docs/visual-guide.html) | 运行时架构、续写数据流、质量闭环的图解 |
 | [backend](backend/README.md) / [agent](agent/README.md) / [frontend](frontend/README.md) README | 模块事实 |
 | [技术设计](docs/design.md) | 剧情树、JSONB、属性类型、Agent 演进等设计决策 |
 | [上下文方案](docs/context-strategy.md) | 续写上下文构建（摘要 + 窗口 + RAG 演进） |
+| [外部经验](docs/external-lessons.md) | MaiBot / DeepSeek Harness 的可吸纳设计：阶段二/三蓝本、触发判据、计费与 SSE 契约 |
 | [产品需求](docs/prd.md) | 愿景与长期路线；**不等于已实现** |
+| [产品分析底稿](docs/product-analysis.md) | 定位/竞品/风险/验证设计的思考稿（非承诺，定案后并入 PRD 并删除） |
 | [infa/sql](infa/sql/) | 数据模型蓝本（部分表未落地） |
 
 > **冲突判定顺序**：运行中的代码/测试 > `docs/handoff.md` > `CLAUDE.md` > 模块 README > `docs/design.md` > `docs/prd.md`。
