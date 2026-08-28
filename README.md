@@ -86,7 +86,7 @@
 
 | 文件 | 关键变量 |
 |---|---|
-| `agent/.env` | 无必填项（不持有 LLM 凭据）；可选 `AI_REVIEW_MAX_RETRIES`（默认 `2`） |
+| `agent/.env` | 无必填项（不持有 LLM 凭据）；可选 `AI_REVIEW_MAX_RETRIES`（默认 `2`）、按环节输出上限 `AI_WRITE/STRUCTURE/REVIEW_MAX_TOKENS` 等，见 `agent/.env.example` |
 | `backend/.env` | `DB_*`、`JWT_SECRET`、`AGENT_URL`；可选 `UPLOAD_DIR`、`UPLOAD_MAX_MB` |
 | `frontend/.env.local` | `NEXT_PUBLIC_API_BASE`，默认 `http://localhost:8080/api/v1` |
 

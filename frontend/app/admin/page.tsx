@@ -20,7 +20,8 @@ import {
 // 权限双保险：前端按 role 守卫 + 后端 RequireAdmin。第一个 admin 靠手动改库提权后重新登录。
 type Row = {
   stage: string; provider: string; base_url: string; api_key: string; model: string;
-  price_in_per_mtok: number; price_out_per_mtok: number; has_key: boolean; key_hint: string;
+  price_in_per_mtok: number; price_out_per_mtok: number; price_cache_in_per_mtok: number;
+  has_key: boolean; key_hint: string;
 };
 
 export default function AdminPage() {
@@ -56,6 +57,7 @@ export default function AdminPage() {
           api_key: "",
           price_in_per_mtok: p.price_in_per_mtok ?? 0,
           price_out_per_mtok: p.price_out_per_mtok ?? 0,
+          price_cache_in_per_mtok: p.price_cache_in_per_mtok ?? 0,
         })))
       )
       .catch((e) => setError((e as Error).message))
@@ -82,6 +84,7 @@ export default function AdminPage() {
         model: r.model.trim(),
         price_in_per_mtok: Number(r.price_in_per_mtok) || 0,
         price_out_per_mtok: Number(r.price_out_per_mtok) || 0,
+        price_cache_in_per_mtok: Number(r.price_cache_in_per_mtok) || 0,
       });
       patch(r.stage, { ...saved, api_key: "" });
       flash("已保存");
@@ -189,6 +192,13 @@ export default function AdminPage() {
                   <input className="wx-input" type="number" min="0" step="0.01" value={r.price_out_per_mtok ?? 0}
                     aria-label={`${stageLabel(r.stage)} · 输出单价（元/百万 token）`}
                     onChange={(e) => patch(r.stage, { price_out_per_mtok: Number(e.target.value) })} />
+                </label>
+                <label>
+                  <span className="wx-hint">缓存命中</span>
+                  <input className="wx-input" type="number" min="0" step="0.01" value={r.price_cache_in_per_mtok ?? 0}
+                    aria-label={`${stageLabel(r.stage)} · 缓存命中输入单价（元/百万 token）`}
+                    title="前缀缓存命中的输入 token 单价（如 DeepSeek 约为输入价的十分之一）。留 0 = 按输入全价计费。"
+                    onChange={(e) => patch(r.stage, { price_cache_in_per_mtok: Number(e.target.value) })} />
                 </label>
               </div>
               {!r.price_in_per_mtok && !r.price_out_per_mtok && (

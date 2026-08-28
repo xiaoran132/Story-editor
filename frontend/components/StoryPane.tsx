@@ -10,7 +10,8 @@ const ENDING_LABEL: Record<string, string> = {
 };
 
 // 正文面板：章节行 + 逐段正文（无首字下沉）+ 流式光标 + 结局横幅。
-// 生命周期指示（生成中/已交付）由游玩页顶栏负责，这里只渲染正文与结局。
+// 生命周期指示（生成中/生成中断/已交付）由游玩页顶栏负责，这里只渲染正文与结局。
+// 出错时 streamingText 保留半截正文（中断态）：正文优先显示它，光标只在 busy 时亮。
 export default function StoryPane({
   node,
   busy,
@@ -25,8 +26,9 @@ export default function StoryPane({
   /** 章节行右侧那个「第几步」的计数。后端没有章节概念，这里给的是真实的节点深度。 */
   progress?: string;
 }) {
-  const streaming = busy && streamingText.length > 0;
-  const content = streaming ? streamingText : node ? node.content : null;
+  const hasStream = streamingText.length > 0;
+  const streaming = busy && hasStream;
+  const content = hasStream ? streamingText : node ? node.content : null;
   const placeholder = content === null ? (busy ? "AI 正在构思…" : "正在开启一段旅程…") : null;
   const paras = content
     ? content

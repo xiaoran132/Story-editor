@@ -40,7 +40,7 @@ class LLMConfigMissing(RuntimeError):
     """
 
 
-def _build_ephemeral(cfg: dict[str, Any], json_mode: bool) -> ChatOpenAI:
+def _build_ephemeral(cfg: dict[str, Any], json_mode: bool, max_tokens: int = 0) -> ChatOpenAI:
     """按请求下发的 LLM 配置构造**临时** ChatOpenAI（不缓存：每请求凭据不同）。
 
     cfg 为 Go 侧解析出的 {provider,base_url,api_key,model}，三个关键字段缺一即报错。
@@ -48,6 +48,7 @@ def _build_ephemeral(cfg: dict[str, Any], json_mode: bool) -> ChatOpenAI:
 
     json_mode=True 强制返回 JSON 对象（chat_json 用）；False 不强制——Writer 的
     chat_stream 只输出自然正文，随后 Structurer 另用 chat_json 生成元数据。
+    max_tokens>0 时设输出上限（按环节的成本安全帽，见 config）；0=不设。
     """
     missing = [k for k in ("api_key", "base_url", "model") if not (cfg.get(k) or "").strip()]
     if missing:
@@ -64,16 +65,18 @@ def _build_ephemeral(cfg: dict[str, Any], json_mode: bool) -> ChatOpenAI:
         # 并非所有兼容端点都实现；取不到时由 _usage_of 退化为字符估算。
         "stream_usage": True,
     }
+    if max_tokens > 0:
+        kwargs["max_tokens"] = max_tokens
     if json_mode:
         kwargs["model_kwargs"] = {"response_format": {"type": "json_object"}}
     return ChatOpenAI(**kwargs)
 
 
-def _pick(llm_cfg: dict[str, Any] | None, json_mode: bool) -> ChatOpenAI:
+def _pick(llm_cfg: dict[str, Any] | None, json_mode: bool, max_tokens: int = 0) -> ChatOpenAI:
     """构造本次调用的客户端。没有下发配置 = 硬错误，没有回退可言。"""
     if not llm_cfg:
         raise LLMConfigMissing("请求未携带 LLM 配置（agent 不持有任何默认凭据）")
-    return _build_ephemeral(llm_cfg, json_mode)
+    return _build_ephemeral(llm_cfg, json_mode, max_tokens)
 
 
 # 估算用的字符/token 比。中文约 1.5~2 字符一个 token，取 1.7 偏保守
@@ -86,22 +89,51 @@ def _estimate_tokens(text: str) -> int:
 
 
 class Usage(dict):
-    """一次或多次 LLM 调用的 token 用量：{prompt_tokens, completion_tokens, estimated}。
+    """一次或多次 LLM 调用的 token 用量：
+    {prompt_tokens, completion_tokens, cache_read_tokens, estimated}。
 
     用 dict 子类而不是 dataclass：它要原样进 SSE 的 JSON 帧，少一层转换。
     estimated=True 表示端点没回 usage、数字是按字符估的——Go 侧据此打埋点，
     因为「扣费全靠估算」是需要知道的事实，不是可以忽略的细节。
+    cache_read_tokens 是「前缀缓存命中」的输入 token（含在 prompt_tokens 内）：
+    DeepSeek 对命中部分约按 1/10 计价，Go 必须与未命中部分分开折算。
     """
 
-    def __init__(self, prompt: int = 0, completion: int = 0, estimated: bool = False) -> None:
-        super().__init__(prompt_tokens=prompt, completion_tokens=completion, estimated=estimated)
+    def __init__(self, prompt: int = 0, completion: int = 0, estimated: bool = False,
+                 cache_read: int = 0) -> None:
+        super().__init__(prompt_tokens=prompt, completion_tokens=completion,
+                         estimated=estimated, cache_read_tokens=cache_read)
 
     def add(self, other: "Usage") -> "Usage":
         self["prompt_tokens"] += other["prompt_tokens"]
         self["completion_tokens"] += other["completion_tokens"]
+        self["cache_read_tokens"] = self.get("cache_read_tokens", 0) + other.get("cache_read_tokens", 0)
         # 只要有一次是估的，整笔就算估的——别让一半真实数字给出精确的假象。
         self["estimated"] = self["estimated"] or other["estimated"]
         return self
+
+
+def _cache_read_tokens(msg: Any) -> int:
+    """读取「前缀缓存命中」的输入 token 数。两条来源：
+
+    - usage_metadata.input_token_details.cache_read：langchain 对 OpenAI 风格
+      prompt_tokens_details.cached_tokens 的映射（较新的 DeepSeek 也返回该字段）；
+    - response_metadata.token_usage.prompt_cache_hit_tokens：DeepSeek 原生字段，
+      langchain 不映射它，从原始 usage 兜底读（非流式响应的 llm_output 会合入
+      response_metadata，见 langchain_core chat_models._generate_with_cache）。
+
+    都取不到 = 0：按全价计费，与加这个字段之前的行为一致（宁可多扣不可少扣）。
+    """
+    meta = getattr(msg, "usage_metadata", None) or {}
+    details = meta.get("input_token_details") or {}
+    v = details.get("cache_read")
+    if isinstance(v, int) and v > 0:
+        return v
+    raw = (getattr(msg, "response_metadata", None) or {}).get("token_usage") or {}
+    v = raw.get("prompt_cache_hit_tokens")
+    if isinstance(v, int) and v > 0:
+        return v
+    return 0
 
 
 def _usage_of(msg: Any, *, sent: str, received: str) -> Usage:
@@ -109,13 +141,13 @@ def _usage_of(msg: Any, *, sent: str, received: str) -> Usage:
     meta = getattr(msg, "usage_metadata", None) or {}
     pt, ct = meta.get("input_tokens"), meta.get("output_tokens")
     if isinstance(pt, int) and isinstance(ct, int) and (pt or ct):
-        return Usage(pt, ct, estimated=False)
+        return Usage(pt, ct, estimated=False, cache_read=_cache_read_tokens(msg))
     return Usage(_estimate_tokens(sent), _estimate_tokens(received), estimated=True)
 
 
 async def chat_stream(
     messages: list[BaseMessage], *, llm_cfg: dict[str, Any] | None = None,
-    usage_out: Usage | None = None,
+    usage_out: Usage | None = None, max_tokens: int | None = None,
 ) -> AsyncIterator[str]:
     """流式多轮对话，逐块产出增量文本（可能为空块，调用方需容忍）。
 
@@ -125,23 +157,27 @@ async def chat_stream(
 
     usage_out 非空时把本次调用的 token 用量**累加**进去（生成器没法 return 值，
     只能靠调用方传一个累加器进来）。usage 一般随最后一个 chunk 到达；端点不给
-    就按字符估算，见 _usage_of。
+    就按字符估算，见 _usage_of。累加放在 finally 里：断连/取消/上游异常中断的流
+    一样烧了 token，循环正常结束后的累加在那些路径上永远不会执行。
+
+    max_tokens 为输出上限（写手环节的成本安全帽）；None=不设。
     """
-    llm = _pick(llm_cfg, False)
+    llm = _pick(llm_cfg, False, max_tokens or 0)
     sent = "\n".join(str(m.content) for m in messages)
     received: list[str] = []
     usage_chunk: Any = None  # 带 usage_metadata 的那一块（通常是末块，但不保证）
 
-    async for chunk in llm.astream(messages):
-        text = chunk.content if isinstance(chunk.content, str) else str(chunk.content)
-        if text:
-            received.append(text)
-            yield text
-        if getattr(chunk, "usage_metadata", None):
-            usage_chunk = chunk
-
-    if usage_out is not None:
-        usage_out.add(_usage_of(usage_chunk, sent=sent, received="".join(received)))
+    try:
+        async for chunk in llm.astream(messages):
+            text = chunk.content if isinstance(chunk.content, str) else str(chunk.content)
+            if text:
+                received.append(text)
+                yield text
+            if getattr(chunk, "usage_metadata", None):
+                usage_chunk = chunk
+    finally:
+        if usage_out is not None:
+            usage_out.add(_usage_of(usage_chunk, sent=sent, received="".join(received)))
 
 
 def validate_key(api_key: str, base_url: str = "", model: str = "") -> tuple[bool, str]:
@@ -175,14 +211,16 @@ def validate_key(api_key: str, base_url: str = "", model: str = "") -> tuple[boo
 def chat_json(
     system: str, user: str, *, temperature: float | None = None,
     llm_cfg: dict[str, Any] | None = None, usage_out: Usage | None = None,
+    max_tokens: int | None = None,
 ) -> dict[str, Any]:
     """单轮对话，返回解析后的 JSON 对象。
 
     temperature 可临时覆盖（如润色用低温、生成用高温）。
     usage_out 非空时把 token 用量累加进去——**含解析失败的那几次重试**：
     失败的调用一样烧了钱，不计进去就等于让赠送额度漏出去。
+    max_tokens 为输出上限（结构化/审校环节的成本安全帽）；None=不设。
     """
-    llm = _pick(llm_cfg, True)
+    llm = _pick(llm_cfg, True, max_tokens or 0)
     if temperature is not None:
         llm = llm.bind(temperature=temperature)
 

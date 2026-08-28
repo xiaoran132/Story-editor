@@ -57,9 +57,10 @@ type AgentLLMConfig struct {
 
 	// 以下字段**不下发给 agent**（json:"-"）：只供 Go 判断要不要扣费、按什么价扣。
 	// agent 不该知道钱的事，它只管调模型。
-	Source          string  `json:"-"`
-	PriceInPerMTok  float64 `json:"-"`
-	PriceOutPerMTok float64 `json:"-"`
+	Source              string  `json:"-"`
+	PriceInPerMTok      float64 `json:"-"`
+	PriceOutPerMTok     float64 `json:"-"`
+	PriceCacheInPerMTok float64 `json:"-"` // 缓存命中输入价；0=未配置，按全价（见 costMicro）
 }
 
 // ----- 对外的输入/输出类型 -----
@@ -225,6 +226,20 @@ func (c *AgentClient) StartStoryStream(
 	}, onDelta, onRevise)
 }
 
+// StreamError 是 agent 流中途失败的错误类型，携带两样失败路径需要的事实：
+//   - Usage：失败前已烧掉的 token（agent 的 error 帧可选携带，与 done 帧同构）。
+//     烧掉的 token 必须记账，不能只让成功回合买单；传输中断没有帧可带时为零值。
+//   - SawDelta：是否已有正文增量转发给玩家。false 时整请求重发无副作用
+//     （agent 无状态、history 全量重发天然幂等），调用方可安全重试一次。
+type StreamError struct {
+	Err      error
+	Usage    StageUsages
+	SawDelta bool
+}
+
+func (e *StreamError) Error() string { return e.Err.Error() }
+func (e *StreamError) Unwrap() error { return e.Err }
+
 // streamInto 向 agent 的 SSE 端点发请求，逐帧解析：delta→onDelta、revise→onRevise、
 // done→返回完整 AIResult、error→返回错误。ContinueStream/StartStoryStream 共用。
 func (c *AgentClient) streamInto(
@@ -244,11 +259,13 @@ func (c *AgentClient) streamInto(
 
 	resp, err := c.streamClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("call ai stream: %w", err)
+		// 请求没建立/被取消：没有任何增量外发，SawDelta=false 让调用方可以安全重试。
+		return nil, &StreamError{Err: fmt.Errorf("call ai stream: %w", err)}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		// 确定性失败（4xx/5xx 响应体），不包装成可重试的 StreamError。
 		return nil, fmt.Errorf("ai stream status %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -256,6 +273,7 @@ func (c *AgentClient) streamInto(
 	var event, data string
 	var final *AIResult
 	var streamErr error
+	sawDelta := false
 
 	dispatch := func() {
 		switch event {
@@ -263,8 +281,11 @@ func (c *AgentClient) streamInto(
 			var d struct {
 				Text string `json:"text"`
 			}
-			if json.Unmarshal([]byte(data), &d) == nil && onDelta != nil {
-				onDelta(d.Text)
+			if json.Unmarshal([]byte(data), &d) == nil {
+				sawDelta = true // 只要收到过增量，重试就会向玩家重复正文
+				if onDelta != nil {
+					onDelta(d.Text)
+				}
 			}
 		case "revise":
 			if onRevise != nil {
@@ -279,10 +300,15 @@ func (c *AgentClient) streamInto(
 			}
 		case "error":
 			var er struct {
-				Detail string `json:"detail"`
+				Detail string       `json:"detail"`
+				Usage  *StageUsages `json:"usage"`
 			}
 			_ = json.Unmarshal([]byte(data), &er)
-			streamErr = fmt.Errorf("ai stream error: %s", er.Detail)
+			se := &StreamError{Err: fmt.Errorf("ai stream error: %s", er.Detail), SawDelta: sawDelta}
+			if er.Usage != nil {
+				se.Usage = *er.Usage
+			}
+			streamErr = se
 		}
 		event, data = "", ""
 	}
@@ -307,7 +333,7 @@ func (c *AgentClient) streamInto(
 				}
 				break
 			}
-			return nil, fmt.Errorf("read stream: %w", readErr)
+			return nil, &StreamError{Err: fmt.Errorf("read stream: %w", readErr), SawDelta: sawDelta}
 		}
 	}
 
@@ -315,7 +341,8 @@ func (c *AgentClient) streamInto(
 		return nil, streamErr
 	}
 	if final == nil {
-		return nil, fmt.Errorf("ai stream ended without done frame")
+		// 无 done 帧即断流（dsh 契约：截断的流不可信），已出的增量照 SawDelta 记录。
+		return nil, &StreamError{Err: fmt.Errorf("ai stream ended without done frame"), SawDelta: sawDelta}
 	}
 	normalizeAIResult(final)
 	return final, nil

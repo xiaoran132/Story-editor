@@ -171,78 +171,124 @@ export function assetUrl(u: string): string {
 // postStream：消费后端的 SSE 流（text/event-stream）。
 // delta 帧 → onDelta(增量正文)；revise 帧 → onRevise(清空重来)；
 // done 帧 → resolve 最终 data；error 帧 → reject。与 request 分离（后者硬编码 res.json()）。
+// `:` 开头的行是 SSE 注释（Go 心跳 `: ping`），解析时跳过——静默期靠它保活连接。
 export interface StreamHandlers {
   onDelta?: (text: string) => void;
   onRevise?: () => void;
 }
 
+export interface StreamOptions {
+  /** 外部中断（页面卸载/重置）：中止连接，reject「已停止生成」。 */
+  signal?: AbortSignal;
+  /** 停滞超时（毫秒）：连续这么久没收到任何字节视为断流并中止，0=不启用。
+   *  默认 45s——Go 心跳 15s 一拍，丢 3 拍即断；正常静默期（结构化+审校）有心跳不会误伤。 */
+  stallTimeoutMs?: number;
+}
+
 export async function postStream<T>(
   path: string,
   body: unknown,
-  handlers: StreamHandlers = {}
+  handlers: StreamHandlers = {},
+  opts: StreamOptions = {}
 ): Promise<T> {
-  const res = await safeFetch(path, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "text/event-stream",
-      ...authHeaders(),
-    },
-    body: JSON.stringify(body),
-  });
-  if (res.status === 401 && handleUnauthorized(path)) {
-    throw new Error(EXPIRED_ERR);
-  }
-  if (!res.ok || !res.body) {
-    throw new Error(httpErr(res.status));
-  }
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buf = "";
-  let done: T | undefined;
-  let streamErr: string | null = null;
-
-  const handleFrame = (frame: string) => {
-    let event = "message";
-    let data = "";
-    for (const line of frame.split("\n")) {
-      if (line.startsWith("event:")) event = line.slice(6).trim();
-      else if (line.startsWith("data:")) data += line.slice(5).trim();
-    }
-    if (event === "delta") {
-      try {
-        handlers.onDelta?.(JSON.parse(data).text ?? "");
-      } catch {
-        /* 忽略坏帧 */
-      }
-    } else if (event === "revise") {
-      handlers.onRevise?.();
-    } else if (event === "done") {
-      done = JSON.parse(data) as T;
-    } else if (event === "error") {
-      try {
-        streamErr = JSON.parse(data).detail || "生成失败";
-      } catch {
-        streamErr = "生成失败";
-      }
-    }
+  const controller = new AbortController();
+  const onOuterAbort = () => controller.abort();
+  opts.signal?.addEventListener("abort", onOuterAbort);
+  let stalled = false;
+  const stallMs = opts.stallTimeoutMs ?? 45_000;
+  let stallTimer: ReturnType<typeof setTimeout> | null = null;
+  const armStall = () => {
+    if (stallMs <= 0) return;
+    if (stallTimer) clearTimeout(stallTimer);
+    stallTimer = setTimeout(() => {
+      stalled = true;
+      controller.abort();
+    }, stallMs);
   };
 
-  // 逐块读取，按 SSE 帧分隔（空行 \n\n）切分。
-  for (;;) {
-    const { value, done: rdDone } = await reader.read();
-    if (value) buf += decoder.decode(value, { stream: true });
-    let sep: number;
-    while ((sep = buf.indexOf("\n\n")) !== -1) {
-      handleFrame(buf.slice(0, sep));
-      buf = buf.slice(sep + 2);
+  try {
+    const res = await safeFetch(path, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+        ...authHeaders(),
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    if (res.status === 401 && handleUnauthorized(path)) {
+      throw new Error(EXPIRED_ERR);
     }
-    if (rdDone) break;
-  }
-  if (buf.trim()) handleFrame(buf); // 末帧无结尾空行时兜底
+    if (!res.ok || !res.body) {
+      throw new Error(httpErr(res.status));
+    }
 
-  if (streamErr) throw new Error(streamErr);
-  if (done === undefined) throw new Error("生成中断，请重试");
-  return done;
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    let done: T | undefined;
+    let streamErr: string | null = null;
+
+    const handleFrame = (frame: string) => {
+      let event = "message";
+      let data = "";
+      for (const line of frame.split("\n")) {
+        if (line.startsWith(":")) continue; // SSE 注释行（心跳）
+        if (line.startsWith("event:")) event = line.slice(6).trim();
+        else if (line.startsWith("data:")) data += line.slice(5).trim();
+      }
+      if (event === "delta") {
+        try {
+          handlers.onDelta?.(JSON.parse(data).text ?? "");
+        } catch {
+          /* 忽略坏帧 */
+        }
+      } else if (event === "revise") {
+        handlers.onRevise?.();
+      } else if (event === "done") {
+        try {
+          done = JSON.parse(data) as T;
+        } catch {
+          streamErr = "生成失败"; // 坏 done 帧不可信，不能当成功交付
+        }
+      } else if (event === "error") {
+        try {
+          streamErr = JSON.parse(data).detail || "生成失败";
+        } catch {
+          streamErr = "生成失败";
+        }
+      }
+    };
+
+    // 逐块读取，按 SSE 帧分隔（空行 \n\n）切分；任何字节都重置停滞计时（含心跳）。
+    armStall();
+    for (;;) {
+      const { value, done: rdDone } = await reader.read();
+      if (value) {
+        buf += decoder.decode(value, { stream: true });
+        armStall();
+      }
+      let sep: number;
+      while ((sep = buf.indexOf("\n\n")) !== -1) {
+        handleFrame(buf.slice(0, sep));
+        buf = buf.slice(sep + 2);
+      }
+      if (rdDone) break;
+    }
+    if (buf.trim()) handleFrame(buf); // 末帧无结尾空行时兜底
+
+    if (streamErr) throw new Error(streamErr);
+    if (done === undefined) throw new Error("生成中断，请重试");
+    return done;
+  } catch (e) {
+    // 被中止的流给玩家一句能懂的话，而不是裸的英文 AbortError。
+    if (controller.signal.aborted) {
+      throw new Error(stalled ? "生成中断，请重试" : "已停止生成");
+    }
+    throw e;
+  } finally {
+    if (stallTimer) clearTimeout(stallTimer);
+    opts.signal?.removeEventListener("abort", onOuterAbort);
+  }
 }

@@ -128,6 +128,9 @@ copy .env.example .env  # Windows；可选，全部变量都有默认值
 | `AI_TEMPERATURE` | `0.8` | 正文生成随机性 |
 | `AI_TIMEOUT` | `60` | 单次 LLM 调用超时（秒） |
 | `AI_REVIEW_MAX_RETRIES` | `2` | 审校拒绝后的额外重写/修订次数 |
+| `AI_WRITE_MAX_TOKENS` | `1500` | 写手输出上限（token，0=不设）——防复读失控的成本安全帽 |
+| `AI_STRUCTURE_MAX_TOKENS` | `1200` | 结构化（options/state_delta/summary）输出上限 |
+| `AI_REVIEW_MAX_TOKENS` | `800` | 审校 JSON 输出上限 |
 | `AI_PARSE_MAX_RETRIES` | `1` | LLM 返回非法 JSON 时的附加重试次数 |
 | `HISTORY_WINDOW` | `8` | 老数据无摘要时的滑动窗口大小；`<=0` 为全量历史 |
 
@@ -187,10 +190,12 @@ copy .env.example .env  # Windows；可选，全部变量都有默认值
 event: delta   data: {"text":"增量正文"}     # Writer 的正文逐字外发
 event: revise  data: {}                       # 审校拒绝 → 下游清空已流出正文，准备重来
 event: done    data: {<完整 AIResult>}        # 结束，携带 content/options/state_delta/summary/...
-event: error   data: {"detail":"..."}         # 流已开始，异常只能以 error 帧告知
+event: error   data: {"detail":"...", "usage": {...}}  # 流已开始，异常只能以 error 帧告知；
+                                                       # usage 可选携带失败前已烧掉的 token（与
+                                                       # done 帧同构），Go 失败路径据此记账
 ```
 
-实现：Writer 先流式输出纯正文；结束后由复用同一 `llm_write` 配置的 Structurer 生成 JSON 元数据，再规整并执行可选 review。拒绝时发 `revise`，并完整重跑 Writer → Structurer → Reviewer（上限 `AI_REVIEW_MAX_RETRIES`）；Writer/Structurer 的累计用量回传为 `usage.write`。见 `graph/story_graph.py` 的 `_stream_pipeline`。埋点在成功时多打 `stream=1 ttfb_ms=<首字延迟>`。
+实现：Writer 先流式输出纯正文；结束后由复用同一 `llm_write` 配置的 Structurer 生成 JSON 元数据，再规整并执行可选 review。拒绝时发 `revise`，并完整重跑 Writer → Structurer → Reviewer（上限 `AI_REVIEW_MAX_RETRIES`）；Writer/Structurer 的累计用量回传为 `usage.write`。失败路径的已烧 usage 由 `StreamPipelineError` 携带、随 error 帧带出；`chat_stream` 的 usage 累加在 `finally` 里，断连/取消不漏账。各环节输出上限由 `AI_WRITE/STRUCTURE/REVIEW_MAX_TOKENS` 控制（成本安全帽，0=不设）。见 `graph/story_graph.py` 的 `_stream_pipeline`。埋点在成功时多打 `stream=1 depth=<history 长度> ttfb_ms=<首字延迟>`。
 
 ### 作者侧深度润色
 

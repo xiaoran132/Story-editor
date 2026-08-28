@@ -22,9 +22,12 @@ const MicroPerCNY = 1_000_000
 
 // TokenUsage 是 agent 回传的单环节 token 用量（与 agent schemas.StageUsage 对齐）。
 type TokenUsage struct {
-	PromptTokens     int  `json:"prompt_tokens"`
-	CompletionTokens int  `json:"completion_tokens"`
-	Estimated        bool `json:"estimated"` // 端点没回 usage，数字是按字符估的
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	// CacheReadTokens 是「前缀缓存命中」的输入 token（**含在 PromptTokens 内**）：
+	// DeepSeek 对命中部分约按 1/10 计价，costMicro 把它与未命中部分分开折算。
+	CacheReadTokens int  `json:"cache_read_tokens"`
+	Estimated       bool `json:"estimated"` // 端点没回 usage，数字是按字符估的
 }
 
 // StageUsages 是一次生成里按环节分开的用量（write/review 可能是不同模型、不同单价）。
@@ -63,8 +66,19 @@ func (s *CreditService) Balance(ctx context.Context, userID uuid.UUID) int64 {
 // costMicro 按「元/百万 token」的单价把 token 数折算成微元，向上取整。
 //
 // 向上取整而非四舍五入：单次调用几百 token 时四舍五入常年归零，1 元额度就成了无限。
-func costMicro(u TokenUsage, priceInPerMTok, priceOutPerMTok float64) int64 {
-	cny := (float64(u.PromptTokens)*priceInPerMTok + float64(u.CompletionTokens)*priceOutPerMTok) / 1_000_000
+// 缓存命中的输入 token 按 priceCacheInPerMTok 折算；**未配置（0）= 按全价**——
+// admin 没填缓存价时不该变成免费（多扣的失败方向是安全的），照旧全价。
+func costMicro(u TokenUsage, priceInPerMTok, priceOutPerMTok, priceCacheInPerMTok float64) int64 {
+	cacheRead := u.CacheReadTokens
+	if cacheRead < 0 || cacheRead > u.PromptTokens { // 异常数据钳回合法域，防负价
+		cacheRead = 0
+	}
+	if priceCacheInPerMTok <= 0 {
+		priceCacheInPerMTok = priceInPerMTok
+	}
+	missed := float64(u.PromptTokens - cacheRead)
+	cny := (missed*priceInPerMTok + float64(cacheRead)*priceCacheInPerMTok +
+		float64(u.CompletionTokens)*priceOutPerMTok) / 1_000_000
 	micro := math.Ceil(cny * MicroPerCNY)
 	if micro < 0 || math.IsNaN(micro) || math.IsInf(micro, 0) {
 		return 0
@@ -89,7 +103,7 @@ func (s *CreditService) Charge(
 	if u.PromptTokens == 0 && u.CompletionTokens == 0 {
 		return
 	}
-	cost := costMicro(u, cfg.PriceInPerMTok, cfg.PriceOutPerMTok)
+	cost := costMicro(u, cfg.PriceInPerMTok, cfg.PriceOutPerMTok, cfg.PriceCacheInPerMTok)
 	if err := s.store.ChargeCredit(ctx, &model.LLMUsageLog{
 		UserID:           userID,
 		StoryID:          storyID,
@@ -97,6 +111,7 @@ func (s *CreditService) Charge(
 		Model:            cfg.Model,
 		PromptTokens:     u.PromptTokens,
 		CompletionTokens: u.CompletionTokens,
+		CacheReadTokens:  u.CacheReadTokens,
 		CostMicroCNY:     cost,
 		Estimated:        u.Estimated,
 	}); err != nil {

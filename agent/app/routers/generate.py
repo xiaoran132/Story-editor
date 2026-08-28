@@ -36,7 +36,12 @@ def _sse(event: str, data: dict) -> str:
 
 
 async def _sse_stream(events: AsyncIterator[dict]) -> AsyncIterator[str]:
-    """把流水线事件（delta/revise/done）转成 SSE 帧；异常转 error 帧后正常结束流。"""
+    """把流水线事件（delta/revise/done）转成 SSE 帧；异常转 error 帧后正常结束流。
+
+    管线失败抛 StreamPipelineError（携带已烧掉的 usage）：error 帧可选带 usage 字段
+    （结构与 done 帧一致 {write:{...},review:{...}}），Go 侧失败路径据此记账——
+    烧掉的 token 必须扣费，不能只让成功回合买单。其它异常无 usage 可带，照旧裸 detail。
+    """
     try:
         async for ev in events:
             t = ev.get("type")
@@ -49,7 +54,13 @@ async def _sse_stream(events: AsyncIterator[dict]) -> AsyncIterator[str]:
                 # 平铺进 result 而不是另开一帧——Go 侧的 done 解码成一个结构体，加一层会更绕。
                 yield _sse("done", {**ev.get("result", {}), "usage": ev.get("usage") or {}})
     except Exception as e:  # noqa: BLE001 —— 流已开始，只能以 error 帧告知下游
-        yield _sse("error", {"detail": f"{type(e).__name__}: {e}"})
+        # StreamPipelineError 自带去重过的 detail（原始异常的「类型: 消息」），
+        # 直接用；其它异常现拼，避免出现「StreamPipelineError: APIConnectionError: …」双前缀。
+        payload = {"detail": getattr(e, "detail", None) or f"{type(e).__name__}: {e}"}
+        usage = getattr(e, "usage", None)
+        if usage:
+            payload["usage"] = usage
+        yield _sse("error", payload)
 
 
 @router.post("/generate/stream")

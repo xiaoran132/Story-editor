@@ -17,7 +17,7 @@ interface PlayState {
   attrMax: Record<string, number>; // 声明了 max 的 number 属性上限：只有它才画进度条，其余只显示数字
   busy: boolean; // AI 生成中，禁用交互
   readOnly: boolean; // 作品已被作者取消发布：可读完，不可推进（引用模式的下架语义）
-  streamingText: string; // 流式续写时逐字到达的正文（done 后清空，回落 currentNode.content）
+  streamingText: string; // 流式正文（done 后清空回落 currentNode.content；出错时保留半截正文标记中断态）
   loading: boolean; // 首次加载会话中
   error: string | null;
 
@@ -25,6 +25,7 @@ interface PlayState {
   startOpening: () => Promise<void>;
   choose: (choice: string) => Promise<void>;
   backtrack: (nodeId: string) => Promise<void>;
+  abort: () => void; // 中断进行中的生成流（页面卸载/重置时调用，防 reader 后台续写与 busy 锁死）
   reset: () => void;
 }
 
@@ -64,12 +65,18 @@ function parseAttrMax(worldConfig: string): Record<string, number> {
 // 放模块级，reset() 不清除，跨重挂载有效；出错时清除以允许重试。
 const openingRequested: Record<string, boolean> = {};
 
+// 进行中生成流的 AbortController。模块级而非 store 状态：控制器不是可渲染数据，
+// 放 state 反而会诱发无意义的订阅渲染。reset/abort 时中断，防止离开页面后 reader
+// 仍在后台往全局 store 写、连接停滞时 busy 永久锁死（optimization-plan.md P0-1）。
+let streamAbort: AbortController | null = null;
+
 type Setter = (
   partial: Partial<PlayState> | ((s: PlayState) => Partial<PlayState>)
 ) => void;
 
 // runStream：开局/续写共用的流式执行外壳——起始置 busy、逐字累积 streamingText、
-// revise 清空、done 后由 onDone 决定如何并入节点、收尾清标志；出错走 onError + error。
+// revise 清空、done 后由 onDone 决定如何并入节点、收尾清标志；出错保留半截正文
+// 标记中断态（玩家能看到已生成多少），下一次 runStream 开头自然归零。
 async function runStream(
   set: Setter,
   path: string,
@@ -77,17 +84,26 @@ async function runStream(
   onDone: (r: SessionResult) => void,
   onError?: () => void
 ): Promise<void> {
+  const controller = new AbortController();
+  streamAbort = controller;
   set({ busy: true, error: null, streamingText: "" });
   try {
-    const r = await postStream<SessionResult>(path, body, {
-      onDelta: (t) => set((s) => ({ streamingText: s.streamingText + t })),
-      onRevise: () => set({ streamingText: "" }),
-    });
+    const r = await postStream<SessionResult>(
+      path,
+      body,
+      {
+        onDelta: (t) => set((s) => ({ streamingText: s.streamingText + t })),
+        onRevise: () => set({ streamingText: "" }),
+      },
+      { signal: controller.signal }
+    );
     onDone(r);
     set({ busy: false, streamingText: "" });
   } catch (e) {
     onError?.();
-    set({ busy: false, streamingText: "", error: (e as Error).message });
+    set({ busy: false, error: (e as Error).message });
+  } finally {
+    streamAbort = null;
   }
 }
 
@@ -108,7 +124,10 @@ export const usePlayStore = create<PlayState>((set, get) => ({
   loading: false,
   error: null,
 
-  reset: () =>
+  reset: () => {
+    // 先断流再清状态：离开页面时进行中的 SSE 不能继续在后台写这个 store。
+    streamAbort?.abort();
+    streamAbort = null;
     set({
       session: null,
       currentNode: null,
@@ -125,7 +144,8 @@ export const usePlayStore = create<PlayState>((set, get) => ({
       streamingText: "",
       loading: false,
       error: null,
-    }),
+    });
+  },
 
   load: async (sessionId) => {
     set({ loading: true, error: null });
@@ -202,6 +222,11 @@ export const usePlayStore = create<PlayState>((set, get) => ({
             : s.allNodes,
         }))
     );
+  },
+
+  abort: () => {
+    streamAbort?.abort();
+    streamAbort = null;
   },
 
   backtrack: async (nodeId) => {

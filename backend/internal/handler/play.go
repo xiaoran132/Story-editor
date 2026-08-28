@@ -3,6 +3,8 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
+	"sync"
+	"time"
 
 	"backend/internal/middleware"
 	"backend/internal/service"
@@ -49,21 +51,57 @@ type choiceReq struct {
 	Choice string `json:"choice" binding:"required"`
 }
 
-// sseStart 设置 SSE 响应头并返回逐帧发送函数（event/data + flush）。ChoiceStream/OpeningStream 共用。
+// sseStart 设置 SSE 响应头并返回（帧发送，心跳）两个函数。ChoiceStream/OpeningStream 共用。
+//
+// 心跳：Writer 流结束到 done 之间的静默期可达数十秒（结构化+审校各一次同步调用），
+// 中间代理可能掐掉空闲连接——每 15s 发一行 SSE 注释帧 `: ping` 保活，前端解析器
+// 跳过 `:` 开头行。两个函数共享写锁：gin 的 Writer 非并发安全，而 delta 回调在请求
+// goroutine、心跳 ticker 在另一个 goroutine。
 //
 // ⚠️ error 帧的 detail 一律经 pkg.SafeDetail，不用 err.Error()：SSE 是**唯一**能把
 // service 层错误原文直送浏览器的通道（普通路由至少还过一次 pkg.Error）。
-func sseStart(c *gin.Context) func(event string, data any) {
+func sseStart(c *gin.Context) (send func(event string, data any), ping func()) {
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
 	c.Writer.Header().Set("X-Accel-Buffering", "no") // 禁反代缓冲，保证逐帧下发
 	c.Writer.WriteHeader(200)
-	return func(event string, data any) {
+	var mu sync.Mutex
+	send = func(event string, data any) {
 		b, _ := json.Marshal(data)
+		mu.Lock()
+		defer mu.Unlock()
 		fmt.Fprintf(c.Writer, "event: %s\ndata: %s\n\n", event, b)
 		c.Writer.Flush()
 	}
+	ping = func() {
+		mu.Lock()
+		defer mu.Unlock()
+		fmt.Fprint(c.Writer, ": ping\n\n")
+		c.Writer.Flush()
+	}
+	return send, ping
+}
+
+// withHeartbeat 在流存续期间起 15s 心跳 goroutine，返回停止函数（handler defer 调用）。
+// 请求 ctx 结束（玩家断开）时自行退出，此时再写也只是写进已关闭的连接。
+func withHeartbeat(c *gin.Context, ping func()) (stop func()) {
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-c.Request.Context().Done():
+				return
+			case <-ticker.C:
+				ping()
+			}
+		}
+	}()
+	return func() { close(done) }
 }
 
 // ChoiceStream 流式续写（SSE）：delta 正文增量 / revise 审校重来 / done 持久化后的 SessionResult / error。
@@ -78,7 +116,9 @@ func (h *PlayHandler) ChoiceStream(c *gin.Context) {
 		pkg.Error(c, pkg.BadRequest(err.Error()))
 		return
 	}
-	send := sseStart(c)
+	send, ping := sseStart(c)
+	stopBeat := withHeartbeat(c, ping)
+	defer stopBeat()
 	result, err := h.svc.MakeChoiceStream(
 		c.Request.Context(), sessionID, h.player(c), req.Choice,
 		func(t string) { send("delta", gin.H{"text": t}) },
@@ -99,7 +139,9 @@ func (h *PlayHandler) OpeningStream(c *gin.Context) {
 		pkg.Error(c, pkg.BadRequest("无效的会话标识"))
 		return
 	}
-	send := sseStart(c)
+	send, ping := sseStart(c)
+	stopBeat := withHeartbeat(c, ping)
+	defer stopBeat()
 	result, err := h.svc.StartOpeningStream(
 		c.Request.Context(), sessionID, h.player(c),
 		func(t string) { send("delta", gin.H{"text": t}) },

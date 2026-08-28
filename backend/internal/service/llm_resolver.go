@@ -169,6 +169,7 @@ func (r *LLMResolver) platformIfCredit(ctx context.Context, userID uuid.UUID, st
 	return &AgentLLMConfig{
 		Provider: ps.Provider, BaseURL: ps.BaseURL, APIKey: key, Model: ps.Model,
 		Source: SourcePlatform, PriceInPerMTok: ps.PriceInPerMTok, PriceOutPerMTok: ps.PriceOutPerMTok,
+		PriceCacheInPerMTok: ps.PriceCacheInPerMTok,
 	}, nil
 }
 

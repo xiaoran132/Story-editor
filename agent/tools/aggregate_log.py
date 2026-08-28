@@ -10,8 +10,8 @@
 日志来源：起全套三进程真人游玩后，把 agent 进程（uvicorn）的输出重定向到文件即可，
 例如：`uvicorn app.main:app --port 8001 > agent.log 2>&1`。main.py 已给 story.metrics
 挂了带时间戳的 handler，行形如：
-    2026-08-03 11:20:33,123 story.metrics gen mode=continue outcome=ok stream=1 elapsed_ms=8200 ttfb_ms=1100 review_failures=1 first_draft_pass=False degraded=False is_ending=False
-    2026-08-03 11:20:31,050 story.metrics review verdict=reject attempt=1 issues=state_delta 与正文不一致
+    2026-08-03 11:20:33,123 story.metrics gen mode=continue outcome=ok stream=1 depth=7 elapsed_ms=8200 ttfb_ms=1100 review_failures=1 first_draft_pass=False degraded=False is_ending=False
+    2026-08-03 11:20:31,050 story.metrics review verdict=reject depth=7 attempt=1 issues=state_delta 与正文不一致
 
 用法（agent/ 下）：
     ./.venv/Scripts/python.exe tools/aggregate_log.py agent.log [more.log ...]
@@ -55,6 +55,20 @@ def _stat(xs: list[float]) -> str:
     if not xs:
         return "—"
     return f"均值 {statistics.mean(xs) / 1000:.1f}s  p95 {_p95(xs) / 1000:.1f}s  (n={len(xs)})"
+
+
+def _depth_bucket(v: str) -> str | None:
+    """depth 字段 → 分桶标签；行里没有 depth（老日志）返回 None，不计入深度分解。"""
+    if not v.lstrip("-").isdigit():
+        return None
+    d = int(v)
+    if d <= 5:
+        return "00-05"
+    if d <= 10:
+        return "06-10"
+    if d <= 20:
+        return "11-20"
+    return "21+"
 
 
 def _read_lines(paths: list[str]):
@@ -128,6 +142,27 @@ def main() -> None:
             sub = [g for g in ok if g.get("mode") == mode]
             fp = sum(1 for g in sub if g.get("first_draft_pass") == "True")
             print(f"  {mode:9s}: 首稿过 {fp}/{len(sub)}  ({fp/len(sub):.0%})")
+
+    # 按深度分桶：阶段二触发判据的信号在这里（external-lessons §2.0）——
+    # 「与前情矛盾」拒因/降级率随深度上升（深段 ≥ 前 5 回合段 2 倍）则该拆 Recall Cues。
+    # 老 gen 行没有 depth 字段，不计入（桶内 n 与总数对不上时先看日志新旧）。
+    buckets = sorted({b for g in gens if (b := _depth_bucket(g.get("depth", "")))})
+    if buckets:
+        print("\n按回合深度分解（判据见 docs/external-lessons.md §2.0）：")
+        rej_by_depth: Counter[str] = Counter(
+            b for r in rejects if (b := _depth_bucket(r.get("depth", "")))
+        )
+        for b in buckets:
+            sub = [g for g in gens if _depth_bucket(g.get("depth", "")) == b]
+            sub_ok = [g for g in sub if g.get("outcome") == "ok"]
+            fp = sum(1 for g in sub_ok if g.get("first_draft_pass") == "True")
+            dg = sum(1 for g in sub_ok if g.get("degraded") == "True")
+            line = f"  回合 {b}: n={len(sub)}"
+            if sub_ok:
+                line += f"  首稿过 {fp}/{len(sub_ok)} ({fp/len(sub_ok):.0%})  降级 {dg} ({dg/len(sub_ok):.0%})"
+            if rej_by_depth.get(b):
+                line += f"  拒绝 {rej_by_depth[b]} 次"
+            print(line)
 
     print("\n延迟：")
     print(f"  完整回复    : {_stat(elapsed_all)}")

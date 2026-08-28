@@ -27,7 +27,7 @@ class StoryState(TypedDict, total=False):
     user_prompt: str             # prepare 拼好的用户提示
     raw: dict[str, Any]          # generate 得到的原始 LLM JSON
     review_passed: bool           # review 是否认可当前 raw
-    review_feedback: str          # review 拒绝时反馈给下一次 generate 的改写要求
+    review_feedback: str          # review 拒绝时的完整反馈；管线内另按【正文】/【元数据】拆 content/meta 两路分流消费
     review_failures: int          # 当前内容已被拒绝的次数
 
     # 输出（归一化后的 AIResult 字段）

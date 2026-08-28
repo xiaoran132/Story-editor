@@ -149,6 +149,8 @@ export interface PlatformSetting {
   // 等于平台 key 无限量——admin 必须填。
   price_in_per_mtok: number;
   price_out_per_mtok: number;
+  // 缓存命中输入价（如 DeepSeek 约为输入价 1/10）。为 0 = 未配置，计费按输入全价。
+  price_cache_in_per_mtok: number;
   has_key: boolean;
   key_hint: string;
 }

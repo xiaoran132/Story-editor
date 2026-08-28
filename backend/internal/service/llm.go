@@ -63,10 +63,11 @@ type PlatformInput struct {
 	BaseURL  string `json:"base_url"`
 	APIKey   string `json:"api_key"` // 空串=保留原 key
 	Model    string `json:"model"`
-	// 单价（元/百万 token）。用指针：0 是合法取值（免费模型），
+	// 单价（元/百万 token）。用指针：0 是合法取值（免费模型/未配置缓存价），
 	// 不能像上面几个字符串那样用「空=不改」，否则 admin 永远改不回 0。
-	PriceInPerMTok  *float64 `json:"price_in_per_mtok"`
-	PriceOutPerMTok *float64 `json:"price_out_per_mtok"`
+	PriceInPerMTok      *float64 `json:"price_in_per_mtok"`
+	PriceOutPerMTok     *float64 `json:"price_out_per_mtok"`
+	PriceCacheInPerMTok *float64 `json:"price_cache_in_per_mtok"`
 }
 
 // ----- 连接 CRUD -----
@@ -539,6 +540,7 @@ func (s *LLMService) toPlatformResponse(p *model.PlatformLLMSetting) model.Platf
 	res := model.PlatformLLMSettingResponse{
 		Stage: p.Stage, Provider: p.Provider, BaseURL: p.BaseURL, Model: p.Model,
 		PriceInPerMTok: p.PriceInPerMTok, PriceOutPerMTok: p.PriceOutPerMTok,
+		PriceCacheInPerMTok: p.PriceCacheInPerMTok,
 	}
 	if plain, err := pkg.Decrypt(p.APIKeyCipher, s.encKey); err == nil && plain != "" {
 		res.HasKey = true
@@ -604,6 +606,12 @@ func (s *LLMService) UpsertPlatform(stage string, in *PlatformInput) (*model.Pla
 			return nil, pkg.BadRequest("单价不能为负")
 		}
 		p.PriceOutPerMTok = *in.PriceOutPerMTok
+	}
+	if in.PriceCacheInPerMTok != nil {
+		if *in.PriceCacheInPerMTok < 0 {
+			return nil, pkg.BadRequest("单价不能为负")
+		}
+		p.PriceCacheInPerMTok = *in.PriceCacheInPerMTok
 	}
 	if strings.TrimSpace(in.APIKey) != "" { // 空串=保留原 key
 		cipher, err := pkg.Encrypt(strings.TrimSpace(in.APIKey), s.encKey)

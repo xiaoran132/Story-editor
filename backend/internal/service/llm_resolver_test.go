@@ -216,17 +216,32 @@ func TestPlatformNeedsCredit(t *testing.T) {
 // TestCostMicro 校验折算与向上取整：几百 token 的调用不能因为四舍五入而免费。
 func TestCostMicro(t *testing.T) {
 	// 1 元/百万输入 token、2 元/百万输出 token
-	got := costMicro(TokenUsage{PromptTokens: 1_000_000, CompletionTokens: 1_000_000}, 1, 2)
+	got := costMicro(TokenUsage{PromptTokens: 1_000_000, CompletionTokens: 1_000_000}, 1, 2, 0)
 	if got != 3*MicroPerCNY {
 		t.Fatalf("百万进+百万出应为 3 元 = %d 微元, 得 %d", 3*MicroPerCNY, got)
 	}
 	// 小额调用必须扣到至少 1 微元，不能归零（否则 1 元额度等于无限）
-	if got := costMicro(TokenUsage{PromptTokens: 1, CompletionTokens: 1}, 1, 2); got < 1 {
+	if got := costMicro(TokenUsage{PromptTokens: 1, CompletionTokens: 1}, 1, 2, 0); got < 1 {
 		t.Fatalf("极小调用也应扣至少 1 微元, 得 %d", got)
 	}
 	// 零用量不扣
-	if got := costMicro(TokenUsage{}, 1, 2); got != 0 {
+	if got := costMicro(TokenUsage{}, 1, 2, 0); got != 0 {
 		t.Fatalf("零用量应不扣, 得 %d", got)
+	}
+	// 缓存命中的输入按缓存价折算：10 万命中(0.01) + 90 万未命中(0.9) + 百万输出(2) = 2.91 元
+	got = costMicro(TokenUsage{PromptTokens: 1_000_000, CompletionTokens: 1_000_000, CacheReadTokens: 100_000}, 1, 2, 0.1)
+	if want := int64(2.91 * float64(MicroPerCNY)); got != want {
+		t.Fatalf("缓存命中应按 1/10 价折算: 期望 %d 微元, 得 %d", want, got)
+	}
+	// 缓存价未配置（0）= 按全价，不能变成免费
+	full := costMicro(TokenUsage{PromptTokens: 1_000_000}, 1, 2, 0)
+	cached := costMicro(TokenUsage{PromptTokens: 1_000_000, CacheReadTokens: 400_000}, 1, 2, 0)
+	if cached != full {
+		t.Fatalf("未配置缓存价时命中部分必须按全价（多扣是安全方向）: %d vs %d", cached, full)
+	}
+	// 异常数据（命中数超过总输入数）钳回全价，不得算出负数
+	if got := costMicro(TokenUsage{PromptTokens: 100, CacheReadTokens: 500}, 1, 2, 0.1); got != costMicro(TokenUsage{PromptTokens: 100}, 1, 2, 0) {
+		t.Fatalf("命中数超总输入应按全价处理, 得 %d", got)
 	}
 }
 
@@ -236,7 +251,7 @@ func TestCostMicro(t *testing.T) {
 func TestPlatformPriceRoundTrip(t *testing.T) {
 	// 入参：JSON 标签必须对得上，且 0 与「未传」要能区分（0 是合法单价）。
 	var in PlatformInput
-	if err := json.Unmarshal([]byte(`{"price_in_per_mtok":1.5,"price_out_per_mtok":0}`), &in); err != nil {
+	if err := json.Unmarshal([]byte(`{"price_in_per_mtok":1.5,"price_out_per_mtok":0,"price_cache_in_per_mtok":0.15}`), &in); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if in.PriceInPerMTok == nil || *in.PriceInPerMTok != 1.5 {
@@ -244,6 +259,9 @@ func TestPlatformPriceRoundTrip(t *testing.T) {
 	}
 	if in.PriceOutPerMTok == nil || *in.PriceOutPerMTok != 0 {
 		t.Fatalf("显式的 0 必须能与「未传」区分，否则 admin 改不回免费: %+v", in.PriceOutPerMTok)
+	}
+	if in.PriceCacheInPerMTok == nil || *in.PriceCacheInPerMTok != 0.15 {
+		t.Fatalf("price_cache_in 未解出: %+v", in.PriceCacheInPerMTok)
 	}
 	var empty PlatformInput
 	if err := json.Unmarshal([]byte(`{}`), &empty); err != nil || empty.PriceInPerMTok != nil {
@@ -253,14 +271,17 @@ func TestPlatformPriceRoundTrip(t *testing.T) {
 	// 出参：DTO 必须带回单价，否则前端保存后输入框被 undefined 覆盖。
 	s := &LLMService{encKey: testEncKey}
 	res := s.toPlatformResponse(&model.PlatformLLMSetting{
-		Stage: StageWrite, Model: "m", PriceInPerMTok: 1.5, PriceOutPerMTok: 8,
+		Stage: StageWrite, Model: "m", PriceInPerMTok: 1.5, PriceOutPerMTok: 8, PriceCacheInPerMTok: 0.15,
 	})
-	if res.PriceInPerMTok != 1.5 || res.PriceOutPerMTok != 8 {
+	if res.PriceInPerMTok != 1.5 || res.PriceOutPerMTok != 8 || res.PriceCacheInPerMTok != 0.15 {
 		t.Fatalf("响应 DTO 丢了单价: %+v", res)
 	}
 	blob, _ := json.Marshal(res)
 	if !strings.Contains(string(blob), `"price_in_per_mtok":1.5`) {
 		t.Fatalf("序列化后缺少 price_in_per_mtok: %s", blob)
+	}
+	if !strings.Contains(string(blob), `"price_cache_in_per_mtok":0.15`) {
+		t.Fatalf("序列化后缺少 price_cache_in_per_mtok: %s", blob)
 	}
 }
 

@@ -95,9 +95,12 @@ class StageUsage(BaseModel):
 
     estimated=True 表示端点没在响应里回 usage、数字是按字符估算的——Go 据此打埋点。
     「扣费全靠估算」是需要知道的事实，不该被一个精确的数字掩盖。
+    cache_read_tokens 是「前缀缓存命中」的输入 token（含在 prompt_tokens 内）：
+    DeepSeek 对命中部分约按 1/10 计价，Go 与未命中部分分开折算。
     """
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    cache_read_tokens: int = 0
     estimated: bool = False
 
 

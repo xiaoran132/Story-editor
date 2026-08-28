@@ -198,8 +198,12 @@ export default function PlayPage() {
     : undefined;
 
   // 生命周期指示：载入期不能报「已交付」——那时正文还没到，绿灯会骗人。
+  // 半截正文还在（streamingText 未清）说明流是中途断的，比「生成失败」更准确，
+  // 玩家也看得到已经生成了多少。
   const lifecycle = error
-    ? "生成失败"
+    ? streamingText
+      ? "生成中断"
+      : "生成失败"
     : loading
       ? "载入中"
       : busy

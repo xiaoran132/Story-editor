@@ -83,15 +83,18 @@ type UserStoryLLMConfig struct {
 //
 // 单价随设置一起存：admin 配平台 key 的同时就该配它的价，一处管完，不另建全局价表。
 // 单位是「元 / 百万 token」，与各家官网定价页的口径一致，抄进来不用换算。
+// PriceCacheInPerMTok 是「前缀缓存命中」的输入价（DeepSeek 约为输入价的 1/10）；
+// 0=未配置，计费按全价（costMicro），安全的失败方向。
 type PlatformLLMSetting struct {
-	Stage           string    `gorm:"size:20;primaryKey" json:"stage"`
-	Provider        string    `gorm:"size:20;not null" json:"provider"`
-	BaseURL         string    `gorm:"size:200;not null" json:"base_url"`
-	APIKeyCipher    string    `gorm:"type:text" json:"-"`
-	Model           string    `gorm:"size:80;not null" json:"model"`
-	PriceInPerMTok  float64   `gorm:"not null;default:0" json:"price_in_per_mtok"`  // 输入价，元/百万 token
-	PriceOutPerMTok float64   `gorm:"not null;default:0" json:"price_out_per_mtok"` // 输出价，元/百万 token
-	UpdatedAt       time.Time `json:"updated_at"`
+	Stage               string    `gorm:"size:20;primaryKey" json:"stage"`
+	Provider            string    `gorm:"size:20;not null" json:"provider"`
+	BaseURL             string    `gorm:"size:200;not null" json:"base_url"`
+	APIKeyCipher        string    `gorm:"type:text" json:"-"`
+	Model               string    `gorm:"size:80;not null" json:"model"`
+	PriceInPerMTok      float64   `gorm:"not null;default:0" json:"price_in_per_mtok"`       // 输入价，元/百万 token
+	PriceOutPerMTok     float64   `gorm:"not null;default:0" json:"price_out_per_mtok"`      // 输出价，元/百万 token
+	PriceCacheInPerMTok float64   `gorm:"not null;default:0" json:"price_cache_in_per_mtok"` // 缓存命中输入价，0=按全价
+	UpdatedAt           time.Time `json:"updated_at"`
 }
 
 // LLMUsageLog 是一次平台额度消费的流水。只记「花了平台额度」的调用；
@@ -106,7 +109,10 @@ type LLMUsageLog struct {
 	Model            string     `gorm:"size:80;not null" json:"model"`
 	PromptTokens     int        `gorm:"not null" json:"prompt_tokens"`
 	CompletionTokens int        `gorm:"not null" json:"completion_tokens"`
-	CostMicroCNY     int64      `gorm:"not null" json:"cost_micro_cny"`
+	// CacheReadTokens 是「前缀缓存命中」的输入 token（含在 PromptTokens 内）。
+	// 记下来才能回答「缓存到底帮玩家省了多少」——前缀稳定的提示命中率可观。
+	CacheReadTokens int   `gorm:"not null;default:0" json:"cache_read_tokens"`
+	CostMicroCNY    int64 `gorm:"not null" json:"cost_micro_cny"`
 	// Estimated 为真 = 端点没回 usage，token 数是按字符估的。批量为真时说明扣费全靠估算，
 	// 这是需要知道的事实，不该被一个精确的数字掩盖。
 	Estimated bool      `gorm:"not null;default:false" json:"estimated"`
@@ -122,12 +128,13 @@ func (l *LLMUsageLog) BeforeCreate(tx *gorm.DB) error {
 
 // PlatformLLMSettingResponse 是平台设置的外发 DTO：不含 key，只回打码提示。
 type PlatformLLMSettingResponse struct {
-	Stage           string  `json:"stage"`
-	Provider        string  `json:"provider"`
-	BaseURL         string  `json:"base_url"`
-	Model           string  `json:"model"`
-	PriceInPerMTok  float64 `json:"price_in_per_mtok"`
-	PriceOutPerMTok float64 `json:"price_out_per_mtok"`
-	HasKey          bool    `json:"has_key"`
-	KeyHint         string  `json:"key_hint"`
+	Stage               string  `json:"stage"`
+	Provider            string  `json:"provider"`
+	BaseURL             string  `json:"base_url"`
+	Model               string  `json:"model"`
+	PriceInPerMTok      float64 `json:"price_in_per_mtok"`
+	PriceOutPerMTok     float64 `json:"price_out_per_mtok"`
+	PriceCacheInPerMTok float64 `json:"price_cache_in_per_mtok"`
+	HasKey              bool    `json:"has_key"`
+	KeyHint             string  `json:"key_hint"`
 }

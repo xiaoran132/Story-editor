@@ -316,9 +316,21 @@ func (s *PlayService) runOpening(
 	} else {
 		opening, err = s.ai.StartStoryStream(ctx, world, initialState, parseStrList(session.RevealedAttrs), write, review, onDelta, onRevise)
 		if err != nil {
-			log.Printf("ai start story stream failed session=%s: %v", session.ID, err)
-			fl.err = pkg.Internal(aiUnavailableMsg)
-			return nil, fl.err
+			// 同 MakeChoiceStream 的断流契约：每次失败的已烧 token 都记账；
+			// 首帧前失败可安全重试一次，恰好一次。
+			var se *StreamError
+			for attempt := 0; errors.As(err, &se); attempt++ {
+				s.credit.ChargeAll(context.WithoutCancel(ctx), playerID, &session.StoryID, write, review, se.Usage)
+				if se.SawDelta || attempt > 0 || ctx.Err() != nil {
+					break
+				}
+				opening, err = s.ai.StartStoryStream(ctx, world, initialState, parseStrList(session.RevealedAttrs), write, review, onDelta, onRevise)
+			}
+			if err != nil {
+				log.Printf("ai start story stream failed session=%s: %v", session.ID, err)
+				fl.err = pkg.Internal(aiUnavailableMsg)
+				return nil, fl.err
+			}
 		}
 	}
 
@@ -600,8 +612,22 @@ func (s *PlayService) MakeChoiceStream(
 	}
 	result, err := s.ai.ContinueStream(ctx, world, history, currentState, choice, parseStrList(session.RevealedAttrs), write, review, onDelta, onRevise)
 	if err != nil {
-		log.Printf("ai continue stream failed session=%s: %v", session.ID, err)
-		return nil, pkg.Internal(aiUnavailableMsg)
+		// 断流契约（optimization-plan.md P0-1）：每次失败的已烧 token 都记账（agent 的
+		// error 帧带出 usage；传输中断没有帧可带就是零值，无从记起）；**尚未外发任何
+		// delta** 时整请求安全重试一次（agent 无状态、history 全量重发天然幂等）——已出
+		// delta 不重试（会向玩家重复半截正文），ctx 已取消（玩家走了）重试也只会立刻失败。
+		var se *StreamError
+		for attempt := 0; errors.As(err, &se); attempt++ {
+			s.credit.ChargeAll(context.WithoutCancel(ctx), playerID, &session.StoryID, write, review, se.Usage)
+			if se.SawDelta || attempt > 0 || ctx.Err() != nil {
+				break
+			}
+			result, err = s.ai.ContinueStream(ctx, world, history, currentState, choice, parseStrList(session.RevealedAttrs), write, review, onDelta, onRevise)
+		}
+		if err != nil {
+			log.Printf("ai continue stream failed session=%s: %v", session.ID, err)
+			return nil, pkg.Internal(aiUnavailableMsg)
+		}
 	}
 
 	// **生成之后切到不可取消的 ctx**：到这里 token 已经烧掉、正文已经拿到，

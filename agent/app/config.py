@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     # 真实样本显示裸 parse_error 约占 7% 且直接冒泡成玩家 502，故加一次廉价重试兜底。
     ai_parse_max_retries: int = 1
 
+    # 按环节的输出上限（token，0=不设上限）。除 validate_key 外全链路无上限曾是直接
+    # 成本风险（写手复读失控即烧钱）。正文 150-300 字、结构化/审校的 JSON 更小，以下
+    # 帽值都留了数倍余量——只拦失控，不拦正常输出。
+    ai_write_max_tokens: int = 1500
+    ai_structure_max_tokens: int = 1200
+    ai_review_max_tokens: int = 800
+
     # 续写上下文滑动窗口：只把「开局 + 最近 (history_window-1) 段」原文放进提示，
     # 更早的剧情折叠（其结果已沉淀在“当前属性”快照中），避免深剧情撑爆上下文。
     # <=0 表示不限制（全量重放）。详见 docs/context-strategy.md。

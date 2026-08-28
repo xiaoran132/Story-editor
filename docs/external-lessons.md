@@ -1,6 +1,6 @@
-# 外部项目经验参考：MaiBot 与 DeepSeek Harness
+# 外部项目经验参考：MaiBot、DeepSeek Harness 与 GitHub AI 写作项目
 
-> 考察于 2026-08-27。来源：MaiBot v1.2.3（github.com/Mai-with-u/MaiBot）、DeepSeek Harness 开发者预览版（github.com/deepseek-ai/deepseek-harness），本地副本在 `C:\Users\13192\Downloads\` 下（可能被删，以上游为准）。
+> 考察于 2026-08-27。来源：MaiBot v1.2.3（github.com/Mai-with-u/MaiBot）、DeepSeek Harness 开发者预览版（github.com/deepseek-ai/deepseek-harness），本地副本在 `C:\Users\13192\Downloads\` 下（可能被删，以上游为准）。GitHub AI 写作项目（2026-08-28，按 star 前十）见 §7。
 >
 > 什么时候读：动手改 `agent/app/llm.py` 的计费/SSE 处理时（§1）；阶段二/三触发条件亮了、开始设计时（§2/§3）。总原则：**抄契约与 schema，不抄体量**——两个项目解决的是它们自己的规模问题（开放插件生态、45k 行记忆系统），不是我们的。
 
@@ -10,15 +10,13 @@
 
 dsh 的 `packages/llm/llm-deepseek/src/translate.ts` 把 DeepSeek 的 `prompt_tokens` 拆成不相交的 `inputTokens / cacheReadTokens / cacheWriteTokens` 三项分别计价（缓存命中约为未命中的 1/10）；MaiBot 每次请求记录缓存命中率（`src/services/llm_cache_stats.py`）。
 
-我们的现状：`agent/app/llm.py` 的 `Usage` 只有 `prompt_tokens/completion_tokens`，而 `prepare` 把世界观放在 prompt 最前（会话内跨回合字节稳定），DeepSeek 自动前缀缓存的命中率会很高——若 Go 按 §12 的统一输入单价折算，缓存命中部分在按全价向玩家计费。
-
-做法：核实 langchain 的 `usage_metadata` 是否透出 DeepSeek 的 `prompt_cache_hit_tokens`（不透出则从原始响应读），`Usage` 增加缓存字段并在 done 帧带出，Go 计价跟进。注意 config 新增单价的四处同步规则。
+我们的落地（2026-08-28）：`Usage` 携带 `cache_read_tokens`——langchain 的 `usage_metadata.input_token_details.cache_read`（映射 OpenAI 风格 `prompt_tokens_details.cached_tokens`）为主，DeepSeek 原生 `prompt_cache_hit_tokens` 从 `response_metadata.token_usage` 兜底；随 done/error 帧带出。Go 侧 `llm_usage_logs.cache_read_tokens` 入账、`platform_llm_settings.price_cache_in_per_mtok` 单独计价（**0=未配置、按输入全价**——安全的失败方向），`costMicro` 把命中部分与未命中分开折算。
 
 ### 1.2 截断的流是不可信的流
 
 dsh 的 SSE 契约（`packages/llm/llm-deepseek/src/sse.ts`、`adapter.ts`）：缺 `[DONE]` 视为截断错误 `STREAM_CLOSED`；usage 必须先于 finish 帧到达；被 max-tokens 截断的 tool call 一律丢弃（残缺调用不可执行）。MaiBot 补第三块：**中断是一等原语**——`asyncio.Event` 贯穿到流式客户端（`src/llm_models/`），新事件可中止在途生成。
 
-对应我们的三处缺口：`chat_stream` 的 usage 累加无 `try/finally`（断连少计费）；前端把无 `done` 帧的断流当普通错误提示；整条链路（前端 postStream → Go → Agent）没有 AbortController 中断传播。
+三处缺口已修（2026-08-28）：`chat_stream` 的 usage 累加在 `finally`（断连/取消不漏计费），失败 usage 随 error 帧带出、Go 失败路径照常记账并**在未外发任何 delta 时对 agent 原请求安全重试一次**；前端 `postStream` 带 AbortController 与 45s 停滞超时、断流保留半截正文标「生成中断」；Go→浏览器静默期每 15s 发 `: ping` 心跳保活。
 
 ### 1.3 摘要的反污染契约
 
@@ -42,7 +40,7 @@ MaiBot `src/maisaka/memory/mid_term.py`。机制四步：
 3. 只注入**一条**最佳命中、未召回过的摘要，标记为「内部参考」；
 4. 决策请求把它从主窗口过滤掉，避免摘要文本渗入子请求。
 
-相对我们的「永远只带最新一条滚动摘要」，老摘要从被动滚走变为按需召回。落地几乎无缝：`story_nodes.summary` 已存在，生成时多产线索、会话内召回即可。这是介于滚动摘要与全套 RAG 之间的最小干预，**阶段二的第一候选**。
+相对我们的「永远只带最新一条滚动摘要」，老摘要从被动滚走变为按需召回。落地几乎无缝：`story_nodes.summary` 已存在，生成时多产线索、会话内召回即可。这是介于滚动摘要与全套 RAG 之间的最小干预，**阶段二的第一候选**。v0 可不引 embedding：用 Postgres 全文检索/关键词命中做线索匹配（webnovel-writer 未配 embedding key 时自动降级 BM25 的先例，见 §7），embedding+pgvector 仍为升级路径。
 
 ### 2.2 事实账本：世界记忆的数据结构
 
@@ -75,7 +73,15 @@ Cordis「一切皆插件」与 Typert 构建期 RPC 生成器（dsh 的开放生
 
 ## 6. 落地顺序
 
-1. 本周：§1.1 缓存计价 + §1.2 断流/中断链路；
-2. 内测前：§1.3 摘要契约加固 + §4 prompt 快照；
+1. ~~本周：§1.1 缓存计价 + §1.2 断流/中断链路~~ ✅ 已落地（2026-08-28，事实记录于 handoff §6.2/§9.2/§12）；
+2. 内测前：§4 prompt 快照 + llm-mock-server/流重放（`style_samples` 风格样章、限流与 JWT 自检是 handoff §9.3 的既定项）；
 3. 阶段二触发后：先 §2.1 Recall Cues，再按数据决定 §2.2 事实账本；导演一律 §2.3 规则先行；
 4. 阶段三：§3 人格铁律 + 立场裁判。
+
+## 7. GitHub AI 写作项目考察（2026-08-28）
+
+按「AI 辅助小说/长文创作系统」口径过滤后、star 排序的前十（`ai writing` 字面排序会被去 AI 味润色 skill 占据，与编排无关）：steven-tey/novel 16.4k、Narcooo/inkos 9.3k、lingfengQAQ/webnovel-writer 6.8k、zenstory-ai/oh-story-claudecode 6.2k、YILING0013/AI_NovelGenerator 6.0k、BlinkDL/AI-Writer 3.9k、PenglongHuang/chinese-novelist-skill 2.7k、ExplosiveCoderflome/AI-Novel-Writing-Assistant 2.7k、voocel/ainovel-cli 1.8k、t59688/arboris-novel 1.6k。门槛外高相关：RhythmicWave/NovelForge（schema-first 结构化生成 + `@卡片.content.字段` 上下文引用 DSL，与 `state_delta`/prompt 注入同构）、MaoXiaoYuZ/Long-Novel-GPT、alfredxw/denova（小说写作 + AI 跑团一体，与本项目「创作+游玩」双形态一致）。⚠️ inkos、AI_NovelGenerator 为 AGPL-3.0，webnovel-writer 为 GPL-3.0——**只读设计思路，禁止代码级借鉴**。
+
+已吸收（2026-08-28，事实见 handoff §6.2/§9.2/§12）：举证式审校（ainovel-cli/inkos 的「每项须引用原文举证」）；断流契约的最小版（webnovel-writer 断点续跑 + dsh §1.2：error 帧带 usage、失败路径记账、首帧前安全重试一次、SSE 心跳、前端停滞超时与中断态）；按环节输出上限（AI_NovelGenerator 五路模型路由的裁剪）。数据可选项：Structurer 独立模型槽（write/review/structure 三档）。
+
+明确不抄（本节来源增补）：agent 侧持久化记忆库（inkos `memory.db` SQLite FTS5、webnovel-writer `.story-system/`——违反 agent 无状态铁律，等价物在 Go 侧）；LangGraph/多 Agent 框架迁移（违反「唯一编排在 `_stream_pipeline`」）；整本全自动生产工作流（产品形态是互动回合制，`outline` 走向锚点已是滚动规划的等价物）；字数治理容差区间（网文按字数交付特有，游玩回合无此 KPI）；去 AI 味专项 stage（`STYLE_REVIEW_SYSTEM` 已含 `ai_tell` 维度，游玩侧由 `style_profile`/`style_samples` 承担）。

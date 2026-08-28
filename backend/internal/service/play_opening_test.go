@@ -160,7 +160,11 @@ type fakeAI struct {
 	entered chan struct{} // 非 nil 时进入 StartStoryStream 立刻 close，让测试确知「已经进来了」
 	content string
 
-	contCalls  int32 // ContinueStream 被调次数
+	contCalls int32 // ContinueStream 被调次数
+	// contFn/startFn 非 nil 时决定该次调用的结果（call 从 1 起计），供断流/重试测试注入；
+	// 为 nil 时走默认成功路径。
+	contFn     func(call int) (*AIResult, error)
+	startFn    func(call int, onDelta func(string)) (*AIResult, error)
 	mergeCalls int32 // CheckMerge 被调次数
 	mergeMu    sync.Mutex
 	mergeJudge *AgentLLMConfig                     // 最近一次 CheckMerge 收到的下发配置
@@ -171,6 +175,9 @@ func (f *fakeAI) StartStoryStream(
 	ctx context.Context, _ WorldConfig, _ map[string]any,
 	_ []string, _, _ *AgentLLMConfig, onDelta func(string), _ func(),
 ) (*AIResult, error) {
+	if f.startFn != nil {
+		return f.startFn(int(atomic.AddInt32(&f.calls, 1)), onDelta)
+	}
 	atomic.AddInt32(&f.calls, 1)
 	if f.entered != nil {
 		close(f.entered)
@@ -204,6 +211,9 @@ func (f *fakeAI) ContinueStream(
 	_ context.Context, _ WorldConfig, _ []PathStep, _ map[string]any, choice string,
 	_ []string, _, _ *AgentLLMConfig, onDelta func(string), _ func(),
 ) (*AIResult, error) {
+	if f.contFn != nil {
+		return f.contFn(int(atomic.AddInt32(&f.contCalls, 1)))
+	}
 	atomic.AddInt32(&f.contCalls, 1)
 	if onDelta != nil {
 		onDelta(f.content)
@@ -253,11 +263,16 @@ func (fakeResolver) ReviewEnabled(context.Context, uuid.UUID, uuid.UUID) (bool, 
 	return false, nil
 }
 
-// fakeCredit 实现 creditCharger：只数扣费次数。
-type fakeCredit struct{ calls int32 }
+// fakeCredit 实现 creditCharger：数扣费次数，并记录每次收到的 usage——
+// 断流失败路径「烧掉的 token 必须记账」的断言要看具体数字，不只看次数。
+type fakeCredit struct {
+	calls  int32
+	usages []StageUsages
+}
 
-func (f *fakeCredit) ChargeAll(context.Context, uuid.UUID, *uuid.UUID, *AgentLLMConfig, *AgentLLMConfig, StageUsages) {
+func (f *fakeCredit) ChargeAll(_ context.Context, _ uuid.UUID, _ *uuid.UUID, _, _ *AgentLLMConfig, u StageUsages) {
 	atomic.AddInt32(&f.calls, 1)
+	f.usages = append(f.usages, u)
 }
 
 // fakeStories 实现 StoryReader。

@@ -5,7 +5,12 @@ import unittest
 from unittest.mock import patch
 
 from app.graph import story_graph as sg
-from app.graph.story_graph import normalize, prepare, run_continue_stream
+from app.graph.story_graph import (
+    StreamPipelineError,
+    normalize,
+    prepare,
+    run_continue_stream,
+)
 from app.llm import Usage
 from app.prompts import REVIEW_SYSTEM, STORY_WRITER_SYSTEM, STRUCTURE_SYSTEM
 
@@ -110,8 +115,8 @@ class StreamPipelineTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(done[0]["result"]["content"], "你在城中行走。")
         self.assertEqual(done[0]["result"]["state_delta"], {"hp": -1})
         self.assertEqual(done[0]["usage"], {
-            "write": {"prompt_tokens": 24, "completion_tokens": 24, "estimated": False},
-            "review": {"prompt_tokens": 5, "completion_tokens": 3, "estimated": False},
+            "write": {"prompt_tokens": 24, "completion_tokens": 24, "cache_read_tokens": 0, "estimated": False},
+            "review": {"prompt_tokens": 5, "completion_tokens": 3, "cache_read_tokens": 0, "estimated": False},
         })
     async def test_review_reject_then_rewrites_and_restructures(self) -> None:
         """审校拒绝后，Writer 与 Structurer 必须都重新执行，不能复用旧结构。"""
@@ -145,6 +150,48 @@ class StreamPipelineTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(types.count("revise"), 1)
         done = [event for event in events if event["type"] == "done"][0]
         self.assertEqual(done["result"]["content"], "重写稿。")
+
+    async def test_metadata_feedback_routes_to_structurer(self) -> None:
+        """【元数据】类审校反馈喂 Structurer 修正，写手只被要求原样重发正文。
+
+        两大真实拒因（delta 与正文不一致、summary 漏记实体）都出在元数据上；
+        无分流时反馈全喂写手，只能靠无记忆重跑碰运气。
+        """
+        writer_calls = []
+        structure_users = []
+        reviews = iter([
+            {"passed": False, "issues": ["【元数据】summary 漏记新登场人物守卫"]},
+            {"passed": True, "issues": []},
+        ])
+
+        async def fake_stream(messages, **_kwargs):
+            writer_calls.append(messages)
+            yield "初稿。" if len(writer_calls) == 1 else "重发稿。"
+
+        def fake_json(system, user, **_kwargs):
+            if system == STRUCTURE_SYSTEM:
+                structure_users.append(user)
+                return STRUCTURE
+            self.assertEqual(system, REVIEW_SYSTEM)
+            return next(reviews)
+
+        with patch.object(sg, "chat_stream", fake_stream), \
+             patch.object(sg, "chat_json", fake_json):
+            events = await collect(
+                run_continue_stream(WORLD, [], STATE, "go", None, WRITE_CFG, REVIEW_CFG)
+            )
+
+        self.assertEqual(len(writer_calls), 2)
+        self.assertEqual(len(structure_users), 2)
+        self.assertIn("漏记新登场人物守卫", structure_users[1])   # 带反馈重跑
+        self.assertNotIn("漏记新登场人物守卫", structure_users[0])  # 首轮无反馈
+        revision_request = writer_calls[1][-1].content
+        self.assertIn("原样输出上一稿正文", revision_request)      # 正文无硬伤不重写
+        self.assertNotIn("需修正的问题", revision_request)          # 元数据反馈不喂写手
+        types = [event["type"] for event in events]
+        self.assertEqual(types.count("revise"), 1)
+        done = [event for event in events if event["type"] == "done"][0]
+        self.assertEqual(done["result"]["content"], "重发稿。")
 
     async def test_exhausted_degrades_and_delivers(self) -> None:
         """重写耗尽仍交付最后一稿，保持玩家操作不因审校失败而失败。"""
@@ -184,6 +231,73 @@ class StreamPipelineTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(done["result"]["content"], "首稿。")
         self.assertEqual(done["usage"]["review"]["completion_tokens"], 0)
 
+
+    async def test_error_wraps_burned_usage(self) -> None:
+        """管线失败时已烧掉的 token 必须随异常带出——SSE error 帧据此让 Go 失败路径记账。"""
+        async def fake_stream(_messages, **kwargs):
+            kwargs["usage_out"].add(Usage(30, 12))
+            yield "正文。"
+
+        def fake_json(system, _user, **kwargs):
+            if system == STRUCTURE_SYSTEM:
+                kwargs["usage_out"].add(Usage(10, 5))
+                return STRUCTURE
+            raise RuntimeError("review connection reset")
+
+        with patch.object(sg, "chat_stream", fake_stream), \
+             patch.object(sg, "chat_json", fake_json):
+            with self.assertRaises(StreamPipelineError) as cm:
+                await collect(
+                    run_continue_stream(WORLD, [], STATE, "go", None, WRITE_CFG, REVIEW_CFG)
+                )
+
+        self.assertIn("RuntimeError", str(cm.exception))
+        self.assertEqual(cm.exception.usage["write"]["prompt_tokens"], 40)      # 写手+结构化同桶
+        self.assertEqual(cm.exception.usage["write"]["completion_tokens"], 17)
+        self.assertEqual(cm.exception.usage["review"]["prompt_tokens"], 0)      # 审校没烧到
+
+    async def test_gen_metrics_include_depth(self) -> None:
+        """gen/review 埋点带 depth（history 长度）——「拒因随深度上升」判据的前置。"""
+        history = [
+            {"choice_text": "a", "content": "甲。", "summary": "s1"},
+            {"choice_text": "b", "content": "乙。", "summary": "s2"},
+        ]
+
+        with patch.object(sg, "chat_stream", make_stream([["稿。"]])), \
+             patch.object(
+                 sg, "chat_json",
+                 lambda system, _u, **_k: STRUCTURE if system == STRUCTURE_SYSTEM
+                 else {"passed": True, "issues": []},
+             ):
+            with self.assertLogs("story.metrics", level="INFO") as cm:
+                await collect(run_continue_stream(WORLD, history, STATE, "go", None, WRITE_CFG, REVIEW_CFG))
+
+        gen_line = next(line for line in cm.output if "gen mode=" in line)
+        review_line = next(line for line in cm.output if "review verdict=" in line)
+        self.assertIn("depth=2", gen_line)
+        self.assertIn("depth=2", review_line)
+
+    async def test_stage_max_tokens_wired(self) -> None:
+        """写手/结构化/审校各拿各环节的输出上限（env 帽值），而非全局一刀切。"""
+        s = sg.get_settings()
+        seen_stream: list[int | None] = []
+        seen_json: list[tuple[str, int | None]] = []
+
+        async def fake_stream(_messages, **kwargs):
+            seen_stream.append(kwargs.get("max_tokens"))
+            yield "稿。"
+
+        def fake_json(system, _user, **kwargs):
+            seen_json.append((system, kwargs.get("max_tokens")))
+            return STRUCTURE if system == STRUCTURE_SYSTEM else {"passed": True, "issues": []}
+
+        with patch.object(sg, "chat_stream", fake_stream), \
+             patch.object(sg, "chat_json", fake_json):
+            await collect(run_continue_stream(WORLD, [], STATE, "go", None, WRITE_CFG, REVIEW_CFG))
+
+        self.assertEqual(seen_stream, [s.ai_write_max_tokens])
+        self.assertIn((STRUCTURE_SYSTEM, s.ai_structure_max_tokens), seen_json)
+        self.assertIn((REVIEW_SYSTEM, s.ai_review_max_tokens), seen_json)
 
     async def test_style_profile_reaches_writer_only(self) -> None:
         """文风档案只进 Writer，不进 Structurer / Reviewer。

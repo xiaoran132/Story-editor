@@ -30,6 +30,17 @@ from .state import StoryState
 logger = logging.getLogger("story.metrics")
 
 
+class StreamPipelineError(RuntimeError):
+    """管线失败的外发包装。detail 进 SSE error 帧；usage 是已烧掉的 token——
+    烧掉的 token 必须记账，路由层从异常上取 usage 附进 error 帧（Go 侧失败路径扣费）。
+    """
+
+    def __init__(self, detail: str, usage: dict[str, Any] | None = None) -> None:
+        super().__init__(detail)
+        self.detail = detail
+        self.usage = usage or {}
+
+
 def _to_json(v: Any) -> str:
     try:
         return json.dumps(v, ensure_ascii=False)
@@ -311,8 +322,29 @@ def prepare(state: StoryState) -> dict[str, Any]:
     }
 
 
+def _split_feedback(issues: Any) -> tuple[str, str]:
+    """把审校 issues 按标注分流为（正文类，元数据类）两条反馈。
+
+    审校被要求每条 issue 以【正文】/【元数据】开头（见 REVIEW_SYSTEM）；模型不遵守时
+    默认归正文类——行为回退到分流前的「全部反馈喂写手」，不会丢反馈。
+    """
+    items = issues if isinstance(issues, list) else [issues]
+    content_parts: list[str] = []
+    meta_parts: list[str] = []
+    for issue in items:
+        text = str(issue).strip()
+        if not text:
+            continue
+        if text.startswith("【元数据】"):
+            meta_parts.append(text.removeprefix("【元数据】").strip())
+        else:
+            content_parts.append(text.removeprefix("【正文】").strip())
+    return "；".join(content_parts), "；".join(meta_parts)
+
+
 def review(state: StoryState) -> dict[str, Any]:
-    """调用 AI 审校当前生成；拒绝时把可执行反馈交给下一次重写。"""
+    """调用 AI 审校当前生成；拒绝时把可执行反馈按【正文】/【元数据】分流，
+    分别交给写手修订与结构化助手下一轮修正。"""
     candidate = _to_json(state.get("raw") or {})
     prompt = (
         f"{state['user_prompt']}\n"
@@ -321,26 +353,33 @@ def review(state: StoryState) -> dict[str, Any]:
         "\n请仅按系统要求返回审校 JSON。"
     )
     verdict = chat_json(REVIEW_SYSTEM, prompt, temperature=0.2, llm_cfg=state.get("llm_cfg"),
-                        usage_out=state.get("usage_out"))
+                        usage_out=state.get("usage_out"),
+                        max_tokens=get_settings().ai_review_max_tokens)
     passed = verdict.get("passed") is True
     issues = verdict.get("issues") or []
     if isinstance(issues, list):
         feedback = "；".join(str(issue) for issue in issues if str(issue).strip())
     else:
         feedback = str(issues)
+    content_feedback, meta_feedback = _split_feedback(issues)
     if not passed and not feedback:
-        feedback = "候选内容未通过质量审校；请重新核对剧情承接、选项后果、属性变化和前情提要。"
+        content_feedback = feedback = "候选内容未通过质量审校；请重新核对剧情承接、选项后果、属性变化和前情提要。"
 
     # 逐次审校判定打点：用来回答「审校到底在拒什么、是不是形同橡皮图章」。
+    # depth（会话已发生剧情段数）让「拒因随深度上升」类信号可计算（判据见
+    # docs/external-lessons.md §2.0），由管线传入。
+    depth = int(state.get("depth") or 0)
     attempt = state.get("review_failures", 0) + 1
     if passed:
-        logger.info("review verdict=pass attempt=%d", attempt)
+        logger.info("review verdict=pass depth=%d attempt=%d", depth, attempt)
     else:
-        logger.info("review verdict=reject attempt=%d issues=%s", attempt, feedback)
+        logger.info("review verdict=reject depth=%d attempt=%d issues=%s", depth, attempt, feedback)
 
     return {
         "review_passed": passed,
         "review_feedback": feedback,
+        "review_content_feedback": content_feedback,
+        "review_meta_feedback": meta_feedback,
         "review_failures": state.get("review_failures", 0) + (0 if passed else 1),
     }
 
@@ -399,21 +438,30 @@ def normalize(state: StoryState) -> dict[str, Any]:
 # 超限则降级交付。prepare/normalize/review 为共享纯函数；complete_opening 走非流式。
 
 def _structure(state: dict[str, Any], prose: str, llm_cfg: dict[str, Any] | None = None,
-               usage_out: Usage | None = None) -> dict[str, Any]:
-    """基于已写定的正文生成结构化元数据，复用写手配置并累计 write usage。"""
+               usage_out: Usage | None = None, feedback: str = "") -> dict[str, Any]:
+    """基于已写定的正文生成结构化元数据，复用写手配置并累计 write usage。
+
+    feedback 非空 = 上一版元数据被审校拒绝的具体问题（【元数据】类反馈），追加在
+    prompt 尾部令结构化助手带记忆修正——审校两大真实拒因都出在元数据上，不喂反馈
+    只能靠重跑碰运气。
+    """
     prompt = (
         state["user_prompt"]
         + "\n【已写好的剧情正文】\n"
         + prose
         + "\n请只为上面这段正文输出结构化元数据 JSON（不要改写正文）。"
     )
-    return chat_json(STRUCTURE_SYSTEM, prompt, llm_cfg=llm_cfg, usage_out=usage_out)
+    if feedback:
+        prompt += f"\n上一版结构化元数据未通过审校，需修正：{feedback}\n请修正上述问题后重新输出，不要改写正文。"
+    return chat_json(STRUCTURE_SYSTEM, prompt, llm_cfg=llm_cfg, usage_out=usage_out,
+                     max_tokens=get_settings().ai_structure_max_tokens)
 
 
 async def _stream_pipeline(mode: str, base_state: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
     """公共流式流水线，产出事件：
     {"type":"delta","text":..} 正文增量 / {"type":"revise"} 审校拒绝需重来 / {"type":"done","result":..}。
-    异常（LLMParseError/其它）打点后原样抛出，由路由转 SSE error 帧。"""
+    异常（LLMParseError/其它）打点后包装成 StreamPipelineError（附已烧 usage）抛出，
+    由路由转 SSE error 帧——error 帧可选携带 usage，Go 侧失败路径据此记账。"""
     prep = prepare(base_state)
     state = {**base_state, **prep}
     # Writer 与 Structurer 共享 llm_write；Review 独占 llm_review。两者均由 Go 下发，
@@ -427,6 +475,9 @@ async def _stream_pipeline(mode: str, base_state: dict[str, Any]) -> AsyncIterat
     # review 单独累计，因为它可使用另一条模型连接。
     usage_write, usage_review = Usage(), Usage()
     max_retries = max(0, get_settings().ai_review_max_retries)
+    # depth=会话已发生剧情段数（开场为 0）：埋点按深度分桶是阶段二触发判据的
+    # 前置（external-lessons §2.0），没有它「拒因随深度上升」类信号不可计算。
+    depth = len(base_state.get("history") or [])
     start = time.perf_counter()
     ttfb_ms: int | None = None
     failures = 0
@@ -437,12 +488,16 @@ async def _stream_pipeline(mode: str, base_state: dict[str, Any]) -> AsyncIterat
         SystemMessage(content=STORY_WRITER_SYSTEM),
         HumanMessage(content=state["user_prompt"] + state.get("style_block", "")),
     ]
+    meta_feedback = ""  # 上一轮【元数据】类审校反馈，喂给本轮 Structurer 修正
 
     try:
         while True:
             # —— 流式写作：每个正文 chunk 都可直接外发；结构化阶段不会阻塞首字。——
             prose_chunks: list[str] = []
-            async for chunk in chat_stream(writer_msgs, llm_cfg=llm_write, usage_out=usage_write):
+            async for chunk in chat_stream(
+                writer_msgs, llm_cfg=llm_write, usage_out=usage_write,
+                max_tokens=get_settings().ai_write_max_tokens,
+            ):
                 if ttfb_ms is None:
                     ttfb_ms = round((time.perf_counter() - start) * 1000)
                 prose_chunks.append(chunk)
@@ -452,7 +507,7 @@ async def _stream_pipeline(mode: str, base_state: dict[str, Any]) -> AsyncIterat
             # ⚠️ 必须丢进工作线程：本函数是 async generator，由 StreamingResponse 在
             # 事件循环里迭代，而 chat_json 走的 llm.invoke 是同步阻塞网络 I/O。
             # 直接调用会卡住整个 uvicorn worker——一个玩家在结构化，其他玩家的逐字流全停。
-            tail = await asyncio.to_thread(_structure, state, prose, llm_write, usage_write)
+            tail = await asyncio.to_thread(_structure, state, prose, llm_write, usage_write, meta_feedback)
             raw = {**tail, "content": prose}  # Writer 正文是唯一权威，不能被 Structurer 的意外字段覆盖
             result = normalize(
                 {"raw": raw, "known_keys": state["known_keys"], "attr_types": state["attr_types"],
@@ -464,10 +519,11 @@ async def _stream_pipeline(mode: str, base_state: dict[str, Any]) -> AsyncIterat
                 rv = await asyncio.to_thread(review, {
                     "user_prompt": state["user_prompt"], "raw": raw,
                     "review_failures": failures, "llm_cfg": llm_review,
-                    "usage_out": usage_review,
+                    "usage_out": usage_review, "depth": depth,
                 })
             else:
-                rv = {"review_passed": True, "review_failures": failures, "review_feedback": ""}
+                rv = {"review_passed": True, "review_failures": failures, "review_feedback": "",
+                      "review_content_feedback": "", "review_meta_feedback": ""}
             failures = rv["review_failures"]
             feedback = rv["review_feedback"]
             # 通过 或 重写耗尽 → 都交付本稿（耗尽为降级交付，不硬失败）。
@@ -478,10 +534,10 @@ async def _stream_pipeline(mode: str, base_state: dict[str, Any]) -> AsyncIterat
                     logger.warning("review degraded (stream, delivered after %d rejections): %s",
                                    failures, feedback)
                 logger.info(
-                    "gen mode=%s outcome=ok stream=1 elapsed_ms=%d ttfb_ms=%d "
+                    "gen mode=%s outcome=ok stream=1 depth=%d elapsed_ms=%d ttfb_ms=%d "
                     "review=%s review_failures=%d first_draft_pass=%s degraded=%s is_ending=%s "
                     "tok_in=%d tok_out=%d usage_estimated=%s",
-                    mode, elapsed_ms, ttfb_ms if ttfb_ms is not None else -1,
+                    mode, depth, elapsed_ms, ttfb_ms if ttfb_ms is not None else -1,
                     "on" if review_on else "off",
                     failures, failures == 0, degraded, bool(result.get("is_ending")),
                     usage_write["prompt_tokens"] + usage_review["prompt_tokens"],
@@ -492,24 +548,38 @@ async def _stream_pipeline(mode: str, base_state: dict[str, Any]) -> AsyncIterat
                        "usage": {"write": dict(usage_write), "review": dict(usage_review)}}
                 return
 
-            # 拒绝且未超限：Writer 只重写正文；本轮正文对应的结构化数据会在下一轮重新生成。
+            # 拒绝且未超限。反馈按审校标注分流：【正文】类喂写手修订；【元数据】类喂
+            # 下一轮 Structurer——拒因只在元数据时不无谓重写正文，写手原样重发上一稿
+            # （管线必须流式产出正文，不跳过 Writer、revise 事件语义不变）。
+            content_feedback = rv.get("review_content_feedback", "")
+            meta_feedback = rv.get("review_meta_feedback", "")
             writer_msgs.append(AIMessage(content=prose))
-            writer_msgs.append(HumanMessage(content=(
-                f"上一稿未通过质量审校。需修正的问题：{feedback}\n"
-                "请在上一稿基础上修订：保留已经写好、没问题的部分，只针对上述问题改动；"
-                "若问题是结构性的（如整段方向或节奏不对），可以较大改动。"
-                "只输出完整的修订正文，不要 JSON、选项、状态、摘要或解释。"
-            )))
+            if content_feedback:
+                writer_msgs.append(HumanMessage(content=(
+                    f"上一稿未通过质量审校。需修正的问题：{content_feedback}\n"
+                    "请在上一稿基础上修订：保留已经写好、没问题的部分，只针对上述问题改动；"
+                    "若问题是结构性的（如整段方向或节奏不对），可以较大改动。"
+                    "只输出完整的修订正文，不要 JSON、选项、状态、摘要或解释。"
+                )))
+            else:
+                writer_msgs.append(HumanMessage(content=(
+                    "上一稿正文未发现硬伤，本次审校问题只在选项/属性/摘要等结构化元数据（将另行修正）。"
+                    "请原样输出上一稿正文，不要改动剧情与文字。"
+                    "只输出完整的正文，不要 JSON、选项、状态、摘要或解释。"
+                )))
             yield {"type": "revise"}  # 通知前端清空已流出的正文，准备重来
-    except Exception as e:  # noqa: BLE001 —— 打点后原样抛给路由转 SSE error
+    except Exception as e:  # noqa: BLE001 —— 打点后包装抛给路由转 SSE error（帧带 usage）
         elapsed_ms = round((time.perf_counter() - start) * 1000)
         outcome = "parse_error" if isinstance(e, LLMParseError) else "error"
         logger.warning(
-            "gen mode=%s outcome=%s stream=1 elapsed_ms=%d ttfb_ms=%d err_type=%s detail=%s",
-            mode, outcome, elapsed_ms, ttfb_ms if ttfb_ms is not None else -1,
+            "gen mode=%s outcome=%s stream=1 depth=%d elapsed_ms=%d ttfb_ms=%d err_type=%s detail=%s",
+            mode, outcome, depth, elapsed_ms, ttfb_ms if ttfb_ms is not None else -1,
             type(e).__name__, e,
         )
-        raise
+        raise StreamPipelineError(
+            f"{type(e).__name__}: {e}",
+            {"write": dict(usage_write), "review": dict(usage_review)},
+        ) from e
 
 
 def run_continue_stream(
