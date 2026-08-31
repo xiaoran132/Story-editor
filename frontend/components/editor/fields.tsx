@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import Dropdown, { type DropOpt } from "@/components/Dropdown";
 import styles from "./editor.module.css";
 
 // 编辑器的表单原子件。六段共用，样式全在 editor.module.css。
@@ -95,25 +96,18 @@ export function SelectField({
   hint,
   value,
   onChange,
-  children,
+  options,
 }: {
   label: string;
   hint?: ReactNode;
   value: string;
   onChange: (v: string) => void;
-  children: ReactNode;
+  options: DropOpt[];
 }) {
   const id = nextId();
   return (
     <Field label={label} hint={hint} htmlFor={id}>
-      <select
-        id={id}
-        className={styles.select}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        {children}
-      </select>
+      <Dropdown id={id} value={value} onChange={onChange} entries={options} />
     </Field>
   );
 }

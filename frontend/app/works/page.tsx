@@ -10,6 +10,7 @@ import Backdrop from "@/components/sky/Backdrop";
 import WorldScope from "@/components/sky/WorldScope";
 import WorkFace from "@/components/wx/WorkFace";
 import WxHeader from "@/components/wx/WxHeader";
+import Dropdown from "@/components/Dropdown";
 import type { Story } from "@/lib/types";
 import styles from "./page.module.css";
 
@@ -31,12 +32,6 @@ const SORTS: { key: SortKey; label: string }[] = [
   { key: "title", label: "作品名" },
 ];
 
-const Tick = (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden="true">
-    <path d="M20 6 9 17l-5-5" />
-  </svg>
-);
-
 export default function WorksPage() {
   const initAuth = useAuthStore((s) => s.init);
 
@@ -47,7 +42,6 @@ export default function WorksPage() {
   const [genre, setGenre] = useState<string>("");
   const [revealOnly, setRevealOnly] = useState(false);
   const [sort, setSort] = useState<SortKey>("recommend");
-  const [menuOpen, setMenuOpen] = useState(false);
   const [page, setPage] = useState(1);
 
   useEffect(() => {
@@ -140,37 +134,15 @@ export default function WorksPage() {
             onChange={(e) => setQ(e.target.value)}
           />
 
-          <div className={styles.sortWrap}>
-            <button
-              className={styles.sortBtn}
-              type="button"
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-              onClick={() => setMenuOpen((v) => !v)}
-            >
-              排序 · {SORTS.find((x) => x.key === sort)?.label}
-            </button>
-            {menuOpen && (
-              // role=menu + menuitemradio：四项互斥，读屏该听到「四选一」而不是四个独立开关
-              <div className={styles.menu} role="menu" aria-label="排序方式">
-                {SORTS.map((o) => (
-                  <button
-                    key={o.key}
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={sort === o.key}
-                    onClick={() => {
-                      setSort(o.key);
-                      setMenuOpen(false);
-                    }}
-                  >
-                    <span className={styles.tick}>{sort === o.key ? Tick : null}</span>
-                    {o.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          {/* 排序是 menuitemradio 互斥单选——读屏该听到「三选一」而不是三个独立开关 */}
+          <Dropdown
+            className={styles.sortDd}
+            caption="排序"
+            ariaLabel="排序方式"
+            value={sort}
+            onChange={(v) => setSort(v as SortKey)}
+            entries={SORTS.map((o) => ({ value: o.key, label: o.label }))}
+          />
 
           {filtering && (
             <button className={styles.clearBtn} type="button" onClick={clear}>

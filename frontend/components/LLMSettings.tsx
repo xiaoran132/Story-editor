@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { LLM_PROVIDERS, type LLMConnection, type TestResult } from "@/lib/types";
 import { IconPlus } from "@/components/icons";
 import Dialog from "@/components/Dialog";
+import Dropdown from "@/components/Dropdown";
 import styles from "./LLMSettings.module.css";
 
 // BYOK 连接管理（账号级）：增删改多个 LLM 连接（供应商/base_url/key/默认模型）。
@@ -240,11 +241,12 @@ export default function LLMSettings({ flash }: { flash: (m: string) => void }) {
             </label>
             <label className="wx-field">
               <span className="wx-label">供应商</span>
-              <select className="wx-select" value={form.provider} onChange={(e) => pickProvider(e.target.value)}>
-                {LLM_PROVIDERS.map((p) => (
-                  <option key={p.key} value={p.key}>{p.label}</option>
-                ))}
-              </select>
+              <Dropdown
+                value={form.provider}
+                onChange={pickProvider}
+                ariaLabel="供应商"
+                entries={LLM_PROVIDERS.map((p) => ({ value: p.key, label: p.label }))}
+              />
             </label>
             <label className="wx-field">
               <span className="wx-label">Base URL</span>

@@ -1,32 +1,9 @@
-/* 一行：模型下拉 + 保存。与 LLMSettings 同处一张卡片内，不另起标题层级。 */
+/* 一行：模型下拉（统一 Dropdown 组件，自带样式）+ 保存。与 LLMSettings 同处一张卡片内，不另起标题层级。 */
 .row {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 8px;
   align-items: center;
-}
-
-.sel {
-  width: 100%;
-  min-height: 44px;
-  padding: 0 12px;
-  border-radius: var(--r-sm);
-  border: 1px solid var(--border-2);
-  background: oklch(1 0 0 / 0.05);
-  color: var(--fg);
-  font-family: inherit;
-  font-size: 13px;
-  transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
-}
-
-.sel:hover {
-  background: oklch(1 0 0 / 0.08);
-}
-
-.sel:focus-visible {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: var(--ring);
 }
 
 @media (max-width: 560px) {

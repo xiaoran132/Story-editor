@@ -73,11 +73,11 @@
   box-shadow: var(--ring);
 }
 
-.sortWrap {
-  position: relative;
+/* 排序下拉走统一 Dropdown 组件，这里只定它在工具行里的宽度 */
+.sortDd {
+  width: auto;
 }
 
-.sortBtn,
 .clearBtn {
   min-height: 46px;
   padding: 0 16px;
@@ -93,68 +93,14 @@
   transition: background 0.16s var(--ease), border-color 0.16s var(--ease);
 }
 
-.sortBtn:hover,
 .clearBtn:hover {
   background: oklch(1 0 0 / 0.08);
   border-color: var(--bright);
 }
 
-.sortBtn:focus-visible,
 .clearBtn:focus-visible {
   outline: none;
   box-shadow: var(--ring);
-}
-
-/* 排序是 role=menu + menuitemradio，不是一堆并列按钮——四个选项互斥，
-   读屏该听到「四选一，当前第 N 项」而不是四个独立开关。 */
-.menu {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 6px);
-  z-index: 30;
-  min-width: 176px;
-  padding: 5px;
-  border-radius: var(--r-md);
-  border: 1px solid var(--border-2);
-  background: oklch(0.11 0.02 265 / 0.96);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  box-shadow: 0 24px 60px -30px oklch(0.02 0 0 / 0.95);
-}
-
-.menu button {
-  width: 100%;
-  min-height: 42px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: var(--r-sm);
-  background: none;
-  color: var(--muted);
-  font-family: inherit;
-  font-size: 13px;
-  text-align: left;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-}
-
-.menu button:hover {
-  color: var(--fg);
-  background: oklch(1 0 0 / 0.07);
-}
-
-.menu button[aria-checked="true"] {
-  color: var(--bright);
-}
-
-.menu button:focus-visible {
-  outline: none;
-  box-shadow: var(--ring);
-}
-
-.tick {
-  width: 12px;
-  flex: none;
 }
 
 /* ================= 两栏：筛选侧栏 + 结果 ================= */

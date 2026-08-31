@@ -3,6 +3,7 @@
 import { useEditorStore } from "@/store/editorStore";
 import type { AttrRowData, AttrType } from "@/lib/types";
 import { IconPlus, IconTrash } from "@/components/icons";
+import Dropdown from "@/components/Dropdown";
 import styles from "./editor.module.css";
 
 // 属性声明表：每属性一行——键 / 类型 / 初值（随类型切控件）/ 上限 / hidden / reveal / 删除。
@@ -68,16 +69,17 @@ function AttrRow({
         value={a.key}
         onChange={(e) => onChange({ key: e.target.value })}
       />
-      <select
-        className={styles.rowInput}
-        aria-label={`${at} · 类型`}
+      <Dropdown
+        compact
+        ariaLabel={`${at} · 类型`}
         value={a.type}
-        onChange={(e) => onChange({ type: e.target.value as AttrType })}
-      >
-        <option value="number">number</option>
-        <option value="scalar">scalar</option>
-        <option value="set">set</option>
-      </select>
+        onChange={(v) => onChange({ type: v as AttrType })}
+        entries={[
+          { value: "number", label: "number" },
+          { value: "scalar", label: "scalar" },
+          { value: "set", label: "set" },
+        ]}
+      />
       <InitialInput a={a} at={at} onChange={onChange} />
       {/* 上限：只有 number 能填。没上限就没有「满」的概念，玩家端不画条只显示数字。 */}
       <input

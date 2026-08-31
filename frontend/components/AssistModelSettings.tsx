@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { AssistConfig, LLMConnection } from "@/lib/types";
+import Dropdown from "@/components/Dropdown";
 import styles from "./AssistModelSettings.module.css";
 
-// 创作辅助（world 环节）用哪个模型 —— **账号级**，在这里配一次，编辑器全程用它。
+// 创作辅助用哪个模型 —— **账号级**，在这里配一次，编辑器全程用它。
 //
 // 为什么不放编辑器里：那里曾有一个临时下拉，但它只在第 1 段出现，而段落可任意跳转
 // （DESIGN.md §7.7），作者直奔第 4 段用「AI 生成开场 / 精品润色」时既看不到也改不了；
@@ -60,31 +61,38 @@ export default function AssistModelSettings({ flash }: { flash: (m: string) => v
     <>
       {error && <p className="wx-err" role="alert">出错：{error}</p>}
       <div className={styles.row}>
-        <select className={styles.sel} value={pick} aria-label="创作辅助模型"
-          onChange={(e) => setPick(e.target.value)}>
-          {/* 平台档永不禁用：不接自己的连接本就是合法的默认状态 */}
-          <optgroup label="平台">
-            <option value="">
-              {`平台预设${cfg.platform.model ? ` · ${cfg.platform.model}` : ""}${
-                cfg.platform.ready ? "" : cfg.platform.model ? "（额度已用尽）" : "（未配置）"
-              }`}
-            </option>
-          </optgroup>
-          {conns.map((c) => {
-            const ms = c.models || [];
-            if (ms.length === 0 && !(orphan && c.id === cfg.conn)) return null;
-            return (
-              <optgroup key={c.id} label={c.name}>
-                {orphan && c.id === cfg.conn && (
-                  <option value={`${cfg.conn}::${cfg.model}`}>{cfg.model}（已移出列表）</option>
-                )}
-                {ms.map((m) => (
-                  <option key={m} value={`${c.id}::${m}`}>{m}</option>
-                ))}
-              </optgroup>
-            );
-          })}
-        </select>
+        <Dropdown
+          value={pick}
+          onChange={setPick}
+          ariaLabel="创作辅助模型"
+          entries={[
+            // 平台档永不禁用：不接自己的连接本就是合法的默认状态
+            {
+              group: "平台",
+              opts: [
+                {
+                  value: "",
+                  label: `平台预设${cfg.platform.model ? ` · ${cfg.platform.model}` : ""}${
+                    cfg.platform.ready ? "" : cfg.platform.model ? "（额度已用尽）" : "（未配置）"
+                  }`,
+                },
+              ],
+            },
+            // 每条连接一组，组下是它的模型；空组不出现。绑定指向的模型可能已被
+            // 移出列表，补一条孤儿项——否则当前值无对应项，看起来像配置被改掉了。
+            ...conns
+              .map((c) => ({
+                group: c.name,
+                opts: [
+                  ...(orphan && c.id === cfg.conn
+                    ? [{ value: `${cfg.conn}::${cfg.model}`, label: `${cfg.model}（已移出列表）` }]
+                    : []),
+                  ...(c.models || []).map((m) => ({ value: `${c.id}::${m}`, label: m })),
+                ],
+              }))
+              .filter((g) => g.opts.length > 0),
+          ]}
+        />
         <button className="wx-btn sm" type="button" disabled={busy || !dirty} onClick={save}>
           {busy ? "保存中…" : "保存"}
         </button>

@@ -947,7 +947,6 @@ select {
 }
 
 .wx-input,
-.wx-select,
 .wx-textarea {
   width: 100%;
   padding: 12px 14px;
@@ -961,8 +960,7 @@ select {
   transition: background 0.16s var(--ease), border-color 0.16s var(--ease);
 }
 
-.wx-input,
-.wx-select {
+.wx-input {
   min-height: 46px;
 }
 
@@ -972,13 +970,11 @@ select {
 }
 
 .wx-input:hover,
-.wx-select:hover,
 .wx-textarea:hover {
   background: oklch(1 0 0 / 0.08);
 }
 
 .wx-input:focus-visible,
-.wx-select:focus-visible,
 .wx-textarea:focus-visible {
   outline: none;
   border-color: var(--accent);
@@ -988,17 +984,6 @@ select {
 .wx-input::placeholder,
 .wx-textarea::placeholder {
   color: oklch(0.6 0.015 265);
-}
-
-/* 原生下拉面板在深空底上默认是浅色的。color-scheme 管住了控件本身，
-   选项列表还得自己上色，否则展开那一下整块白闪。
-   ⚠️ 按元素而非按类：这条规则曾经在四个文件里各抄一份（.wx-select / .sel /
-   .select / .rowInput），没被列进去的 select 就一直裸着。选项配色对每个下拉
-   都一样，没有按类分家的理由。 */
-option,
-optgroup {
-  background: var(--bg);
-  color: var(--fg);
 }
 
 .wx-btn {

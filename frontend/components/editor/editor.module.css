@@ -451,8 +451,7 @@
 }
 
 .input,
-.textarea,
-.select {
+.textarea {
   width: 100%;
   padding: 12px 14px;
   border-radius: var(--r-sm);
@@ -465,8 +464,7 @@
   transition: background 0.16s var(--ease), border-color 0.16s var(--ease);
 }
 
-.input,
-.select {
+.input {
   min-height: 46px;
 }
 
@@ -476,14 +474,12 @@
 }
 
 .input:hover,
-.textarea:hover,
-.select:hover {
+.textarea:hover {
   background: oklch(1 0 0 / 0.08);
 }
 
 .input:focus-visible,
-.textarea:focus-visible,
-.select:focus-visible {
+.textarea:focus-visible {
   outline: none;
   border-color: var(--accent);
   box-shadow: var(--ring);

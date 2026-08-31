@@ -62,22 +62,24 @@ export default function Seg2({ go, names }: SegProps) {
               label="叙事距离"
               value={s.styleProfile.narrative_distance ?? ""}
               onChange={(v) => sp({ narrative_distance: (v || undefined) as StyleProfile["narrative_distance"] })}
-            >
-              <option value="">（不指定）</option>
-              <option value="close">紧贴 · 贴近主角内心与感官</option>
-              <option value="medium">适中</option>
-              <option value="distant">疏离 · 冷眼旁观的镜头感</option>
-            </SelectField>
+              options={[
+                { value: "", label: "（不指定）" },
+                { value: "close", label: "紧贴 · 贴近主角内心与感官" },
+                { value: "medium", label: "适中" },
+                { value: "distant", label: "疏离 · 冷眼旁观的镜头感" },
+              ]}
+            />
             <SelectField
               label="叙事节奏"
               value={s.styleProfile.rhythm ?? ""}
               onChange={(v) => sp({ rhythm: (v || undefined) as StyleProfile["rhythm"] })}
-            >
-              <option value="">（不指定）</option>
-              <option value="mixed">张弛交替</option>
-              <option value="tight">紧凑推进</option>
-              <option value="relaxed">舒缓铺陈</option>
-            </SelectField>
+              options={[
+                { value: "", label: "（不指定）" },
+                { value: "mixed", label: "张弛交替" },
+                { value: "tight", label: "紧凑推进" },
+                { value: "relaxed", label: "舒缓铺陈" },
+              ]}
+            />
             <TextField
               label="感官侧重"
               hint="逗号分隔，最多 3 条，每条 ≤48 字。如 听觉, 气味"
@@ -133,14 +135,11 @@ export default function Seg2({ go, names }: SegProps) {
               label="基调标签"
               value={s.tags.find(isTone) ?? ""}
               onChange={setTone}
-            >
-              <option value="">（不指定）</option>
-              {TONES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </SelectField>
+              options={[
+                { value: "", label: "（不指定）" },
+                ...TONES.map((t) => ({ value: t, label: t })),
+              ]}
+            />
 
             <CharacterList />
             <NavBtns index={1} names={names} onGo={go} />
