@@ -82,10 +82,10 @@ func main() {
 	// 启动自检：ENCRYPTION_KEY 配错时，解析链会把每次解密失败静默当成"没配置"，
 	// 玩家看到的是"没有可用的模型"、下拉里是"未开放"，没有任何线索指向密钥。
 	// 这里在启动时就把它喊出来。不 Fatal——干净库没有平台设置是正常状态。
-	if broken := llmSvc.UndecryptablePlatformStages(); len(broken) > 0 {
-		log.Printf("⚠️  ENCRYPTION_KEY 与库中密文不匹配：平台设置 %v 的 api_key 解不开。"+
-			"这些环节会表现为「平台未开放」，用户自带连接（同一把密钥加密）同样会失效、"+
-			"表现为「没有可用的模型」。请核对 ENCRYPTION_KEY，或在 /admin 与设置页重新录入 key。", broken)
+	if llmSvc.UndecryptablePlatformKey() {
+		log.Printf("⚠️  ENCRYPTION_KEY 与库中密文不匹配：平台兜底设置的 api_key 解不开。" +
+			"它会表现为「平台未开放」，用户自带连接（同一把密钥加密）同样会失效、" +
+			"表现为「没有可用的模型」。请核对 ENCRYPTION_KEY，或在 /admin 重新录入 key。")
 	}
 
 	assistH := handler.NewAssistHandler(agentClient, llmResolver, creditSvc)
@@ -173,10 +173,11 @@ func main() {
 		llm.PUT("/story-config/:storyId", llmH.SetStoryConfig)
 	}
 
-	// 平台 LLM 设置（仅管理员：AuthRequired + RequireAdmin）。第一个 admin 靠手动改库提权。
+	// 平台 LLM 兜底设置（仅管理员：AuthRequired + RequireAdmin；全局一条，不分环节）。
+	// 第一个 admin 靠手动改库提权。
 	adminLLM := api.Group("/admin/llm", middleware.AuthRequired(cfg.JWTSecret), middleware.RequireAdmin())
 	{
-		adminLLM.GET("/platform", llmH.ListPlatform)
+		adminLLM.GET("/platform", llmH.GetPlatform)
 		adminLLM.PUT("/platform", llmH.UpsertPlatform)
 		adminLLM.POST("/platform/test", llmH.TestPlatform)
 	}

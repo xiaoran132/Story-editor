@@ -12,6 +12,7 @@ import {
   type StoryLLMConfig,
 } from "@/lib/types";
 import Switch from "@/components/Switch";
+import Dropdown from "@/components/Dropdown";
 import styles from "./StoryLLMConfigPanel.module.css";
 import { useToast } from "@/components/Toast";
 
@@ -95,11 +96,9 @@ export default function StoryLLMConfigPanel({
 
   const hasRec = !!(recommended.write?.model || recommended.review?.model);
   const credit = cfg?.credit_micro_cny ?? 0;
-  // 平台档按环节各算各的：admin 的平台设置每环节一行，review 那行可能没配 key。
-  const platformFor = (stage: "write" | "review") =>
-    cfg?.platform_stages?.[stage] ?? { ready: false, model: "" };
-  // 开着审校却既没选连接、平台档也不可用 → 后端会拒（不静默降级），这里先禁用保存并说明。
-  const reviewIncomplete = reviewOn && !draft.review?.conn && !platformFor("review").ready;
+  const plat = cfg?.platform ?? { ready: false, model: "" };
+  // 开着审校却既没选连接、平台兜底也不可用 → 后端会拒（不静默降级），这里先禁用保存并说明。
+  const reviewIncomplete = reviewOn && !draft.review?.conn && !plat.ready;
 
   return (
     <div className={styles.settings}>
@@ -147,11 +146,9 @@ export default function StoryLLMConfigPanel({
               {PLAY_STAGES.map((st) => {
                 if (st.key === "review" && !reviewOn) return null; // 关掉就整行不出现，比禁用更清楚
                 const b: StageBinding = draft[st.key] || { conn: "", model: "" };
-                const plat = platformFor(st.key);
                 const pickId = `pick-${st.key}`;
-                // 绑定指向的模型可能已被用户从连接里移除。补一条 option，
-                // 否则 <select> 的当前值无对应项，浏览器会静默显示成第一项，
-                // 看起来像「配置被改掉了」。
+                // 绑定指向的模型可能已被用户从连接里移除（orphan 时在下拉里补一条
+                // 孤儿项，见下方 entries），否则当前值无对应项，看起来像「配置被改掉了」。
                 const bound = conns.find((c) => c.id === b.conn);
                 const orphan = !!b.conn && !!bound && !(bound.models || []).includes(b.model);
                 return (
@@ -159,50 +156,55 @@ export default function StoryLLMConfigPanel({
                     {/* 环节名作组标题，两个控件各自再给 aria-label 区分连接/模型 */}
                     <label htmlFor={pickId}>
                       {st.label}
-                      {/* 只有平台档也兜不住时才是「必选」——平台 review 配好了就不必买自己的连接 */}
+                      {/* 只有平台兜底也兜不住时才是「必选」——平台配好了就不必买自己的连接 */}
                       {st.key === "review" && !plat.ready && (
                         <span className={styles.req}>（已开启审校，需选择一条连接）</span>
                       )}
                     </label>
                     <div className={styles.row}>
-                      <select id={pickId} className={styles.sel} value={packPick(b)}
-                        aria-label={`${st.label} · 模型`}
-                        onChange={(e) =>
-                          setDraft((d) => ({ ...d, [st.key]: unpackPick(e.target.value) }))
-                        }>
-                        {/* 「平台」独立成组，且**永不禁用**：不绑连接本来就是合法的默认状态，
-                            平台预设模型该一直摆在那儿。此前按 ready 禁用它有两个坏处——
-                            它是默认选中项，禁用态的灰字在深底上直接看不见；后端一时回不出
-                            可用性（比如旧进程没有 platform_stages）就等于把默认档锁死。
-                            能不能真的开玩由下方拦截横幅按后端 ready 说话，不靠禁用这个选项表达。 */}
-                        <optgroup label="平台">
-                          <option value="">
-                            {`平台预设${plat.model ? ` · ${plat.model}` : ""}${
-                              plat.ready
-                                ? `（剩余 ${formatCredit(credit)}）`
-                                : credit > 0
-                                  ? "（该环节未配置）"
-                                  : "（额度已用尽）"
-                            }`}
-                          </option>
-                        </optgroup>
-                        {/* 每条连接一组，组名是它的备注，组下是这条连接可用的模型。
-                            连接本身不再是可选项——选的始终是「哪条连接的哪个模型」。 */}
-                        {conns.map((c) => {
-                          const ms = c.models || [];
-                          if (ms.length === 0 && !(orphan && c.id === b.conn)) return null;
-                          return (
-                            <optgroup key={c.id} label={c.name}>
-                              {orphan && c.id === b.conn && (
-                                <option value={packPick(b)}>{b.model}（已移出列表）</option>
-                              )}
-                              {ms.map((m) => (
-                                <option key={m} value={`${c.id}::${m}`}>{m}</option>
-                              ))}
-                            </optgroup>
-                          );
-                        })}
-                      </select>
+                      <Dropdown
+                        id={pickId}
+                        value={packPick(b)}
+                        ariaLabel={`${st.label} · 模型`}
+                        onChange={(v) => setDraft((d) => ({ ...d, [st.key]: unpackPick(v) }))}
+                        entries={[
+                          // 「平台」独立成组，且**永不禁用**：不绑连接本来就是合法的默认状态，
+                          // 平台预设模型该一直摆在那儿。此前按 ready 禁用它有两个坏处——
+                          // 它是默认选中项，禁用态的灰字在深底上直接看不见；后端一时回不出
+                          // 可用性（比如旧进程没有 platform）就等于把默认档锁死。
+                          // 能不能真的开玩由下方拦截横幅按后端 ready 说话，不靠禁用这个选项表达。
+                          {
+                            group: "平台",
+                            opts: [
+                              {
+                                value: "",
+                                label: `平台预设${plat.model ? ` · ${plat.model}` : ""}${
+                                  plat.ready
+                                    ? `（剩余 ${formatCredit(credit)}）`
+                                    : credit > 0
+                                      ? "（平台未配置）"
+                                      : "（额度已用尽）"
+                                }`,
+                              },
+                            ],
+                          },
+                          // 每条连接一组，组名是它的备注，组下是这条连接可用的模型。
+                          // 连接本身不再是可选项——选的始终是「哪条连接的哪个模型」。
+                          // 绑定指向的模型可能已被移出列表，补一条孤儿项，
+                          // 否则当前值无对应项，看起来像「配置被改掉了」。
+                          ...conns
+                            .map((c) => ({
+                              group: c.name,
+                              opts: [
+                                ...(orphan && c.id === b.conn
+                                  ? [{ value: packPick(b), label: `${b.model}（已移出列表）` }]
+                                  : []),
+                                ...(c.models || []).map((m) => ({ value: `${c.id}::${m}`, label: m })),
+                              ],
+                            }))
+                            .filter((g) => g.opts.length > 0),
+                        ]}
+                      />
                     </div>
                   </div>
                 );
@@ -216,13 +218,13 @@ export default function StoryLLMConfigPanel({
                 </div>
                 <p className={styles.note}>
                   开启后每段正文将额外校验一次，重点检查「属性变化与正文不符」「前情提要遗漏新人物」
-                  等影响长篇连贯性的问题（实测约 18% 的草稿会被退回重写）。代价是 token 消耗约翻倍，且需为其单独选择一条连接。
+                  等影响长篇连贯性的问题（实测约 18% 的草稿会被退回重写）。代价是 token 消耗约翻倍；平台兜底不可用时需为审校单独选择一条连接。
                 </p>
               </div>
 
               {reviewIncomplete && (
                 <p className={`${styles.note} ${styles.err}`} role="alert">
-                  已开启审校，但平台模型在该环节不可用。请为其选择一条自有连接，或关闭该开关。
+                  已开启审校，但平台模型不可用。请为其选择一条自有连接，或关闭该开关。
                 </p>
               )}
 

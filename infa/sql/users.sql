@@ -20,7 +20,7 @@ CREATE TABLE users (
     bio             VARCHAR(200),                    -- 个人简介
     avatar_url      TEXT,                            -- 头像访问 URL（本地为 /api/v1/uploads/avatar/...，日后换 OSS 语义不变）
     -- 平台 LLM 额度余额，单位微元(1e-6 元)。整数避免浮点累加误差；默认 1 元 = 注册赠送。
-    -- 按真实 token 用量 × platform_llm_settings 的单价扣减，流水见 llm_usage_logs。
+    -- 按真实 token 用量 × platform_llm_setting 的单价扣减，流水见 llm_usage_logs。
     credit_micro_cny BIGINT     NOT NULL DEFAULT 1000000,
 
     -- 角色与状态

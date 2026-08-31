@@ -219,10 +219,9 @@ type StoryLLMConfigResult struct {
 	Blocked       string        `json:"blocked,omitempty"` // 不能开玩的原因，前端直接展示
 	// CreditMicroCNY 是平台额度余额（微元）。注册赠 1 元，见 model.User.CreditMicroCNY。
 	CreditMicroCNY int64 `json:"credit_micro_cny"`
-	// PlatformStages 按环节回平台档「可不可选 + 预设哪个模型」（key ∈ write/review）。
-	// 按环节分开是必须的：平台设置本来就每环节一行，合成一个布尔值会让 review
-	// 借用 write 的可用性；预设模型名也只有回来了，玩家才知道不选连接会用到什么。
-	PlatformStages map[string]PlatformOption `json:"platform_stages"`
+	// Platform 是平台兜底档「可不可选 + 预设哪个模型」。回预设模型名是为了
+	// 让玩家知道不选连接时会用到什么，而不是面对一个空白的默认项。
+	Platform PlatformOption `json:"platform"`
 }
 
 // GetStoryConfig 返回某玩家在某作品的环节配置 + 能否开玩的判定。
@@ -240,7 +239,7 @@ func (s *LLMService) GetStoryConfig(userID, storyID uuid.UUID) (*StoryLLMConfigR
 	}
 	out.CreditMicroCNY, _ = s.llm.GetCredit(ctx, userID)
 
-	// 「能不能开玩」与真实的解析链保持一致：作品级用户连接 → 平台档（需额度）。
+	// 「能不能开玩」与真实的解析链保持一致：作品级用户连接 → 平台兜底（需额度）。
 	// 这里复用 resolver 而不是自己再判一遍，免得两处逻辑漂移。
 	if s.resolver != nil {
 		write, err := s.resolver.ResolveForPlay(ctx, userID, storyID, StageWrite)
@@ -250,10 +249,7 @@ func (s *LLMService) GetStoryConfig(userID, storyID uuid.UUID) (*StoryLLMConfigR
 		if write != nil {
 			out.Ready = true
 		}
-		out.PlatformStages = map[string]PlatformOption{}
-		for stage := range PlayStages {
-			out.PlatformStages[stage] = s.resolver.PlatformOptionFor(ctx, userID, stage)
-		}
+		out.Platform = s.resolver.PlatformOptionFor(ctx, userID)
 	}
 	if !out.Ready {
 		if out.CreditMicroCNY <= 0 {
@@ -304,12 +300,11 @@ func (s *LLMService) SetStoryConfig(userID, storyID uuid.UUID, in StoryLLMConfig
 	// 开着审校却**解析不出任何配置** = 配置错误，当场拒绝。
 	// 不静默降级成"关掉审校"：那会让玩家以为审校在生效，而它并没有。
 	//
-	// 判据是「这一环节能不能解析出配置」，不是「有没有绑用户连接」：平台设置每环节
-	// 一行、review 那行同样能配 key，解析链也确实会走它。要求必买自己的连接等于
-	// 把已经配好的平台预设模型锁死在选项里选不中。
+	// 判据是「审校环节能不能解析出配置」，不是「有没有绑用户连接」：平台兜底
+	// 解析得出同样算数。要求必买自己的连接等于把平台预设模型锁死在选项里选不中。
 	if in.ReviewEnabled && clean[StageReview].Conn == "" {
-		if s.resolver == nil || !s.resolver.PlatformAvailable(ctx, userID, StageReview) {
-			return nil, pkg.BadRequest("开启质量审校需要平台模型在「审校」环节可用，或为该环节选择一条自有连接")
+		if s.resolver == nil || !s.resolver.PlatformAvailable(ctx, userID) {
+			return nil, pkg.BadRequest("开启质量审校需要平台模型可用，或为审校环节选择一条自有连接")
 		}
 	}
 
@@ -326,7 +321,7 @@ func (s *LLMService) SetStoryConfig(userID, storyID uuid.UUID, in StoryLLMConfig
 // ----- 创作辅助配置（账号级，设置页里配） -----
 
 // AssistConfigResult 是创作辅助配置的外发信封。
-// 除了当前选择，还回平台 world 档的可用性与预设模型名——设置页那个下拉要
+// 除了当前选择，还回平台兜底档的可用性与预设模型名——设置页那个下拉要
 // 如实标出「不选连接会用到什么」，而不是给个空白的默认项。
 type AssistConfigResult struct {
 	Conn     string         `json:"conn"`  // 连接 uuid 字符串；空=用平台 world 档
@@ -352,7 +347,7 @@ func (s *LLMService) GetAssistConfig(userID uuid.UUID) (*AssistConfigResult, err
 		out.Model = ac.Model
 	}
 	if s.resolver != nil {
-		out.Platform = s.resolver.PlatformOptionFor(ctx, userID, StageWorld)
+		out.Platform = s.resolver.PlatformOptionFor(ctx, userID)
 	}
 	return out, nil
 }
@@ -511,34 +506,26 @@ func (s *LLMService) fetchModels(ctx context.Context, baseURL, key string) ([]st
 	return ids, nil
 }
 
-// UndecryptablePlatformStages 回「当前 ENCRYPTION_KEY 解不开哪些环节的平台 key」，供启动自检。
+// UndecryptablePlatformKey 回「当前 ENCRYPTION_KEY 解不解得开平台兜底 key」，供启动自检。
 //
 // 存在的理由：密钥配错时，解析链会把每一次解密失败都当成"确定的配置问题"静默下落，
 // 玩家看到的是"你没有可用的模型"、admin 页看到的是"未开放"，日志里一个字都没有。
 // 这条自检把服务端的配置错误在**启动时**就摆出来，而不是等它伪装成用户的配置问题。
-// 返回空切片有两种情况——都正常：库里没有平台设置（干净库），或全部解得开。
-func (s *LLMService) UndecryptablePlatformStages() []string {
-	rows, err := s.llm.ListPlatform(context.Background())
-	if err != nil {
-		return nil // 查不到就别在启动时喊；DB 出问题自有别的地方报
+// 没配 key（干净库）与查库失败都回 false——后者不该在启动时喊，DB 出问题自有别处报。
+func (s *LLMService) UndecryptablePlatformKey() bool {
+	ps, err := s.llm.FindPlatform(context.Background())
+	if err != nil || ps == nil || ps.APIKeyCipher == "" {
+		return false
 	}
-	var broken []string
-	for i := range rows {
-		if rows[i].APIKeyCipher == "" {
-			continue // 没配 key 是"还没配"，不是解不开
-		}
-		if plain, err := pkg.Decrypt(rows[i].APIKeyCipher, s.encKey); err != nil || plain == "" {
-			broken = append(broken, rows[i].Stage)
-		}
-	}
-	return broken
+	plain, err := pkg.Decrypt(ps.APIKeyCipher, s.encKey)
+	return err != nil || plain == ""
 }
 
 // ----- 平台设置（admin） -----
 
 func (s *LLMService) toPlatformResponse(p *model.PlatformLLMSetting) model.PlatformLLMSettingResponse {
 	res := model.PlatformLLMSettingResponse{
-		Stage: p.Stage, Provider: p.Provider, BaseURL: p.BaseURL, Model: p.Model,
+		Provider: p.Provider, BaseURL: p.BaseURL, Model: p.Model,
 		PriceInPerMTok: p.PriceInPerMTok, PriceOutPerMTok: p.PriceOutPerMTok,
 		PriceCacheInPerMTok: p.PriceCacheInPerMTok,
 	}
@@ -551,38 +538,27 @@ func (s *LLMService) toPlatformResponse(p *model.PlatformLLMSetting) model.Platf
 	return res
 }
 
-// ListPlatform 返回三个环节的平台设置（缺的环节以空壳补齐，便于前端渲染完整表单）。
-func (s *LLMService) ListPlatform() ([]model.PlatformLLMSettingResponse, error) {
-	rows, err := s.llm.ListPlatform(context.Background())
+// GetPlatform 返回平台兜底设置（全局一条；未配置时给空壳，便于前端渲染完整表单）。
+func (s *LLMService) GetPlatform() (*model.PlatformLLMSettingResponse, error) {
+	p, err := s.llm.FindPlatform(context.Background())
 	if err != nil {
 		return nil, pkg.InternalDefault()
 	}
-	byStage := map[string]*model.PlatformLLMSetting{}
-	for i := range rows {
-		byStage[rows[i].Stage] = &rows[i]
+	if p == nil {
+		return &model.PlatformLLMSettingResponse{}, nil
 	}
-	out := make([]model.PlatformLLMSettingResponse, 0, 3)
-	for _, stage := range []string{StageWrite, StageReview, StageWorld} {
-		if p, ok := byStage[stage]; ok {
-			out = append(out, s.toPlatformResponse(p))
-		} else {
-			out = append(out, model.PlatformLLMSettingResponse{Stage: stage})
-		}
-	}
-	return out, nil
+	res := s.toPlatformResponse(p)
+	return &res, nil
 }
 
-// UpsertPlatform 更新某环节平台设置。api_key 空串=保留原 key。
-func (s *LLMService) UpsertPlatform(stage string, in *PlatformInput) (*model.PlatformLLMSettingResponse, error) {
-	if !ValidStages[stage] {
-		return nil, pkg.BadRequest("无效的环节：" + stage)
-	}
+// UpsertPlatform 更新平台兜底设置。api_key 空串=保留原 key。
+func (s *LLMService) UpsertPlatform(in *PlatformInput) (*model.PlatformLLMSettingResponse, error) {
 	ctx := context.Background()
-	existing, err := s.llm.FindPlatform(ctx, stage)
+	existing, err := s.llm.FindPlatform(ctx)
 	if err != nil {
 		return nil, pkg.InternalDefault()
 	}
-	p := &model.PlatformLLMSetting{Stage: stage}
+	p := &model.PlatformLLMSetting{}
 	if existing != nil {
 		p = existing
 	}

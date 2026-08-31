@@ -371,9 +371,9 @@ cd agent
 - **创作侧 node CRUD 已整组下线（2026-08-11）**：`POST /stories/:id/nodes`、`GET /nodes/:id/children`、`PUT/DELETE /nodes/:id` 连同 `NodeHandler`/`NodeService` 一起删除。原因是它以 `sessionID=uuid.Nil` 写非空列、且创建路径不校验作者，只摘一半会留下「作者去改玩家会话节点」这种更怪的语义。`StoryNode` 模型与 repository 保留，专供游玩链路。将来要做可视化作者树，必须新建 `DraftNode` 或明确可空 session 的模型，不能复用游玩节点。
 - **上传孤儿文件无回收（2026-08-10）**：上传成功但表单没保存、换头像/封面后的旧文件，都会永远留在磁盘。最小治理方案是「上传即写一行 assets 表 + 夜间扫描无引用记录」，0 用户阶段不值得。
 - **上传走单机本地磁盘（2026-08-10）**：`UPLOAD_DIR` 是进程本地目录，多实例必须挂共享卷（compose 已挂 named volume `uploads`）。换对象存储只需替换 `service.UploadService`，`url` 语义不变、无需迁移表。
-- **平台额度的单价要 admin 手工维护（2026-08-10）**：`platform_llm_settings.price_*` 默认 0，**不填就永远扣不动额度**（安全的失败方向，但等于无限免费）。模型涨价也不会自动跟。
+- **平台额度的单价要 admin 手工维护（2026-08-10）**：`platform_llm_setting.price_*` 默认 0，**不填就永远扣不动额度**（安全的失败方向，但等于无限免费）。模型涨价也不会自动跟。
 - **事后扣费允许最后一回合透支（2026-08-10）**：花多少 token 只有调用完才知道，因此扣到 0 为止、不预扣。真要精确就得先估上限再冻结，0 用户阶段不值当。
-- **缓存命中 token 分账（2026-08-28 落地）**：`agent/app/llm.py` 的 `Usage` 携带 `cache_read_tokens`（langchain 的 `usage_metadata.input_token_details.cache_read` 读 OpenAI 风格 `prompt_tokens_details.cached_tokens`，DeepSeek 原生 `prompt_cache_hit_tokens` 从 `response_metadata.token_usage` 兜底；取不到=0 按全价），随 done/error 帧带出；Go 侧 `llm_usage_logs.cache_read_tokens` 入账、`platform_llm_settings.price_cache_in_per_mtok` 单独计价（0=按全价，安全失败方向），`costMicro` 把命中部分（含在 `prompt_tokens` 内）与未命中分开折算（dsh 的三分法见 [external-lessons.md](external-lessons.md) §1.1）。
+- **缓存命中 token 分账（2026-08-28 落地）**：`agent/app/llm.py` 的 `Usage` 携带 `cache_read_tokens`（langchain 的 `usage_metadata.input_token_details.cache_read` 读 OpenAI 风格 `prompt_tokens_details.cached_tokens`，DeepSeek 原生 `prompt_cache_hit_tokens` 从 `response_metadata.token_usage` 兜底；取不到=0 按全价），随 done/error 帧带出；Go 侧 `llm_usage_logs.cache_read_tokens` 入账、`platform_llm_setting.price_cache_in_per_mtok` 单独计价（0=按全价，安全失败方向），`costMicro` 把命中部分（含在 `prompt_tokens` 内）与未命中分开折算（dsh 的三分法见 [external-lessons.md](external-lessons.md) §1.1）。
 - **匿名玩家无法游玩（2026-08-10，产品取舍不是 bug）**：额度挂账号、平台档对匿名不给，所以未登录只能浏览，点进详情页会被拦并引导登录（「登录即赠 1 元」）。2026-08-11 起后端也不再接受匿名游玩请求，前后端一致。
 - **草稿只有作者可读可玩（2026-08-11）**：`service.canViewStory`/`canPlay`（`internal/service/access.go`，纯函数、有单测）统一判定，非作者一律 404 不返 403（草稿的存在本身是作者的私事）。
 - **作品下架后既有会话转只读（2026-08-11）**：作者取消发布，别人玩到一半的那一局**可以读完，但不能再推进**——这是「引用模式」的下架语义（PRD §5.4.8）。`PlayService.storyGate` 返回 `playable`，`GetSession` 据此置 `SessionResult.read_only`；写路径（续写 / 开场生成 / 回溯）一律被 `readOnlyErr` 拒绝，文案明确、不用 404：玩家早就玩过这部作品，藏它没有意义。**注意 SSE 路由的状态码仍是 200** —— `sseStart` 在调 service 前就提交了响应头，所以续写/开场是以 `event: error` 帧送出该文案（本项目所有流式错误都如此，前端读 `detail`）。⚠️ `detail` 一律经 `pkg.SafeDetail`：只有 `AppError.Message`（我们写给用户看的话）会外发，裸 GORM/pgx 错误记服务端日志后回固定文案，`context.Canceled`（玩家关页面）短路不记；只有 `backtrack` 这类普通 JSON 路由才真的返 403。读档列表的 `available=false` 是同一含义，卡片仍可点，状态照常脱敏后外发。
@@ -421,38 +421,38 @@ cd agent
 - [ ] 用 `scripts/dev.ps1` 启动三进程，完成一次开局、续写、回溯、读档的人工冒烟。
 - [ ] 开始新功能前，先确认它属于“当前游玩留存优先级”还是未来愿景，避免跳过关键验证。
 
-## 12. BYOK 多供应商 / 分环节模型 / 平台设置 / admin 门槛
+## 12. BYOK 多供应商 / 分环节绑定 / 平台兜底 / admin 门槛
 
 **目标**：支持任意 OpenAI 兼容 key；平台 key 入库由管理员管理；游玩优先烧**玩家自己**的 key，未配则从**注册赠送的 1 元额度**里按量扣平台 key，额度用尽必须自带连接。
 **分层**：连接（key/base_url）是**用户级**（账号里管一次）；游玩侧「用哪个模型」是**作品级**（每玩家在每作品各配各的）；创作辅助（world）是**账号级**（设置页配一次，所有作品通用——第一步「AI 生成世界观」时作品还不存在，没有 story_id 可挂）。作者的推荐模型只作标注、不自动套用（作者与玩家配置大概率不同，复刻也用不了）。
 
 **数据模型**
 - `llm_connections`（每用户多条）：`name(备注) / provider(标签) / base_url / api_key_cipher(AES-GCM) / models`。`models` 是 TEXT/JSON 数组，用户填完 key 后由 `POST /llm/connections/models` 拿这套凭据去端点 `/models` 拉取、勾选入库（端点不实现 `/models` 时可手填）。**没有「默认模型」**：旧的 `default_model` 列已废弃留作孤儿，启动时 `DROP NOT NULL` + 一次性回填进 `models`。
-- `user_assist_llm_configs`（主键 user_id，每用户一行）：`conn_id UUID NULL / model`。创作辅助用哪条连接的哪个模型；`conn_id` 空=走平台 world 档。
+- `user_assist_llm_configs`（主键 user_id，每用户一行）：`conn_id UUID NULL / model`。创作辅助用哪条连接的哪个模型；`conn_id` 空=走平台兜底。
 - `user_story_llm_configs`（复合主键 user_id+story_id）：`bindings` TEXT/JSON = `{"write":{"conn":"<uuid>","model":""},"review":{...}}`；**`conn` 非空时 `model` 必填**（连接无默认模型可回退，空 model 视为该档未配置、回落平台）。仅 write/review。另有 `review_enabled BOOL`（**默认 false**，见下）。
-- `platform_llm_settings`（全局，admin 管，每环节一行）：`stage PK / provider / base_url / api_key_cipher / model / price_in_per_mtok / price_out_per_mtok / price_cache_in_per_mtok`。单价单位是**元 / 百万 token**（照抄供应商定价页）。⚠️ **单价为 0 则永远扣不动额度**，等于平台 key 无限免费——admin 页对此显式告警；`price_cache_in_per_mtok`（缓存命中输入价，如 DeepSeek 约为输入价 1/10）例外：0=未配置、按输入全价，是安全的失败方向。
+- `platform_llm_setting`（全局单行，admin 管）：`id(恒 1) / provider / base_url / api_key_cipher / model / price_in_per_mtok / price_out_per_mtok / price_cache_in_per_mtok`。用户未配自带连接时**所有环节**（续写/审校/创作辅助）都回落到它——不分环节：按环节换模型是用户自己绑定的事，平台兜底一份凭据+模型+单价管完。单价单位是**元 / 百万 token**（照抄供应商定价页）。⚠️ **单价为 0 则永远扣不动额度**，等于平台 key 无限免费——admin 页对此显式告警；`price_cache_in_per_mtok`（缓存命中输入价，如 DeepSeek 约为输入价 1/10）例外：0=未配置、按输入全价，是安全的失败方向。旧表 `platform_llm_settings`（按环节三行）已废弃留作孤儿（AutoMigrate 不删表），内容需在新表重录。
 - `users.credit_micro_cny BIGINT DEFAULT 1000000`：平台额度余额，单位**微元**（1e-6 元）。整数避免浮点累加误差；列默认值 = 1 元，注册即到账（AutoMigrate 加列时 Postgres 也会给存量行补上）。
 - `llm_usage_logs`：每笔**平台额度**消费的流水（user/story/stage/model/tokens/cache_read_tokens/cost_micro/estimated）。玩家用自己的 key 不入账。没这张表，"我那 1 元花哪了"只能靠猜。
 - 作者推荐模型：`stories.world_config.recommended_models = {"write":{"model":"..."},"review":{...}}`（前端编辑器写、作品详情页只读展示；后端透传，不参与解析）。
 - 旧 `User.LLMKeyCipher`（单 key）**废弃**，列留孤儿（GORM 不删列，0 用户未迁移）。
 
 **解析优先级**（`service.LLMResolver`，单测见 `llm_resolver_test.go`）：
-- 游玩（`ResolveForPlay(userID, storyID, stage)`，stage∈{write,review}）：**作品级用户连接 → 平台档（需有额度）→ nil**。
-- 创作（`ResolveForAssist(userID)`）：**账号级创作辅助配置 → 平台 world（需有额度）→ nil**。配置读自 `user_assist_llm_configs`，**不由请求体携带**——客户端指不定用哪条连接。
+- 游玩（`ResolveForPlay(userID, storyID, stage)`，stage∈{write,review} 只决定读用户的哪个绑定）：**作品级用户连接 → 平台兜底（需有额度）→ nil**。
+- 创作（`ResolveForAssist(userID)`）：**账号级创作辅助配置 → 平台兜底（需有额度）→ nil**。配置读自 `user_assist_llm_configs`，**不由请求体携带**——客户端指不定用哪条连接。
 - 命中连接/平台时解密 key；连接失效/解密失败**跳到下一档**不硬报错。
 - **返回 nil 就是硬失败**（`pkg.CodeNoLLMConfig` = 10016），调用方必须在发请求前报错。曾经的第三档「agent 自己 `.env` 的 `DEEPSEEK_API_KEY`」**已删除**——那是一层看不见、无法限额、也不归 admin 管的服务器成本。`TestPlatformNeedsCredit` 守着这条别被加回来。
 - 平台档对**匿名一律不给**：额度挂账号。这一档如今是防御性的——`/play/*` 全组 `AuthRequired`，匿名请求到不了解析这一步；历史上所有匿名玩家共用同一个 `guest` id（§9.2），给了等于让第一个访客花光所有人的额度。
 
 **额度与扣费**（`service/credit.go`）
 - 只对 `AgentLLMConfig.Source == platform` 的环节扣（该字段 `json:"-"`，不下发给 agent——agent 不该知道钱的事）。
-- agent 在 `done` 帧回传按环节分开的 token 用量；流失败时 `error` 帧可选携带已烧 usage，失败路径同样记账（流且未外发任何 delta 时 Go 先对 agent 原请求安全重试一次）。缓存命中的输入 token 单列 `cache_read_tokens`、按 `price_cache_in_per_mtok` 折算（含在 `prompt_tokens` 内，不重复计）。Go 按该环节单价折算成微元、**向上取整**（几百 token 的调用四舍五入会常年归零，1 元就成了无限），写一行流水并 `UPDATE ... GREATEST(0, credit - ?)`。扣减在 SQL 里做，避免并发回合先读后写吞掉一次消费。四个成功的创作辅助响应也按已知实际 usage 事后记账：`assist_world`、`assist_opening`、`assist_polish`、`assist_branches`，流水 `StoryID` 为空；BYOK 跳过平台扣费和平台 usage。深度润色回退仍会对已经完成的模型调用照实扣费，网络/模型失败拿不到 usage 时不虚构扣费。
+- agent 在 `done` 帧回传按环节分开的 token 用量；流失败时 `error` 帧可选携带已烧 usage，失败路径同样记账（流且未外发任何 delta 时 Go 先对 agent 原请求安全重试一次）。缓存命中的输入 token 单列 `cache_read_tokens`、按 `price_cache_in_per_mtok` 折算（含在 `prompt_tokens` 内，不重复计）。Go 按平台兜底的单价折算成微元、**向上取整**（几百 token 的调用四舍五入会常年归零，1 元就成了无限），写一行流水并 `UPDATE ... GREATEST(0, credit - ?)`。扣减在 SQL 里做，避免并发回合先读后写吞掉一次消费。四个成功的创作辅助响应也按已知实际 usage 事后记账：`assist_world`、`assist_opening`、`assist_polish`、`assist_branches`，流水 `StoryID` 为空；BYOK 跳过平台扣费和平台 usage。深度润色回退仍会对已经完成的模型调用照实扣费，网络/模型失败拿不到 usage 时不虚构扣费。
 - **事后扣费**：花多少 token 只有调用完才知道，事前无法预扣准确金额，因此**最后一回合可能略微透支**（扣到 0 为止）。用一套精确预扣换这点误差，0 用户阶段不值当。
 - 扣费失败只记日志、不向上报错：token 已经烧掉了，此时让玩家的回合失败于事无补。
 - `estimated=true` 表示端点没在响应里回 usage、token 数是**按字符估算**的（OpenAI 兼容端点对 `stream_options.include_usage` 支持不一）。这批为真时说明扣费全靠估算——是需要知道的事实，别被精确数字掩盖。
 
 **review（质量审校）改为作品级开关，默认关**
 - 关：不下发 `llm_review`，agent 整段跳过审校（省约一半 token），埋点打 `review=off`，不伪装成 `first_draft_pass=true`。
-- 开：`review` 环节**必须解析得出配置**——绑一条自己的连接，或平台档该环节可用（`platform_llm_settings` 每环节一行，review 那行同样能配 key）；两者都没有则保存被拒（不静默降级成"关掉"——那会让玩家以为审校在生效）。
+- 开：`review` 环节**必须解析得出配置**——绑一条自己的连接，或平台兜底可用；两者都没有则保存被拒（不静默降级成"关掉"——那会让玩家以为审校在生效）。
 - 默认关的代价：质量下限低于以前（以前人人都过审校，真实拒绝率约 18%）。权衡写在前端开关旁。
 
 **下发链路**：Go 解析出 `AgentLLMConfig{provider,base_url,api_key,model}` → 塞进 agent 请求体（`llm_write`/`llm_review`/`llm`）→ agent `_build_ephemeral` 构造临时 ChatOpenAI。**agent 不碰库、也不持有任何默认凭据**：三个关键字段缺一即抛 `LLMConfigMissing`。key/额度/策略全在 Go。

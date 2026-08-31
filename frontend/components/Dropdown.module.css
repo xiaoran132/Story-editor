@@ -1,0 +1,131 @@
+/* 统一下拉框。视觉基准是作品馆排序筛选（app/works/page.module.css 旧 .sortBtn/.menu）：
+   胶囊触发器 + 磨砂浮层 + 勾选项。只有颜色/圆角/字号这类身份样式在这里；
+   宽度与外边距由调用方经 className 给。 */
+
+.dd {
+  position: relative;
+  width: 100%;
+}
+
+.btn {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 14px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border-2);
+  background: oklch(1 0 0 / 0.04);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.16s var(--ease), border-color 0.16s var(--ease);
+}
+
+.btn.compact {
+  min-height: 40px;
+  font-size: 12.5px;
+}
+
+.btn:hover:not(:disabled) {
+  background: oklch(1 0 0 / 0.08);
+  border-color: var(--bright);
+}
+
+.btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+/* disabled 是唯一允许降对比度的状态（DESIGN §9） */
+.btn:disabled {
+  opacity: 0.5;
+}
+
+.cap {
+  color: var(--muted);
+  flex: none;
+}
+
+/* 模型名可以很长，触发器里截断显示，完整值在 title 里 */
+.val {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.caret {
+  flex: none;
+  color: var(--muted);
+  transition: transform 0.16s var(--ease);
+}
+
+.btn.open .caret {
+  transform: rotate(180deg);
+}
+
+.menu {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  z-index: 30;
+  min-width: 100%;
+  width: max-content;
+  max-width: min(400px, 90vw);
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 5px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border-2);
+  background: oklch(0.11 0.02 265 / 0.96);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 24px 60px -30px oklch(0.02 0 0 / 0.95);
+}
+
+.menu button {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.menu button:hover {
+  color: var(--fg);
+  background: oklch(1 0 0 / 0.07);
+}
+
+.menu button[aria-checked="true"] {
+  color: var(--bright);
+}
+
+.menu button:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.tick {
+  width: 12px;
+  flex: none;
+}
+
+/* 分组标题：对齐原生 optgroup 的角色——视觉分区，不参与交互与语义 */
+.grp {
+  margin: 6px 12px 2px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}

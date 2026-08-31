@@ -19,7 +19,7 @@ import (
 const assistTestEncryptionKey = "assist-handler-test-key"
 
 type assistTestStore struct {
-	platform map[string]*model.PlatformLLMSetting
+	platform *model.PlatformLLMSetting
 	conns    map[uuid.UUID]*model.LLMConnection
 	assist   map[uuid.UUID]*model.UserAssistLLMConfig
 	credit   map[uuid.UUID]int64
@@ -30,8 +30,8 @@ func (s *assistTestStore) FindConnByID(_ context.Context, id uuid.UUID) (*model.
 	return s.conns[id], nil
 }
 
-func (s *assistTestStore) FindPlatform(_ context.Context, stage string) (*model.PlatformLLMSetting, error) {
-	return s.platform[stage], nil
+func (s *assistTestStore) FindPlatform(_ context.Context) (*model.PlatformLLMSetting, error) {
+	return s.platform, nil
 }
 
 func (s *assistTestStore) FindStoryConfig(_ context.Context, _, _ uuid.UUID) (*model.UserStoryLLMConfig, error) {
@@ -116,11 +116,9 @@ func TestAssistHandlersForwardPlatformModelAndChargeKnownUsage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	userID := uuid.New()
 	store := &assistTestStore{
-		platform: map[string]*model.PlatformLLMSetting{
-			service.StageWorld: {
-				Stage: service.StageWorld, Provider: "test", BaseURL: "https://platform.example", Model: "platform-world",
-				APIKeyCipher: assistCipher(t, "platform-key"), PriceInPerMTok: 1, PriceOutPerMTok: 1,
-			},
+		platform: &model.PlatformLLMSetting{
+			Provider: "test", BaseURL: "https://platform.example", Model: "platform-world",
+			APIKeyCipher: assistCipher(t, "platform-key"), PriceInPerMTok: 1, PriceOutPerMTok: 1,
 		},
 		conns:  map[uuid.UUID]*model.LLMConnection{},
 		credit: map[uuid.UUID]int64{userID: service.MicroPerCNY},
@@ -185,7 +183,7 @@ func TestAssistPolishByokSkipsPlatformUsage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	userID, connectionID := uuid.New(), uuid.New()
 	store := &assistTestStore{
-		platform: map[string]*model.PlatformLLMSetting{},
+		platform: nil,
 		conns: map[uuid.UUID]*model.LLMConnection{
 			connectionID: {
 				ID: connectionID, UserID: userID, Provider: "test", BaseURL: "https://byok.example", Models: `["byok-model"]`,

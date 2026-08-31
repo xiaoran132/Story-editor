@@ -69,11 +69,11 @@ CREATE TABLE user_story_llm_configs (
 -- ------------------------------------------------------------
 
 -- ------------------------------------------------------------
--- 平台 LLM 设置（全局，管理员管理；每环节一行）
--- 用户未配自带连接时的回退。
+-- 平台兜底 LLM 设置（全局一条，管理员管理）
+-- 用户未配自带连接时所有环节（续写/审校/创作辅助）的回退；不分环节。
 -- ------------------------------------------------------------
-CREATE TABLE platform_llm_settings (
-    stage           VARCHAR(20)  PRIMARY KEY,       -- write / review / world
+CREATE TABLE platform_llm_setting (
+    id              BIGINT       PRIMARY KEY DEFAULT 1,  -- 单行表，恒为 1；非自增（模型标 autoIncrement:false）
     provider        VARCHAR(20)  NOT NULL,
     base_url        VARCHAR(200) NOT NULL,
     api_key_cipher  TEXT,
@@ -88,7 +88,7 @@ CREATE TABLE platform_llm_settings (
 );
 
 -- ------------------------------------------------------------
--- 平台额度用量流水（每次走**平台档**的 LLM 调用一行）
+-- 平台额度用量流水（每次走**平台兜底**的 LLM 调用一行）
 -- 玩家自带 key 的调用不记流水、不扣额度。余额本身在 users.credit_micro_cny，
 -- 本表是审计与对账依据。
 -- ------------------------------------------------------------
@@ -96,7 +96,7 @@ CREATE TABLE llm_usage_logs (
     id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id           UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     story_id          UUID        REFERENCES stories(id) ON DELETE SET NULL,  -- 创作侧调用无作品归属，可空
-    stage             VARCHAR(20)  NOT NULL,      -- write / review / world
+    stage             VARCHAR(20)  NOT NULL,      -- write / review / assist_world / assist_opening / assist_polish / assist_branches
     model             VARCHAR(80)  NOT NULL,
     prompt_tokens     INTEGER     NOT NULL,
     completion_tokens INTEGER     NOT NULL,

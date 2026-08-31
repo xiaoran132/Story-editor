@@ -51,7 +51,7 @@ type LLMConnectionResponse struct {
 // **作品还不存在时**就要用（第一步就是「AI 生成世界观」），没有 story_id 可挂。
 // 它也确实是账号级偏好——同一个创作者在所有作品里用同一套辅助模型。
 //
-// ConnID 为 nil = 用平台 world 档（需额度）。Model 在 ConnID 非空时必填，
+// ConnID 为 nil = 用平台兜底模型（需额度）。Model 在 ConnID 非空时必填，
 // 与 StageBinding 同一条规则：连接不持有默认模型。
 type UserAssistLLMConfig struct {
 	UserID    uuid.UUID  `gorm:"type:uuid;primaryKey" json:"user_id"`
@@ -77,16 +77,25 @@ type UserStoryLLMConfig struct {
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 
-// PlatformLLMSetting 是平台级（全局）某环节的 LLM 设置，由 admin 管理；每环节一行。
-// stage ∈ {write, review, world}。玩家/创作者未配自带连接时回退到此，**但要花额度**
-// （注册赠 1 元，见 User.CreditMicroCNY）。
+// PlatformLLMSetting 是平台级的兜底 LLM 设置（admin 管理，全局一条）：玩家/创作者
+// 未配自带连接时所有环节都回落到它，**但要花额度**（注册赠 1 元，见 User.CreditMicroCNY）。
+//
+// **不分环节**：想在不同环节用不同模型是用户自己的绑定的事（StageBindings /
+// UserAssistLLMConfig），平台兜底没有受益人，一份凭据 + 模型 + 单价管完。
 //
 // 单价随设置一起存：admin 配平台 key 的同时就该配它的价，一处管完，不另建全局价表。
 // 单位是「元 / 百万 token」，与各家官网定价页的口径一致，抄进来不用换算。
 // PriceCacheInPerMTok 是「前缀缓存命中」的输入价（DeepSeek 约为输入价的 1/10）；
 // 0=未配置，计费按全价（costMicro），安全的失败方向。
+//
+// ID 恒为 1（单行表）。旧表 platform_llm_settings（按环节三行）已废弃留作孤儿
+// （AutoMigrate 不删表），其中内容需在新表重录一次。
+//
+// autoIncrement:false 必须显式写：GORM 对未标注 AUTOINCREMENT 的整型主键默认
+// 强开自增（schema.go），postgres 驱动随之生成 bigserial；再叠加 default:1 会产出
+// 「bigserial DEFAULT 1」——一个列两个默认值，Postgres 直接 42601 拒建表。
 type PlatformLLMSetting struct {
-	Stage               string    `gorm:"size:20;primaryKey" json:"stage"`
+	ID                  int       `gorm:"primaryKey;autoIncrement:false;default:1" json:"-"`
 	Provider            string    `gorm:"size:20;not null" json:"provider"`
 	BaseURL             string    `gorm:"size:200;not null" json:"base_url"`
 	APIKeyCipher        string    `gorm:"type:text" json:"-"`
@@ -96,6 +105,10 @@ type PlatformLLMSetting struct {
 	PriceCacheInPerMTok float64   `gorm:"not null;default:0" json:"price_cache_in_per_mtok"` // 缓存命中输入价，0=按全价
 	UpdatedAt           time.Time `json:"updated_at"`
 }
+
+// TableName 用单数：与被废弃的旧表 platform_llm_settings（主键 stage）区分，
+// AutoMigrate 直接建新表，不碰旧表上无法自动迁移的主键。
+func (PlatformLLMSetting) TableName() string { return "platform_llm_setting" }
 
 // LLMUsageLog 是一次平台额度消费的流水。只记「花了平台额度」的调用；
 // 玩家用自己的 key 时不入账（不花我们的钱，也不该被我们记录用量）。
@@ -128,7 +141,6 @@ func (l *LLMUsageLog) BeforeCreate(tx *gorm.DB) error {
 
 // PlatformLLMSettingResponse 是平台设置的外发 DTO：不含 key，只回打码提示。
 type PlatformLLMSettingResponse struct {
-	Stage               string  `json:"stage"`
 	Provider            string  `json:"provider"`
 	BaseURL             string  `json:"base_url"`
 	Model               string  `json:"model"`

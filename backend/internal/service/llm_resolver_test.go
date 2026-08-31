@@ -14,10 +14,10 @@ import (
 
 const testEncKey = "test-encryption-key"
 
-// fakeLLM 实现 llmStore：按 id 存连接、按 stage 存平台设置、按 (user,story) 存作品配置。
+// fakeLLM 实现 llmStore：按 id 存连接、单条平台兜底设置、按 (user,story) 存作品配置。
 type fakeLLM struct {
 	conns    map[uuid.UUID]*model.LLMConnection
-	platform map[string]*model.PlatformLLMSetting
+	platform *model.PlatformLLMSetting
 	story    map[string]*model.UserStoryLLMConfig // key: userID+"|"+storyID
 	assist   map[uuid.UUID]*model.UserAssistLLMConfig
 	credit   map[uuid.UUID]int64 // 平台额度余额（微元）；缺省 = 0 = 没额度
@@ -30,8 +30,8 @@ func (f *fakeLLM) FindAssistConfig(_ context.Context, userID uuid.UUID) (*model.
 func (f *fakeLLM) FindConnByID(_ context.Context, id uuid.UUID) (*model.LLMConnection, error) {
 	return f.conns[id], nil
 }
-func (f *fakeLLM) FindPlatform(_ context.Context, stage string) (*model.PlatformLLMSetting, error) {
-	return f.platform[stage], nil
+func (f *fakeLLM) FindPlatform(_ context.Context) (*model.PlatformLLMSetting, error) {
+	return f.platform, nil
 }
 func (f *fakeLLM) FindStoryConfig(_ context.Context, userID, storyID uuid.UUID) (*model.UserStoryLLMConfig, error) {
 	return f.story[userID.String()+"|"+storyID.String()], nil
@@ -60,9 +60,7 @@ func TestResolveForPlay(t *testing.T) {
 		conns: map[uuid.UUID]*model.LLMConnection{
 			connA: {ID: connA, UserID: uid, Provider: "deepseek", BaseURL: "https://u", Models: `["model-A"]`, APIKeyCipher: cipherOf(t, "user-key")},
 		},
-		platform: map[string]*model.PlatformLLMSetting{
-			StageReview: {Stage: StageReview, Provider: "plat", BaseURL: "https://p", Model: "plat-model", APIKeyCipher: cipherOf(t, "plat-key")},
-		},
+		platform: &model.PlatformLLMSetting{Provider: "plat", BaseURL: "https://p", Model: "plat-model", APIKeyCipher: cipherOf(t, "plat-key")},
 		story: map[string]*model.UserStoryLLMConfig{
 			// write 绑定 connA 且指定模型 model-A；review 不配（回退平台）
 			uid.String() + "|" + sid.String(): {UserID: uid, StoryID: sid,
@@ -89,10 +87,11 @@ func TestResolveForPlay(t *testing.T) {
 	if cfg, _ := r.ResolveForPlay(ctx, uid, sid, StageWrite); cfg.Source != SourceUser {
 		t.Fatalf("自带连接 Source 应为 user, 得 %q", cfg.Source)
 	}
-	// 3) 连接被删（作品配置指向不存在连接）+ 平台无 write → nil
+	// 3) 连接被删（作品配置指向不存在连接）且平台也没配 → nil
 	delete(f.conns, connA)
+	f.platform = nil
 	if cfg, _ := r.ResolveForPlay(ctx, uid, sid, StageWrite); cfg != nil {
-		t.Fatalf("连接失效且平台无 write 时应 nil, 得 %+v", cfg)
+		t.Fatalf("连接失效且无平台兜底时应 nil, 得 %+v", cfg)
 	}
 	// 4) 匿名玩家 + 无平台 → nil
 	if cfg, _ := r.ResolveForPlay(ctx, uuid.Nil, sid, StageWrite); cfg != nil {
@@ -109,7 +108,6 @@ func TestResolveForPlayNeedsExplicitModel(t *testing.T) {
 			conns: map[uuid.UUID]*model.LLMConnection{
 				connA: {ID: connA, UserID: uid, BaseURL: "https://u", Models: `["m1","m2"]`, APIKeyCipher: cipherOf(t, "k")},
 			},
-			platform: map[string]*model.PlatformLLMSetting{},
 			story: map[string]*model.UserStoryLLMConfig{
 				uid.String() + "|" + sid.String(): {Bindings: `{"write":{"conn":"` + connA.String() + `"}}`},
 			},
@@ -123,15 +121,15 @@ func TestResolveForPlayNeedsExplicitModel(t *testing.T) {
 	if cfg, _ := NewLLMResolver(newFake(), testEncKey).ResolveForPlay(ctx, uid, sid, StageWrite); cfg != nil {
 		t.Fatalf("绑定缺 model 时不得擅自取用连接的任一模型: %+v", cfg)
 	}
-	// 2) 平台配了 → 回落平台档，而不是停在这条残缺的绑定上。
+	// 2) 平台配了 → 回落平台兜底，而不是停在这条残缺的绑定上。
 	f := newFake()
-	f.platform[StageWrite] = &model.PlatformLLMSetting{Stage: StageWrite, BaseURL: "https://p", Model: "plat-model", APIKeyCipher: cipherOf(t, "plat-key")}
+	f.platform = &model.PlatformLLMSetting{BaseURL: "https://p", Model: "plat-model", APIKeyCipher: cipherOf(t, "plat-key")}
 	if cfg, _ := NewLLMResolver(f, testEncKey).ResolveForPlay(ctx, uid, sid, StageWrite); cfg == nil || cfg.Model != "plat-model" {
 		t.Fatalf("绑定缺 model 应回落平台档: %+v", cfg)
 	}
 }
 
-// TestResolveForAssist 覆盖创作侧：账号级创作辅助配置 > 平台 world > nil。
+// TestResolveForAssist 覆盖创作侧：账号级创作辅助配置 > 平台兜底 > nil。
 // 配置来自设置页（user_assist_llm_configs），不由请求体携带。
 func TestResolveForAssist(t *testing.T) {
 	uid, connO := uuid.New(), uuid.New()
@@ -140,12 +138,10 @@ func TestResolveForAssist(t *testing.T) {
 			conns: map[uuid.UUID]*model.LLMConnection{
 				connO: {ID: connO, UserID: uid, Provider: "openai", BaseURL: "https://o", Models: `["gpt-x"]`, APIKeyCipher: cipherOf(t, "ovr-key")},
 			},
-			platform: map[string]*model.PlatformLLMSetting{
-				StageWorld: {Stage: StageWorld, BaseURL: "https://p", Model: "plat-world", APIKeyCipher: cipherOf(t, "plat-key")},
-			},
-			story:  map[string]*model.UserStoryLLMConfig{},
-			assist: map[uuid.UUID]*model.UserAssistLLMConfig{},
-			credit: map[uuid.UUID]int64{uid: MicroPerCNY},
+			platform: &model.PlatformLLMSetting{BaseURL: "https://p", Model: "plat-world", APIKeyCipher: cipherOf(t, "plat-key")},
+			story:    map[string]*model.UserStoryLLMConfig{},
+			assist:   map[uuid.UUID]*model.UserAssistLLMConfig{},
+			credit:   map[uuid.UUID]int64{uid: MicroPerCNY},
 		}
 		if assist != nil {
 			f.assist[uid] = assist
@@ -159,14 +155,14 @@ func TestResolveForAssist(t *testing.T) {
 	if cfg, _ := NewLLMResolver(f, testEncKey).ResolveForAssist(ctx, uid); cfg == nil || cfg.APIKey != "ovr-key" || cfg.Model != "gpt-x" {
 		t.Fatalf("账号级配置未生效: %+v", cfg)
 	}
-	// 2) 配了连接却没模型（脏数据）→ 这条作废，回落平台 world，不擅自取连接里的某个模型
+	// 2) 配了连接却没模型（脏数据）→ 这条作废，回落平台兜底，不擅自取连接里的某个模型
 	f = newFake(&model.UserAssistLLMConfig{UserID: uid, ConnID: &connO})
 	if cfg, _ := NewLLMResolver(f, testEncKey).ResolveForAssist(ctx, uid); cfg == nil || cfg.APIKey != "plat-key" {
 		t.Fatalf("缺 model 应回落平台: %+v", cfg)
 	}
-	// 3) 没配过 → 回退平台 world
+	// 3) 没配过 → 回退平台兜底
 	if cfg, _ := NewLLMResolver(newFake(nil), testEncKey).ResolveForAssist(ctx, uid); cfg == nil || cfg.Model != "plat-world" {
-		t.Fatalf("应回退平台 world: %+v", cfg)
+		t.Fatalf("应回退平台兜底: %+v", cfg)
 	}
 	// 4) 匿名 → nil（额度挂账号）
 	if cfg, _ := NewLLMResolver(newFake(nil), testEncKey).ResolveForAssist(ctx, uuid.Nil); cfg != nil {
@@ -183,12 +179,10 @@ func TestPlatformNeedsCredit(t *testing.T) {
 	uid, sid := uuid.New(), uuid.New()
 	newFake := func(credit int64) *fakeLLM {
 		return &fakeLLM{
-			conns: map[uuid.UUID]*model.LLMConnection{},
-			platform: map[string]*model.PlatformLLMSetting{
-				StageWrite: {Stage: StageWrite, BaseURL: "https://p", Model: "m", APIKeyCipher: cipherOf(t, "plat-key")},
-			},
-			story:  map[string]*model.UserStoryLLMConfig{},
-			credit: map[uuid.UUID]int64{uid: credit},
+			conns:    map[uuid.UUID]*model.LLMConnection{},
+			platform: &model.PlatformLLMSetting{BaseURL: "https://p", Model: "m", APIKeyCipher: cipherOf(t, "plat-key")},
+			story:    map[string]*model.UserStoryLLMConfig{},
+			credit:   map[uuid.UUID]int64{uid: credit},
 		}
 	}
 	ctx := context.Background()
@@ -271,7 +265,7 @@ func TestPlatformPriceRoundTrip(t *testing.T) {
 	// 出参：DTO 必须带回单价，否则前端保存后输入框被 undefined 覆盖。
 	s := &LLMService{encKey: testEncKey}
 	res := s.toPlatformResponse(&model.PlatformLLMSetting{
-		Stage: StageWrite, Model: "m", PriceInPerMTok: 1.5, PriceOutPerMTok: 8, PriceCacheInPerMTok: 0.15,
+		Model: "m", PriceInPerMTok: 1.5, PriceOutPerMTok: 8, PriceCacheInPerMTok: 0.15,
 	})
 	if res.PriceInPerMTok != 1.5 || res.PriceOutPerMTok != 8 || res.PriceCacheInPerMTok != 0.15 {
 		t.Fatalf("响应 DTO 丢了单价: %+v", res)
@@ -285,38 +279,34 @@ func TestPlatformPriceRoundTrip(t *testing.T) {
 	}
 }
 
-// TestPlatformOptionFor 守住两件事：平台档的可用性**按环节各算各的**，
+// TestPlatformOptionFor 守住两件事：平台兜底档的可用性判据（配了 key 且有额度），
 // 以及预设模型名在不可用时也要回得来（否则前端只能显示一个空的禁用框）。
 func TestPlatformOptionFor(t *testing.T) {
 	uid := uuid.New()
 	f := &fakeLLM{
-		platform: map[string]*model.PlatformLLMSetting{
-			// write 配了 key；review 只有行、没 key（admin 只配了一半）
-			StageWrite:  {Stage: StageWrite, Model: "write-model", APIKeyCipher: cipherOf(t, "plat-key")},
-			StageReview: {Stage: StageReview, Model: "review-model"},
-		},
-		credit: map[uuid.UUID]int64{uid: 1_000_000},
+		// 配了行但没 key（admin 只填了模型名）
+		platform: &model.PlatformLLMSetting{Model: "plat-model"},
+		credit:   map[uuid.UUID]int64{uid: 1_000_000},
 	}
 	r := NewLLMResolver(f, testEncKey)
+	ctx := context.Background()
 
-	if got := r.PlatformOptionFor(context.Background(), uid, StageWrite); !got.Ready || got.Model != "write-model" {
-		t.Fatalf("write 档应可用且带模型名: %+v", got)
+	if got := r.PlatformOptionFor(ctx, uid); got.Ready || got.Model != "plat-model" {
+		t.Fatalf("没配 key 应不可用，但模型名照回: %+v", got)
 	}
-	// review 没 key → 不可用，但模型名照回：玩家该看见自己错过的是什么。
-	got := r.PlatformOptionFor(context.Background(), uid, StageReview)
-	if got.Ready {
-		t.Fatalf("review 没配 key 却判为可用——可用性不能借用 write 的结论: %+v", got)
+	// 补上 key → 可用
+	f.platform.APIKeyCipher = cipherOf(t, "plat-key")
+	if got := r.PlatformOptionFor(ctx, uid); !got.Ready || got.Model != "plat-model" {
+		t.Fatalf("配了 key 且有额度应可用: %+v", got)
 	}
-	if got.Model != "review-model" {
-		t.Fatalf("不可用时也要回预设模型名: %+v", got)
-	}
-	// 额度耗尽 → 全环节都不可用，模型名仍在。
+	// 额度耗尽 → 不可用，模型名仍在。
 	f.credit[uid] = 0
-	if got := r.PlatformOptionFor(context.Background(), uid, StageWrite); got.Ready || got.Model != "write-model" {
+	if got := r.PlatformOptionFor(ctx, uid); got.Ready || got.Model != "plat-model" {
 		t.Fatalf("额度耗尽应不可用但保留模型名: %+v", got)
 	}
-	// 该环节压根没配 → 空壳，不是崩溃。
-	if got := r.PlatformOptionFor(context.Background(), uid, StageWorld); got.Ready || got.Model != "" {
-		t.Fatalf("未配置的环节应回空壳: %+v", got)
+	// 压根没配 → 空壳，不是崩溃。
+	f.platform = nil
+	if got := r.PlatformOptionFor(ctx, uid); got.Ready || got.Model != "" {
+		t.Fatalf("未配置应回空壳: %+v", got)
 	}
 }

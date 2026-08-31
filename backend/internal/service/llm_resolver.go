@@ -12,11 +12,11 @@ import (
 	"github.com/google/uuid"
 )
 
-// 模型配置环节：创作辅助继续共用 world，不新增平台模型设置。
+// 流水与用户绑定的环节标识。平台兜底不分环节；这些常量只用于
+// 「用户在哪个环节绑了哪条连接」和用量流水的 stage 字段。
 const (
 	StageWrite  = "write"
 	StageReview = "review"
-	StageWorld  = "world"
 
 	StageAssistWorld    = "assist_world"
 	StageAssistOpening  = "assist_opening"
@@ -24,10 +24,7 @@ const (
 	StageAssistBranches = "assist_branches"
 )
 
-// ValidStages 是全部合法环节（平台设置用，含创作侧 world）。
-var ValidStages = map[string]bool{StageWrite: true, StageReview: true, StageWorld: true}
-
-// PlayStages 是游玩相关、可在作品级配置的环节；world 属创作侧、不入作品配置。
+// PlayStages 是游玩相关、可在作品级配置的环节。
 var PlayStages = map[string]bool{StageWrite: true, StageReview: true}
 
 // StageBinding 是「某环节 → 用哪条连接的哪个模型」。
@@ -54,7 +51,7 @@ func parseBindings(raw string) StageBindings {
 // 收窄依赖便于用 fake 单测优先级链，免引 DB。
 type llmStore interface {
 	FindConnByID(ctx context.Context, id uuid.UUID) (*model.LLMConnection, error)
-	FindPlatform(ctx context.Context, stage string) (*model.PlatformLLMSetting, error)
+	FindPlatform(ctx context.Context) (*model.PlatformLLMSetting, error)
 	FindStoryConfig(ctx context.Context, userID, storyID uuid.UUID) (*model.UserStoryLLMConfig, error)
 	FindAssistConfig(ctx context.Context, userID uuid.UUID) (*model.UserAssistLLMConfig, error)
 	GetCredit(ctx context.Context, userID uuid.UUID) (int64, error)
@@ -78,7 +75,8 @@ func NewLLMResolver(llm llmStore, encKey string) *LLMResolver {
 }
 
 // ResolveForPlay 解析某玩家在某作品下某环节（write/review）的配置。
-// 优先级：作品级配置（玩家选的连接+模型）→ 平台该环节设置（需额度）→ nil（调用方须报错）。
+// 优先级：作品级配置（玩家选的连接+模型）→ 平台兜底（需额度）→ nil（调用方须报错）。
+// stage 只决定读用户的哪个绑定；平台兜底全局一条，与环节无关。
 //
 // **存储故障一律上抛，不伪装成「没配置」**：查库失败和用户真没配置是两回事，
 // 前者静默降级到平台档 = 拿平台的钱替一次数据库抖动买单，且排障时看到的是
@@ -105,11 +103,11 @@ func (r *LLMResolver) ResolveForPlay(ctx context.Context, userID, storyID uuid.U
 			}
 		}
 	}
-	return r.platformIfCredit(ctx, userID, stage)
+	return r.platformIfCredit(ctx, userID)
 }
 
-// ResolveForAssist 解析创作者在创作侧（world 环节）的配置。
-// 优先级：**账号级创作辅助配置** → 平台 world 设置 → nil。
+// ResolveForAssist 解析创作者在创作侧的配置。
+// 优先级：**账号级创作辅助配置** → 平台兜底 → nil。
 //
 // 配置来自设置页（user_assist_llm_configs），不由请求体携带：编辑器里曾有一个临时下拉，
 // 但它只在第 1 段出现、也从不持久，作者直奔第 4 段用「生成开场 / 精品润色」时既看不到
@@ -130,16 +128,16 @@ func (r *LLMResolver) ResolveForAssist(ctx context.Context, userID uuid.UUID) (*
 			}
 		}
 	}
-	return r.platformIfCredit(ctx, userID, StageWorld)
+	return r.platformIfCredit(ctx, userID)
 }
 
-// platformIfCredit 取某环节平台设置并解密，**但只在该用户还有额度时才给**。
+// platformIfCredit 取平台兜底设置并解密，**但只在该用户还有额度时才给**。
 // 无设置/解密失败/匿名/余额耗尽 → nil，由调用方转成明确错误。
 //
 // 匿名（uuid.Nil）一律不给：额度挂在账号上。这条如今是防御性的——`/play/*` 全组
 // AuthRequired，匿名请求到不了这里；历史上匿名玩家共用同一个 guest id（handoff
 // §9.2），给了等于让第一个匿名访客花光所有人的额度。
-func (r *LLMResolver) platformIfCredit(ctx context.Context, userID uuid.UUID, stage string) (*AgentLLMConfig, error) {
+func (r *LLMResolver) platformIfCredit(ctx context.Context, userID uuid.UUID) (*AgentLLMConfig, error) {
 	if userID == uuid.Nil {
 		return nil, nil
 	}
@@ -150,19 +148,19 @@ func (r *LLMResolver) platformIfCredit(ctx context.Context, userID uuid.UUID, st
 	if credit <= 0 {
 		return nil, nil
 	}
-	ps, err := r.llm.FindPlatform(ctx, stage)
+	ps, err := r.llm.FindPlatform(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if ps == nil {
-		return nil, nil // admin 没配这个环节，是确定的配置缺失
+		return nil, nil // admin 没配平台兜底，是确定的配置缺失
 	}
 	key, err := pkg.Decrypt(ps.APIKeyCipher, r.encKey)
 	if err != nil || key == "" {
 		// 仍然下落（对调用方而言这一档就是不可用），但**必须留痕**：
 		// 静默下落会把"服务端密钥配错"伪装成"用户没配模型"，线上无从排查。
 		if ps.APIKeyCipher != "" {
-			log.Printf("llm: 平台 key 解不开 stage=%s（ENCRYPTION_KEY 与密文不匹配？）: %v", stage, err)
+			log.Printf("llm: 平台兜底 key 解不开（ENCRYPTION_KEY 与密文不匹配？）: %v", err)
 		}
 		return nil, nil
 	}
@@ -223,29 +221,26 @@ func (r *LLMResolver) ReviewEnabled(ctx context.Context, userID, storyID uuid.UU
 	return sc.ReviewEnabled, nil
 }
 
-// PlatformAvailable 回答「平台档现在可不可选」：有额度 + admin 配了该环节的 key。
+// PlatformAvailable 回答「平台兜底档现在可不可选」：有额度 + admin 配了 key。
 // 供前端把「平台」这一档显示成可选或禁用（并说明原因）。
 // 纯展示探针，查库出错就当不可选——这里不会替玩家花钱，无需上抛。
-func (r *LLMResolver) PlatformAvailable(ctx context.Context, userID uuid.UUID, stage string) bool {
-	cfg, err := r.platformIfCredit(ctx, userID, stage)
+func (r *LLMResolver) PlatformAvailable(ctx context.Context, userID uuid.UUID) bool {
+	cfg, err := r.platformIfCredit(ctx, userID)
 	return err == nil && cfg != nil
 }
 
-// PlatformOption 是平台档在某环节的对外形态：能不能用 + 预设的是哪个模型。
+// PlatformOption 是平台兜底档的对外形态：能不能用 + 预设的是哪个模型。
 type PlatformOption struct {
 	Ready bool   `json:"ready"`
 	Model string `json:"model"`
 }
 
-// PlatformOptionFor 按环节回平台档的可用性与预设模型名。
-//
-// 可用性**按环节各算各的**：admin 的平台设置本来就是每环节一行，只算 write
-// 再套用到 review，会把「review 没配 key」显示成可选。
+// PlatformOptionFor 回平台兜底档的可用性与预设模型名。
 // 模型名即便不可用也回：玩家该看见自己错过的是什么，而不是一个空白的禁用框。
-func (r *LLMResolver) PlatformOptionFor(ctx context.Context, userID uuid.UUID, stage string) PlatformOption {
-	ps, err := r.llm.FindPlatform(ctx, stage)
+func (r *LLMResolver) PlatformOptionFor(ctx context.Context, userID uuid.UUID) PlatformOption {
+	ps, err := r.llm.FindPlatform(ctx)
 	if err != nil || ps == nil {
 		return PlatformOption{}
 	}
-	return PlatformOption{Ready: r.PlatformAvailable(ctx, userID, stage), Model: ps.Model}
+	return PlatformOption{Ready: r.PlatformAvailable(ctx, userID), Model: ps.Model}
 }

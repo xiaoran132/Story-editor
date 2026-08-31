@@ -8,9 +8,10 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
-// LLMRepository 管理用户 LLM 连接（llm_connections）与平台设置（platform_llm_settings）。
+// LLMRepository 管理用户 LLM 连接（llm_connections）与平台兜底设置（platform_llm_setting）。
 type LLMRepository struct {
 	db *gorm.DB
 }
@@ -90,28 +91,24 @@ func (r *LLMRepository) UpsertAssistConfig(ctx context.Context, c *model.UserAss
 	return r.db.WithContext(ctx).Save(c).Error
 }
 
-// ----- 平台设置 -----
+// ----- 平台设置（单行表） -----
 
-// ListPlatform 返回全部平台环节设置。
-func (r *LLMRepository) ListPlatform(ctx context.Context) ([]model.PlatformLLMSetting, error) {
-	var rows []model.PlatformLLMSetting
-	err := r.db.WithContext(ctx).Find(&rows).Error
-	return rows, err
-}
-
-// FindPlatform 取某环节平台设置。不存在返回 (nil, nil)。
-func (r *LLMRepository) FindPlatform(ctx context.Context, stage string) (*model.PlatformLLMSetting, error) {
+// FindPlatform 取平台兜底设置（全局一条）。不存在返回 (nil, nil)。
+func (r *LLMRepository) FindPlatform(ctx context.Context) (*model.PlatformLLMSetting, error) {
 	var s model.PlatformLLMSetting
-	err := r.db.WithContext(ctx).Where("stage = ?", stage).First(&s).Error
+	err := r.db.WithContext(ctx).First(&s).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
 	return &s, err
 }
 
-// UpsertPlatform 按 stage 主键 upsert（存在则整行覆盖）。
+// UpsertPlatform 整行覆盖平台兜底设置。id 恒写 1：单行表的固定主键，
+// 冲突即整行更新，不依赖「先查后存」的时序。
 func (r *LLMRepository) UpsertPlatform(ctx context.Context, s *model.PlatformLLMSetting) error {
-	return r.db.WithContext(ctx).Save(s).Error
+	s.ID = 1
+	return r.db.WithContext(ctx).
+		Clauses(clause.OnConflict{UpdateAll: true}).Create(s).Error
 }
 
 // ----- 平台额度（注册赠 1 元）与用量流水 -----

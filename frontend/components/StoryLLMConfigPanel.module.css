@@ -67,34 +67,6 @@
   gap: 10px;
 }
 
-.sel {
-  width: 100%;
-  min-height: 44px;
-  padding: 0 12px;
-  border-radius: var(--r-sm);
-  border: 1px solid var(--border-2);
-  background: oklch(1 0 0 / 0.05);
-  color: var(--fg);
-  font-family: inherit;
-  font-size: 13px;
-  transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
-}
-
-.sel:hover {
-  background: oklch(1 0 0 / 0.08);
-}
-
-.sel:focus-visible {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: var(--ring);
-}
-
-/* disabled 是唯一允许降对比度的状态（§9） */
-.sel:disabled {
-  opacity: 0.5;
-}
-
 .note {
   font-size: 11.5px;
   color: var(--muted);

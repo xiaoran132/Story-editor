@@ -183,28 +183,25 @@ func (h *LLMHandler) SetStoryConfig(c *gin.Context) {
 	pkg.Success(c, b)
 }
 
-// ----- 平台设置（admin，路由挂 RequireAdmin） -----
+// ----- 平台设置（admin，路由挂 RequireAdmin；全局一条，不分环节） -----
 
-func (h *LLMHandler) ListPlatform(c *gin.Context) {
-	items, err := h.svc.ListPlatform()
+func (h *LLMHandler) GetPlatform(c *gin.Context) {
+	res, err := h.svc.GetPlatform()
 	if err != nil {
 		pkg.Error(c, err)
 		return
 	}
-	pkg.Success(c, items)
+	pkg.Success(c, res)
 }
 
-// UpsertPlatform body: {stage, provider, base_url, api_key, model}。
+// UpsertPlatform body: {provider, base_url, api_key, model, price_*}。
 func (h *LLMHandler) UpsertPlatform(c *gin.Context) {
-	var body struct {
-		Stage string `json:"stage"`
-		service.PlatformInput
-	}
-	if err := c.ShouldBindJSON(&body); err != nil {
+	var in service.PlatformInput
+	if err := c.ShouldBindJSON(&in); err != nil {
 		pkg.Error(c, pkg.BadRequest(err.Error()))
 		return
 	}
-	res, err := h.svc.UpsertPlatform(body.Stage, &body.PlatformInput)
+	res, err := h.svc.UpsertPlatform(&in)
 	if err != nil {
 		pkg.Error(c, err)
 		return

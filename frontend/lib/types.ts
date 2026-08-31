@@ -28,17 +28,11 @@ export interface UserProfile {
   created_at: string;
 }
 
-// ===== BYOK：LLM 连接 / 环节绑定 / 平台设置 =====
+// ===== BYOK：LLM 连接 / 环节绑定 / 平台兜底设置 =====
 
-// 生成环节：write=续写/开场，review=质量审校，world=创作侧世界观/润色/分支。
-export type LLMStage = "write" | "review" | "world";
-// 平台设置（admin）用全部三个环节。
-export const LLM_STAGES: { key: LLMStage; label: string; desc: string }[] = [
-  { key: "write", label: "续写 / 开场", desc: "正文生成，玩家体验的主文本" },
-  { key: "review", label: "质量审校", desc: "低温校验承接/属性，可用更便宜的模型" },
-  { key: "world", label: "创作辅助", desc: "世界观 / 开场 / 润色 / 分支生成" },
-];
-// 玩家「作品级」配置只覆盖游玩相关环节（world 属创作侧，走编辑器临时连接）。
+// 生成环节（**用户侧绑定**的概念；平台兜底全局一条、不分环节）：
+// write=续写/开场，review=质量审校。
+// 玩家「作品级」配置只覆盖游玩相关环节（创作辅助是账号级，另走 assist-config）。
 export const PLAY_STAGES: { key: "write" | "review"; label: string; desc: string }[] = [
   { key: "write", label: "续写 / 开场", desc: "正文生成，玩家体验的主文本" },
   { key: "review", label: "质量审校", desc: "低温校验，可用更便宜的模型" },
@@ -102,24 +96,24 @@ export interface StoryLLMConfig {
   ready: boolean;
   blocked?: string; // 不能开玩的原因，后端给的文案，直接展示
   credit_micro_cny: number; // 平台额度余额（微元，1e-6 元）；注册赠 1 元
-  // 平台档「按环节」的可用性与预设模型名。按环节分开是必须的：平台设置每环节一行，
-  // review 那行可能没配 key，借用 write 的可用性会把它显示成可选。
-  platform_stages: Partial<Record<"write" | "review", PlatformOption>>;
+  // 平台兜底档的可用性与预设模型名。回模型名是为了让玩家知道不选连接时
+  // 会用到什么，而不是面对一个空白的默认项。
+  platform: PlatformOption;
 }
 
-// 平台档在某环节的形态：能不能选 + 不选连接时会用到的预设模型。
+// 平台兜底档的形态：能不能选 + 不选连接时会用到的预设模型（全局一条，不分环节）。
 export interface PlatformOption {
   ready: boolean;
   model: string;
 }
 
-// 创作辅助（world 环节）用哪条连接的哪个模型。**账号级**，在设置页里配。
+// 创作辅助用哪条连接的哪个模型。**账号级**，在设置页里配。
 // 不挂作品：第一步「AI 生成世界观」时作品还不存在，没有 story_id 可挂。
 // GET/PUT /llm/assist-config
 export interface AssistConfig {
-  conn: string; // 连接 id；空=用平台创作辅助档
+  conn: string; // 连接 id；空=用平台兜底
   model: string; // conn 非空时必填
-  platform: PlatformOption; // 平台 world 档的可用性与预设模型名
+  platform: PlatformOption; // 平台兜底的可用性与预设模型名
 }
 
 // 保存作品级配置的请求体。
@@ -139,9 +133,8 @@ export interface RecommendedModels {
   review?: { provider?: string; model?: string };
 }
 
-// GET /admin/llm/platform 列表项（每环节一行，缺的环节以空壳补齐）。
+// GET /admin/llm/platform（全局一条；未配置时后端回空壳，便于渲染完整表单）。
 export interface PlatformSetting {
-  stage: LLMStage;
   provider: string;
   base_url: string;
   model: string;
