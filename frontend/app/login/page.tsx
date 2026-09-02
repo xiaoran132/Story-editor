@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
 import Figure from "@/components/sky/Figure";
+import WanxiangLogo from "@/components/WanxiangLogo";
 import WorldScope from "@/components/sky/WorldScope";
 import { makeRng } from "@/lib/prng";
 import { useReducedMotion } from "@/lib/useReducedMotion";
@@ -251,22 +252,7 @@ function Login() {
       {/* 顶栏不加登录入口：各页顶栏已渲染「我的空间」，同屏再放「登录」是自相矛盾的状态 */}
       <Link className={styles.brandmark} href="/" aria-label="万象 · Story Editor · 回到星海">
         <span className={styles.mark} aria-hidden="true">
-          <svg
-            width="17"
-            height="17"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M12 19.5v-6M12 13.5 7.7 8.9M12 13.5l4.3-4.6" />
-            <circle cx="12" cy="20" r="1.3" fill="currentColor" stroke="none" />
-            {/* 本屏暖金配额第 1 处（第 2 处是主 CTA，L5 之后交给暖金地平线） */}
-            <circle cx="7.4" cy="8.3" r="2.2" fill="var(--accent)" stroke="none" />
-            <circle cx="16.6" cy="8.3" r="2.2" fill="currentColor" stroke="none" />
-          </svg>
+          <WanxiangLogo size={20} />
         </span>
         <span className={styles.zh}>万象</span>
         <span className={styles.en}>STORY EDITOR</span>

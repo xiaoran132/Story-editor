@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import WanxiangLogo from "@/components/WanxiangLogo";
 import AccountMenu from "./AccountMenu";
 
 // 新体系顶栏。12/13 份原型里这一块逐字节相同，整块搬过来。
@@ -33,22 +34,7 @@ export default function WxHeader() {
     <header className="wx-topbar">
       <Link className="wx-brand" href="/" aria-label="万象 · Story Editor · 回到星海">
         <span className="mark" aria-hidden="true">
-          <svg
-            width="17"
-            height="17"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M12 19.5v-6M12 13.5 7.7 8.9M12 13.5l4.3-4.6" />
-            <circle cx="12" cy="20" r="1.3" fill="currentColor" stroke="none" />
-            {/* 暖金配额第 1 处 */}
-            <circle cx="7.4" cy="8.3" r="2.2" fill="var(--accent)" stroke="none" />
-            <circle cx="16.6" cy="8.3" r="2.2" fill="currentColor" stroke="none" />
-          </svg>
+          <WanxiangLogo size={20} />
         </span>
         <span className="zh">万象</span>
         <span className="en">STORY EDITOR</span>

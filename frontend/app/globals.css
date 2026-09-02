@@ -567,6 +567,12 @@ select {
   border: 1px solid var(--border);
 }
 
+/* 字形 20：占 chip 的 2/3，四周留出呼吸边。标记的火种坠底、枝星在上，
+   光学重心比几何中心低约 2px——纯居中会显下沉，上移找平。 */
+.wx-brand .mark svg {
+  transform: translateY(-2px);
+}
+
 .wx-brand .zh {
   font-family: var(--font-display);
   font-weight: 700;
