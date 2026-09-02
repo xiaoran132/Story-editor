@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 88" width="300" height="88" role="img" aria-label="万象 · Story Editor">
+  <!--
+    横向锁版 lockup：标记 + 「万象」字标 + STORY EDITOR。
+    字体：标题 Noto Serif SC（前端已加载）、副行 Inter（承设计简报的字体分工）。
+    CJK 标题不加负字距（letter-spacing 0）。换色相只改 .mk 的 hue 变量。
+  -->
+  <style>
+    .mk{
+      --hue: 252;
+      --line: oklch(0.72 0.140 var(--hue) / .92);
+      --glow: oklch(0.72 0.140 var(--hue) / .40);
+      --star: oklch(0.98 0.020 var(--hue) / .96);
+      --gold: oklch(0.82 0.125 85);
+      --gold-glow: oklch(0.82 0.125 85 / .22);
+      --text: oklch(0.97 0.010 var(--hue));
+      --muted: oklch(0.72 0.030 var(--hue) / .70);
+    }
+    .wm{ font-family:"Noto Serif SC","Songti SC",serif; font-weight:600; font-size:44px; letter-spacing:2px; fill:var(--text); }
+    .sub{ font-family:"Inter","Segoe UI",sans-serif; font-weight:500; font-size:11px; letter-spacing:5px; fill:var(--muted); }
+  </style>
+
+  <g class="mk">
+    <!-- 标记（复用 wanxiang-mark 几何，等比缩放置左）-->
+    <g transform="translate(6,12) scale(0.86)" fill="none">
+      <g stroke="var(--line)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M32 55 L32 46.5"/>
+        <path d="M32 46.5 L22 38"/>
+        <path d="M32 46.5 L42 38"/>
+        <path d="M22 38 L16 28"/>
+        <path d="M22 38 L27 30"/>
+        <path d="M42 38 L48 28"/>
+        <path d="M42 38 L37 30"/>
+      </g>
+      <circle cx="16" cy="28" r="4" fill="var(--glow)"/>
+      <circle cx="27" cy="30" r="3.4" fill="var(--glow)"/>
+      <circle cx="37" cy="30" r="3.4" fill="var(--glow)"/>
+      <circle cx="48" cy="28" r="4" fill="var(--glow)"/>
+      <circle cx="16" cy="28" r="1.9" fill="var(--star)"/>
+      <circle cx="27" cy="30" r="1.7" fill="var(--star)"/>
+      <circle cx="37" cy="30" r="1.7" fill="var(--star)"/>
+      <circle cx="48" cy="28" r="1.9" fill="var(--star)"/>
+      <circle cx="32" cy="55" r="6.5" fill="var(--gold-glow)"/>
+      <circle cx="32" cy="55" r="3" fill="var(--gold)"/>
+    </g>
+
+    <!-- 字标 -->
+    <text class="wm" x="80" y="52">万象</text>
+    <text class="sub" x="82" y="72">STORY&#160;&#160;EDITOR</text>
+  </g>
+</svg>

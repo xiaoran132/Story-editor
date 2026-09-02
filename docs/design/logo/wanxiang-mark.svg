@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="万象 Story Editor 标记">
+  <!--
+    《万象》品牌标记 · L1 灵感火种分叉
+    语义：底部一颗暖金火种（灵感）→ 向上分叉 2→4→末端亮成星（剧情树生长）。
+    纪律（承 docs/design/wanxiang-design-brief.md）：
+      · 只有 H 变，L/C 写死；换色相只改 hue 变量。
+      · 暖金是全站唯一强调色，不参与 hue 染色，本图仅用 1 处（火种）。
+    换色相：改下面的 hue 变量（0–360）。当前 252 = 深蓝紫。
+  -->
+  <style>
+    .mk{
+      --hue: 252;
+      --line: oklch(0.72 0.140 var(--hue) / .92);
+      --glow: oklch(0.72 0.140 var(--hue) / .40);
+      --star: oklch(0.98 0.020 var(--hue) / .96);
+      --gold: oklch(0.82 0.125 85);
+      --gold-glow: oklch(0.82 0.125 85 / .22);
+    }
+  </style>
+  <g class="mk" fill="none">
+    <!-- 枝干：trunk → 2 → 4，圆头单线 -->
+    <g stroke="var(--line)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M32 55 L32 46.5"/>
+      <path d="M32 46.5 L22 38"/>
+      <path d="M32 46.5 L42 38"/>
+      <path d="M22 38 L16 28"/>
+      <path d="M22 38 L27 30"/>
+      <path d="M42 38 L48 28"/>
+      <path d="M42 38 L37 30"/>
+    </g>
+    <!-- 枝端化星 -->
+    <g>
+      <circle cx="16" cy="28" r="4" fill="var(--glow)"/>
+      <circle cx="27" cy="30" r="3.4" fill="var(--glow)"/>
+      <circle cx="37" cy="30" r="3.4" fill="var(--glow)"/>
+      <circle cx="48" cy="28" r="4" fill="var(--glow)"/>
+      <circle cx="16" cy="28" r="1.9" fill="var(--star)"/>
+      <circle cx="27" cy="30" r="1.7" fill="var(--star)"/>
+      <circle cx="37" cy="30" r="1.7" fill="var(--star)"/>
+      <circle cx="48" cy="28" r="1.9" fill="var(--star)"/>
+    </g>
+    <!-- 灵感火种（唯一暖金）-->
+    <circle cx="32" cy="55" r="6.5" fill="var(--gold-glow)"/>
+    <circle cx="32" cy="55" r="3" fill="var(--gold)"/>
+  </g>
+</svg>

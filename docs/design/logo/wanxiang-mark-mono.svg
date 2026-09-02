@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="万象">
+  <!--
+    单色版 · 直接替换 frontend/components/BrandGlyph.tsx（同为 24 网格 / currentColor）。
+    颜色交给容器（如 .brand .glyph 设 color）。favicon / 内联图标可用。
+    从 wanxiang-mark.svg 等比下沉，末端由「星点」简化为小圆，保证 16px 下可读。
+  -->
+  <path d="M12 20.5V17.6"/>
+  <path d="M12 17.6 8.2 14"/>
+  <path d="M12 17.6 15.8 14"/>
+  <path d="M8.2 14 6 10.6"/>
+  <path d="M8.2 14 10.2 11.2"/>
+  <path d="M15.8 14 18 10.6"/>
+  <path d="M15.8 14 13.8 11.2"/>
+  <circle cx="6" cy="10.6" r="0.95" fill="currentColor" stroke="none"/>
+  <circle cx="10.2" cy="11.2" r="0.85" fill="currentColor" stroke="none"/>
+  <circle cx="13.8" cy="11.2" r="0.85" fill="currentColor" stroke="none"/>
+  <circle cx="18" cy="10.6" r="0.95" fill="currentColor" stroke="none"/>
+  <circle cx="12" cy="20.9" r="1.4" fill="currentColor" stroke="none"/>
+</svg>

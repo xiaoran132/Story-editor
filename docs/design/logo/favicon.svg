@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="万象">
+  <!--
+    浏览器标签 / PWA 图标。自带深空圆角底，light/dark 标签下都可读（不依赖容器颜色）。
+    与 WanxiangLogo.tsx 同一 L1 造型；换色相把各 oklch 的 252 批量替换。
+  -->
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="oklch(0.15 0.055 252)"/>
+  <rect x="2.5" y="2.5" width="59" height="59" rx="14.5" fill="none" stroke="oklch(0.72 0.10 252 / .28)" stroke-width="1"/>
+  <g fill="none" stroke="oklch(0.86 0.095 252)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" transform="translate(0,1)">
+    <path d="M32 47 L32 39"/>
+    <path d="M32 39 L22.5 30.5"/>
+    <path d="M32 39 L41.5 30.5"/>
+    <path d="M22.5 30.5 L16.5 21"/>
+    <path d="M22.5 30.5 L27.5 23"/>
+    <path d="M41.5 30.5 L47.5 21"/>
+    <path d="M41.5 30.5 L36.5 23"/>
+  </g>
+  <g fill="oklch(0.99 0.015 252)" transform="translate(0,1)">
+    <circle cx="16.5" cy="21" r="2"/><circle cx="27.5" cy="23" r="1.7"/>
+    <circle cx="36.5" cy="23" r="1.7"/><circle cx="47.5" cy="21" r="2"/>
+  </g>
+  <circle cx="32" cy="49.5" r="3.4" fill="oklch(0.85 0.11 88)"/>
+</svg>
