@@ -51,7 +51,7 @@ Docs are read every session; length is a real cost.
 ```bash
 cd backend && go run .                         # needs PostgreSQL; MUST run from backend/
 cd backend && go test ./...
-cd frontend && npm run lint && npm run typecheck   # lint is --max-warnings 0
+cd frontend && npm run lint && npm run typecheck && npm run test   # lint is --max-warnings 0; test is vitest
 cd agent && uvicorn app.main:app --port 8001   # see agent/README.md
 cd frontend && npm run dev                     # :3000, see frontend/README.md
 ```
@@ -187,7 +187,7 @@ Pipeline internals (streaming writer + separate structurer pass, memory-equipped
 
 Read before adding or reshaping any frontend surface:
 
-The set was replaced wholesale in `6fb2c39`. The old files (`tokens.css`, a `prototypes/` subdir) are gone, and so is the direction they encoded — **anything describing a white background, `#1677ff`, or a 管理态/阅读态 dual mode is voided**. `frontend/app/globals.css` now implements the replacement and is the only stylesheet outside per-page CSS Modules.
+The set was replaced wholesale in `6fb2c39`. The old files (`tokens.css`, a `prototypes/` subdir) are gone, and so is the direction they encoded — **anything describing a white background, `#1677ff`, or a 管理态/阅读态 dual mode is voided**. `frontend/src/app/globals.css` now implements the replacement and is the only stylesheet outside per-page CSS Modules.
 
 | File | Authority |
 |---|---|
@@ -197,7 +197,7 @@ The set was replaced wholesale in `6fb2c39`. The old files (`tokens.css`, a `pro
 | `docs/design/*.html` (13 files, flat — **no `prototypes/` subdir**) | static high-fidelity references, one per screen — **visual targets, not code to copy**. Their demo data and timers show visuals only; behaviour always follows the backend contract. `derivation-graph.html` is the one with no route behind it — see `docs/handoff.md` §13 |
 | `docs/design/assets/works-data.js` | identity fields for the 12 demo works. Fake — a real surface reads `/api/v1/stories` |
 
-**There is no `tokens.css`.** Tokens live in `DESIGN.md` §3 (global `:root`) and §4 (`.world-scope` role tokens); `frontend/app/globals.css` is their implementation, not a second source. Page-specific geometry belongs in that page's CSS Module — only genuinely shared things (tokens, reset, backdrop/sky/figure, topbar, subnav, form controls, buttons, switch, dialog, toast, the five `wx-*` keyframes) go in the global sheet.
+**There is no `tokens.css`.** Tokens live in `DESIGN.md` §3 (global `:root`) and §4 (`.world-scope` role tokens); `frontend/src/app/globals.css` is their implementation, not a second source. Page-specific geometry belongs in that page's CSS Module — only genuinely shared things (tokens, reset, backdrop/sky/figure, topbar, subnav, form controls, buttons, switch, dialog, toast, the five `wx-*` keyframes) go in the global sheet.
 
 | Invariant | Why |
 |---|---|

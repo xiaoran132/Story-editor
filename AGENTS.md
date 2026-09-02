@@ -33,7 +33,7 @@ ZCode 会话自动加载的工作区指令。完整工程约束以 [CLAUDE.md](C
 
 ```powershell
 cd backend; go test ./...                 # 默认无需 PostgreSQL（fake 注入）；集成测试 -tags=integration 需 TEST_DB_DSN
-cd frontend; npm run lint; npm run typecheck   # lint 是 --max-warnings 0；PowerShell 下 build 用 npm.cmd
+cd frontend; npm run lint; npm run typecheck; npm run test   # lint 是 --max-warnings 0；PowerShell 下 build 用 npm.cmd；test 是 vitest
 cd agent; .\.venv\Scripts\python.exe -m compileall -q app tests
 cd agent; .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```

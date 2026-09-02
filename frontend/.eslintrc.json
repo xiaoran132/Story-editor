@@ -5,7 +5,84 @@
   "rules": {
     // 本项目刻意用原生 <img>：没配 next/image 的 remotePatterns，
     // 而上传图走的是 /api/v1/uploads 同源静态直出，next/image 反而要多一层配置。
-    // 理由写在 components/ImageUpload.tsx 的注释里。
+    // 理由写在 components/ui/ImageUpload.tsx 的注释里。
     "@next/next/no-img-element": "off"
-  }
+  },
+  // 分层守卫：组件目录的边界靠工具强制，不靠自觉。判定标准见 README「组件放哪」。
+  "overrides": [
+    {
+      // ui/ 是无业务语义的通用件：只许被依赖，不得反向依赖业务/模块目录。
+      "files": ["src/components/ui/**/*"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/components/editor/*",
+                  "@/components/llm/*",
+                  "@/components/play/*",
+                  "@/components/works/*",
+                  "@/components/sky/*",
+                  "@/components/wx/*"
+                ],
+                "message": "ui/ 必须保持无业务语义，不得 import 业务或模块目录。"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      // editor|play|works 是模块私有目录，两两互斥；三条分开写是避免误伤模块内自引用。
+      // 跨模块复用：先各写一份，第 3 个消费者出现再提取进共享层（ui/llm/sky/wx）。
+      "files": ["src/components/editor/**/*"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@/components/play/*", "@/components/works/*"],
+                "message": "模块私有目录禁止互引；确要复用先提取进共享层（ui/llm/sky/wx）。"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/components/play/**/*"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@/components/editor/*", "@/components/works/*"],
+                "message": "模块私有目录禁止互引；确要复用先提取进共享层（ui/llm/sky/wx）。"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/components/works/**/*"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@/components/editor/*", "@/components/play/*"],
+                "message": "模块私有目录禁止互引；确要复用先提取进共享层（ui/llm/sky/wx）。"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
 }

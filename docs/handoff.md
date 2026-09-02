@@ -86,8 +86,8 @@ handler → service → repository
 | Agent 请求响应模型 | `agent/app/schemas.py` |
 | Agent 配置 | `agent/app/config.py`、`agent/.env.example` |
 | Agent 路由和错误语义 | `agent/app/routers/generate.py`、`assist.py` |
-| 前端页面和游玩状态机 | `frontend/app/`、`frontend/store/playStore.ts` |
-| 前端 API 信封与类型 | `frontend/lib/api.ts`、`frontend/lib/types.ts`、`frontend/lib/state.ts` |
+| 前端页面和游玩状态机 | `frontend/src/app/`、`frontend/src/store/playStore.ts` |
+| 前端 API 信封与类型 | `frontend/src/lib/api.ts`、`frontend/src/lib/types.ts`、`frontend/src/lib/state.ts` |
 | 完整设计的 SQL 蓝本 | `infa/sql/users.sql`、`stories.sql`、`play.sql`、`community.sql` |
 
 ## 5. 数据模型与不可破坏的约定
@@ -262,7 +262,7 @@ cd ..\agent
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-ESLint 用 `next/core-web-vitals`，只关了 `@next/next/no-img-element` 一条（项目刻意用原生 `<img>`，理由见 `frontend/.eslintrc.json` 与 `components/ImageUpload.tsx`）。
+ESLint 用 `next/core-web-vitals`，只关了 `@next/next/no-img-element` 一条（项目刻意用原生 `<img>`，理由见 `frontend/.eslintrc.json` 与 `components/ui/ImageUpload.tsx`）。
 
 当前 Python 测试精简为十六个关键回归：`test_stream.py` 覆盖正常流式回合、审校重写、**审校反馈分流（【元数据】类喂 Structurer、写手原样重发正文）**、耗尽降级、关闭审校、**文风档案只进 Writer 不进 Structurer/Reviewer**（§9.2 的成本决策回归锁）与无档案时零增量，以及**结构化/审校不阻塞事件循环**（并发两条流水线，串行化就超时；用 `REVIEW_CFG` 才能同时覆盖到两处调用），且在正常路径一并校验 reveal 门控与 usage 归属；`test_llm_parse_retry.py` 覆盖 JSON 重试和无默认凭据；`test_assist_polish.py` 覆盖润色闭环的未触发、采用、复审回退、预调用预算保护，以及 **`/assist/world` 产出的 style_profile 越界时被夹取而非抛异常**（`WorldDraft(**data)` 在 try 之外，不夹会 500）。Go 有 `play_merge_test.go`（节点语义合并契约）、`access_test.go` / `ownership_test.go`（可见性与归属）、`player_view_test.go`（玩家可见投影）、`llm_resolver_test.go`（BYOK 解析优先级）、`worldvalidate_test.go`（含 style_profile 发布校验）、`crypto_test.go` / `upload_test.go`、`response_test.go`（`SafeDetail`：只有 `AppError.Message` 能外发，裸 DB 错误换固定文案，`context.Canceled` 不当故障），`play_opening_test.go`（开场并发：AI 只生成一次、只扣一次费、后到者复用而非报错；leader 重读；唯一冲突翻幂等；约束名判定；**leader 中途失败时 follower 拿到错误而不是 panic**），以及 `play_reuse_test.go`（逐字相同的选择不生成不扣费不建节点；`CheckMerge` 必须收到模型连接；语义命中复用既有节点；判定失败仍照常推进）。
 
@@ -502,7 +502,7 @@ cd agent
 - 阅读偏好只剩两项，都在 `lib/readerPrefs.ts`：**减少动效**（写 `<html data-motion="off">`，`PrefsBoot` 每次加载套回）与**遮罩浓度**（游玩页与设置页共用同一个键，夹在 52–92 的百分比整数）。⚠️ 遮罩只写 localStorage、**不写 `<html>` 上的自定义属性**——它是某一页局部的效果（游玩页根元素上的 `--reader-veil`），挂到 `<html>` 会漏到每一页。氛围场景与昼/夜切换随旧体系一并删除。
 
 **token 合规的复查口径**（回归时照这四条量，前三条可脚本化）
-- **任何 `.css` 里零 hex**：`rg -n '#[0-9a-fA-F]{3,6}' frontend/app frontend/components -g '*.css'` 应无输出。派生色一律 `oklch()`——hex 表达不了「L/C 写死、只有 H 跟 `--hue`」这条规则；
+- **任何 `.css` 里零 hex**：`rg -n '#[0-9a-fA-F]{3,6}' frontend/src -g '*.css'` 应无输出。派生色一律 `oklch()`——hex 表达不了「L/C 写死、只有 H 跟 `--hue`」这条规则；
 - **零 `Math.random()` 调用**（注释里的禁用说明除外）：星点、微偏移、光晕相位都必须刷新一致，否则回归截图每次都不同；
 - 每屏可见暖金 ≤2 处（焦点环是瞬时态，不计配额）；需要强调但不占配额的一律用中性亮态 `--bright`；
 - 无可访问名的输入 0；各路由 header/nav/main 各 1。
@@ -537,7 +537,7 @@ cd agent
 
 **前端接入**
 - `lib/api.ts`：`api.upload(kind, file, name)` 是独立的 multipart 通道（**不设 `Content-Type`**，boundary 必须由浏览器带）；`assetUrl(u)` 把相对路径补上 dev 的后端源。
-- `components/ImageUpload.tsx`：通用控件（`kind` 决定圆形/矩形预览），真 `<button>` 触发隐藏 file input，上传中/空/失败三态齐全。
+- `components/ui/ImageUpload.tsx`：通用控件（`kind` 决定圆形/矩形预览），真 `<button>` 触发隐藏 file input，上传中/空/失败三态齐全。
 - 消费点：`/mine/settings` 头像（保存时**手动双写 localStorage + `useAuthStore.setState`**，否则顶栏与账户菜单读的是旧那份 user，改完昵称/头像顶栏不刷新）、`/mine` 资料头；封面在编辑器段 5「主题与天空」、作品卡与我的作品页。⚠️ 12 部演示作品 `cover_url` 全空，所以**无封面是默认态**：卡片渲染纯 CSS 天空，不是灰占位框。
 - **无图时的渲染与改动前完全一致**：所有位置都回落原来的主题渐变 / 昵称首字母，不引入「默认灰头像」这种无信息占位。
 - **有图时仍叠一层主题渐变罩层**（`lib/types.ts` 的 `coverStyle`，用 `color-mix` 降透明度）：封面上压着白色标题/摘要/CTA，裸铺照片会让对比度跌破 4.5:1；罩层同时保住「彩色只来自作品主题色」这条铁律。有封面时不加 `.cover.alive`——那个 16s 漂移靠拉伸 `background-size`，用在照片上会变形。

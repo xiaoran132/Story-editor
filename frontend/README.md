@@ -38,8 +38,8 @@ npm run build
 两条静态复核（应当无输出）：
 
 ```bash
-rg -n '#[0-9a-fA-F]{3,6}' app components -g '*.css'   # 派生色一律 oklch
-rg -n 'Math\.random\(' app components lib store       # 确定性伪随机走 lib/prng.ts
+rg -n '#[0-9a-fA-F]{3,6}' src -g '*.css'   # 派生色一律 oklch
+rg -n 'Math\.random\(' src       # 确定性伪随机走 lib/prng.ts
 ```
 
 ## 环境变量
@@ -71,9 +71,9 @@ rg -n 'Math\.random\(' app components lib store       # 确定性伪随机走 li
 |------|------|
 | `/` 星海 | 3D CSS 星系（`transform-style: preserve-3d`，**无 Three.js/WebGL**）：四种排布（星系 / 银河 / 书架 / 混沌）+ 拖拽旋转与惯性 + 2.6s 开屏。数据 `GET /stories?sort=plays&limit=12`。点卡片 → 星系转向 + 虚化后退 + `WorkDetail` 浮层。⚠️ ≤820px 降级为 2D 天空墙（小屏是重新编排，不是把桌面版压扁）。作品少于 6 部改「近景星群」排布，0 部是空态 +「去创作」，不是一个空球。 |
 | `/works` 作品馆 | `GET /stories?limit=100`，搜索 / 题材 / 排序 / 分页**全部前端做**。题材由在架作品的 `tags[0]` 派生。用 `meta.total` 判断有没有被截断，**有就如实说**。⚠️ 设计稿的「含隐藏属性」筛选**没做也不该做**：`sanitizeWorldConfig` 对非作者整条删键，能筛出来就等于泄露存在性。 |
-| `/story/[storyId]` | 作品详情。与星系浮层**共用 `components/WorkDetail`**（浮层与整页同一份内容契约，不写两套）——独立页是给深链、分享、`/login?next=` 回跳用的。含世界观 / 登场人物 / 属性三态 / 数据 / 生成设置（`StoryLLMConfigPanel`）/「走进这个世界」。**作者本人另有「编辑这部作品」**（`user.id === story.creator_id`）——后端 `StoryService.Update` 只校验属主、不看状态，一直支持已发布作品的编辑，缺的只是入口。 |
+| `/story/[storyId]` | 作品详情。与星系浮层**共用 `components/works/WorkDetail`**（浮层与整页同一份内容契约，不写两套）——独立页是给深链、分享、`/login?next=` 回跳用的。含世界观 / 登场人物 / 属性三态 / 数据 / 生成设置（`StoryLLMConfigPanel`）/「走进这个世界」。**作者本人另有「编辑这部作品」**（`user.id === story.creator_id`）——后端 `StoryService.Update` 只校验属主、不看状态，一直支持已发布作品的编辑，缺的只是入口。 |
 | `/play/[sessionId]` | 游玩页。三栏舞台（左 `AttrBar` 状态轨 + 中正文 + 右旅程轨）+ 悬浮控制条（遮罩浓度 / 字号 / 行距 / 天空漂移）+ 底部选项坞（编号选项 + **1/2/3 快捷键** + 自由输入）+ 世界星图浮层（`StoryTree`，横向航迹：深度走 x、分叉走 y，层距按视口宽自适应）。正文衬线逐字流式（**无首字下沉**）。⚠️ 星图上点航点**只是查看**，回溯要另按「回到这里重新选择」——两者分开；但回溯本身**不删数据**（见下方数据流）。 |
-| `/create`·`/edit/[storyId]` | 六段式创作编辑器：左 44% sticky 天空（**天空即完成度**，六段各点亮一层）+ 右段落轨与面板（`components/editor/seg1..seg6`）。段落**可任意跳转**，没有顺序门禁。段 5 = 15 预设色块 + 自由色相条 + 6 个姿态。 |
+| `/create`·`/edit/[storyId]` | 六段式创作编辑器：左 44% sticky 天空（**天空即完成度**，六段各点亮一层）+ 右段落轨与面板（`components/editor/` 六段面板）。段落**可任意跳转**，没有顺序门禁。段 5 = 15 预设色块 + 自由色相条 + 6 个姿态。 |
 | `/login` | L0–L5 天空阶梯：邮箱输入逐层点亮世界。`maxLevel` 单向不倒退。登录/注册 tab 共用同一套阶梯。提交成功会写开屏已看时间戳，紧接着进星海不重播 2.6s 开屏（同一件事说两遍）。 |
 | `/mine` | 我的空间（本人视角）。作者天空（N 部作品各一层 `mix-blend-mode: screen`）+ 资料 + 数字。数字只列**有写入路径**的三项（已发布 / 累计游玩 / 收到的赞）——摆一个恒为 0 的「粉丝」只会被读成「没人关注你」。**作品列表不在这里**：整块搬去 `/mine/works`，同一份列表画两遍，改一处必漏另一处。 |
 | `/mine/works` | 我的作品（`GET /stories/mine` 全量）。**由原草稿箱页与 `/mine` 的作品栏合并**，按「全部 / 已发布 / 草稿」筛选，缩略天空右上角带状态角标。**两类动作相同：编辑 + 试玩**——发布不是终点，只给草稿留编辑入口等于逼作者先下架再改。试玩**有存档就续、没有才开新局**（作者调稿会反复点，每次开新局会在历史里堆一串一步没走的空局）。缩略天空**只画已点亮的层**（层与编辑器六段同源，**重算而不是存进度字段**——存字段就有两份真相），草稿另用文字说明缺哪几段。 |
@@ -87,32 +87,51 @@ rg -n 'Math\.random\(' app components lib store       # 确定性伪随机走 li
 
 ```
 frontend/
-├── app/
-│   ├── layout.tsx                 # 全局壳（next/font 注入 Inter + Noto Serif SC）
-│   ├── globals.css                # 全站唯一全局表：token + reset + 共享组件层 + wx-* 关键帧
-│   ├── page.tsx / page.module.css # 星海（3D 星系）
-│   ├── works | login | community | admin | create | edit | story | play | mine/*
-│   └── not-found.tsx              # 404
-├── lib/
-│   ├── api.ts                     # fetch 封装（解 {success,data,error,meta} 信封）+ postStream + 401 集中处理
-│   ├── hue.ts                     # resolveTheme 三级解析 + 15 套预设（仅供选色器）
-│   ├── prng.ts                    # 定种子线性同余。**全站禁 Math.random()**
-│   ├── types.ts                   # 后端 DTO 类型 + GENRES
-│   ├── state.ts                   # JSON 字符串字段解析 + buildPath 重建当前路径
-│   ├── tree.ts                    # 航迹布局（buildChildrenMap / layoutTree，横轴=深度）
-│   ├── intro.ts                   # 开屏「播不播」的唯一判定（时间戳 + 6h TTL）
-│   ├── readerPrefs.ts             # 阅读偏好持久化（减动效 / 遮罩浓度）
-│   └── work.ts / imageResize.ts / useReducedMotion.ts
-├── store/                         # playStore / editorStore / authStore
-└── components/
-    ├── sky/                       # WorldScope（挂 --hue）/ Sky（分层天空）/ Figure（六姿态剪影）/ Backdrop
-    ├── wx/                        # WxHeader（主导航 3 项）/ AccountMenu（头像下拉·个人向入口都在这）
-    │                                 # SubNav / WorkFace / Soon
-    ├── editor/                    # StoryEditor 外壳 + seg1..seg6 + AttrTable / CharacterList / EditorSky
-    ├── WorkDetail                 # 星系浮层与详情页共用的同一份内容契约
-    ├── AttrBar / StoryPane / OptionList / StoryTree / StoryLLMConfigPanel
-    └── Dialog / Switch / Toast / ImageUpload / LLMSettings / BrandGlyph / icons
+├── src/                           # 全部源码（@/ 别名指向这里）
+│   ├── app/
+│   │   ├── layout.tsx             # 全局壳（next/font 注入 Inter + Noto Serif SC）
+│   │   ├── globals.css            # 全站唯一全局表：token + reset + 共享组件层 + wx-* 关键帧
+│   │   ├── page.tsx / page.module.css # 星海（3D 星系）
+│   │   ├── error.tsx                 # 全局错误边界（运行时兜底，克制版）
+│   │   ├── works | login | community | admin | create | edit | story | play | mine/*
+│   │   └── not-found.tsx          # 404
+│   ├── lib/
+│   │   ├── api.ts                 # fetch 封装（解 {success,data,error,meta} 信封）+ postStream + 401 集中处理
+│   │   ├── hue.ts                 # resolveTheme 三级解析 + 15 套预设（仅供选色器）
+│   │   ├── prng.ts                # 定种子线性同余。**全站禁 Math.random()**
+│   │   ├── types.ts               # 后端 DTO 类型 + GENRES
+│   │   ├── state.ts               # JSON 字符串字段解析 + buildPath 重建当前路径
+│   │   ├── tree.ts                # 航迹布局（buildChildrenMap / layoutTree，横轴=深度）
+│   │   ├── intro.ts               # 开屏「播不播」的唯一判定（时间戳 + 6h TTL）
+│   │   ├── readerPrefs.ts         # 阅读偏好持久化（减动效 / 遮罩浓度）
+│   │   └── work.ts / imageResize.ts / useReducedMotion.ts
+│   ├── store/                     # playStore / editorStore / authStore
+│   └── components/
+│       ├── ui/                    # 无业务语义的通用件：Dialog / Dropdown / Switch / Toast /
+│       │                              OptionList / ImageUpload / WanxiangLogo / icons / PrefsBoot
+│       ├── sky/                    # WorldScope（挂 --hue）/ Sky（分层天空）/ Figure（六姿态剪影）/ Backdrop
+│       ├── wx/                     # WxHeader（主导航 3 项）/ AccountMenu（头像下拉·个人向入口都在这）
+│       │                              # SubNav / WorkFace / Soon
+│       ├── editor/                 # StoryEditor 外壳 + 六段面板（SegInspiration / SegWorldview /
+│       │                              # SegAttributes / SegOpening / SegSky / SegPublish）
+│       │                              # + AttrTable / CharacterList / EditorSky
+│       ├── llm/                    # LLM 配置三件：LLMSettings / AssistModelSettings / StoryLLMConfigPanel
+│       ├── play/                   # 游玩页私有：AttrBar / StoryPane / StoryTree
+│       └── works/                  # WorkDetail（星系浮层与详情页共用的同一份内容契约）
 ```
+
+## 组件放哪
+
+按顺序判定，先命中先归属：
+
+1. **无业务语义**（换个项目也能用）→ `ui/`。
+2. **只有一条业务流程在用**（创作编辑器 / 游玩 / 作品展示）→ 对应模块私有目录 `editor/`、`play/`、`works/`。
+3. **跨模块的 LLM 配置面板** → `llm/`；**全站视觉系统**（天空/剪影/色相作用域）→ `sky/`；**布局壳**（顶栏/子导航）→ `wx/`。这三者是共享层，任何模块都可以 import。
+
+复用规则：**只有 2 个消费者时先各写一份，第 3 个消费者出现再提取进共享层**——过早提取的抽象比重复更贵。
+
+以上边界由 ESLint 强制（`.eslintrc.json` 的 `overrides`）：`ui/` 禁止 import 任何业务/模块目录；`editor/`、`play/`、`works/` 两两互斥。
+
 
 ## 与后端契约的要点
 
