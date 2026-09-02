@@ -59,7 +59,7 @@ cd agent; .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 
 ## 前端设计系统
 
-- 深空墨色底是所有屏幕的前提，白底即回归；token 只在 `frontend/app/globals.css`（实现 `docs/design/DESIGN.md` §3/§4），页面几何进各自 CSS Module。
+- 深空墨色底是所有屏幕的前提，白底即回归；token 只在 `frontend/src/app/globals.css`（实现 `docs/design/DESIGN.md` §3/§4），页面几何进各自 CSS Module。
 - 颜色一律 `oklch()`，样式表里不出现 hex；`--w-*` 角色色声明在使用它的元素上，不在 `:root`。
 
 ## 改敏感区前必读

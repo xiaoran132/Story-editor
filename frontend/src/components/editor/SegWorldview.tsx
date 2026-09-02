@@ -15,7 +15,7 @@ import type { SegProps } from "./segTypes";
 export default function SegWorldview({ go, names }: SegProps) {
   const s = useEditorStore();
   // styleProfile 是嵌套对象，而 setField 只能整键替换（editorStore.setField），
-  // 所以走 seg5 setTheme 那套 spread-patch，不必给 store 加专用 action。
+  // 所以走 SegSky setTheme 那套 spread-patch，不必给 store 加专用 action。
   const sp = (patch: Partial<StyleProfile>) =>
     s.setField("styleProfile", { ...s.styleProfile, ...patch });
   // 逗号分隔 ↔ string[]，同吃中英文逗号——沿用 AttrTable 里 set 型初值的写法。
