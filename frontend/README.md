@@ -101,7 +101,7 @@ frontend/
 │   │   ├── prng.ts                # 定种子线性同余。**全站禁 Math.random()**
 │   │   ├── types.ts               # 后端 DTO 类型 + GENRES
 │   │   ├── state.ts               # JSON 字符串字段解析 + buildPath 重建当前路径
-│   │   ├── tree.ts                # 航迹布局（buildChildrenMap / layoutTree，横轴=深度）
+│   │   ├── tree.ts                # 航迹布局（buildChildrenMap / layoutTree，横轴=显示列）
 │   │   ├── intro.ts               # 开屏「播不播」的唯一判定（时间戳 + 6h TTL）
 │   │   ├── readerPrefs.ts         # 阅读偏好持久化（减动效 / 遮罩浓度）
 │   │   └── work.ts / imageResize.ts / useReducedMotion.ts
